@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # InterviewerOS v2 🚀
 
 **Autonomous Adaptive Technical Interview Platform**  
@@ -38,159 +39,123 @@ FastAPI Backend (main.py)
   ├── POST /api/session/answer    Evaluate + next question
   ├── GET  /api/session/summary   Final scores
   ├── DELETE /api/session/{id}    End session
-  └── POST /api/questions/validate  Validate custom questions
+  # IntervieHire — AI-Powered Interview Platform
 
-InterviewerOS Agent (agent.py)
-  ├── bootstrap()       Parse JD, init state, opening question
-  ├── process_answer()  Evaluate, adapt difficulty, next question
-  └── validate_questions()  Check question quality vs JD
+  A deployable full-stack MVP for AI-assisted hiring: ATS screening, structured AI interviews, avatar-ready WebSocket bridge, proctoring event pipeline, LLM evaluation, PDF reports, and a professional recruiter/candidate UI.
 
-Claude claude-sonnet-4-20250514 (Anthropic API)
-  └── Full conversation history injected each turn
-```
+  ## What is included
 
----
+  - **Frontend:** Next.js, React, TypeScript, Tailwind, Framer Motion-ready UI, Recharts dashboard.
+  - **Backend:** Fastify, Prisma, PostgreSQL, WebSockets, OpenRouter integration, PDFKit reports, Nodemailer email delivery.
+  - **AI interview loop:** Candidate transcript → backend context builder → OpenRouter → frontend + UE5 avatar payload.
+  - **Avatar bridge:** WebSocket payloads for UE5/MetaHuman/Convai style lip-sync: `avatar_speak` and `avatar_status`.
+  - **ATS engine:** Weighted role scoring for Consulting, PM, Business Analyst, Founders' Office, and General roles.
+  - **Question builder:** LLM-generated questions with role-specific competencies and editable metadata.
+  - **Proctoring:** Webcam/mic permission flow, event pipeline, severity logs, backend persistence. MediaPipe is included as a dependency and the hook is structured for detector model activation.
+  - **Reports:** Post-interview evaluation JSON and professional PDF generation; optional email delivery.
 
-## Quick Start
+  ## Local setup
 
-### Option A — Python (local)
+  Prerequisite: start Docker Desktop first and wait until the Linux engine is running. On Windows, `docker compose` needs access to the `dockerDesktopLinuxEngine` pipe before it can pull `postgres:16-alpine` and `redis:7-alpine`.
 
-```bash
-# 1. Clone / unzip
-cd interviewer_os_v2
+  ```bash
+  cp .env.example .env
+  cd infra && docker compose up -d postgres redis
+  cd ..
+  npm install
+  npm run db:generate
+  npm run db:migrate
+  npm run seed
+  npm run dev
+  ```
 
-# 2. Virtual environment
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+  If you see `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`, Docker Desktop is not running yet or WSL2/Linux containers are not ready. Start Docker Desktop, wait for it to finish initializing, then rerun the compose command.
 
-# 3. Install
-pip install -r requirements.txt
+  Open:
 
-# 4. API key
-cp .env.example .env
-# Edit .env → set ANTHROPIC_API_KEY
+  - Web app: http://localhost:3000
+  - API health: http://localhost:4000/health
+  - Candidate room: http://localhost:3000/interview
+  - Company dashboard: http://localhost:3000/dashboard
 
-# 5. Run
-python main.py
+  After seeding, copy the printed `companyId` into browser localStorage:
 
-# 6. Open
-open http://localhost:8000
-```
+  ```js
+  localStorage.setItem('companyId', 'PASTE_SEEDED_COMPANY_ID')
+  ```
 
-### Option B — Docker
+  ## Docker deployment
 
-```bash
-cp .env.example .env
-# Edit .env → set ANTHROPIC_API_KEY
+  ```bash
+  cp .env.example .env
+  cd infra
+  docker compose up --build
+  ```
 
-docker compose up --build
-# → http://localhost:8000
-```
+  ## Important environment variables
 
----
+  - `DATABASE_URL` — PostgreSQL connection string.
+  - `OPENROUTER_API_KEY` — enables live LLM question generation, interview follow-ups, and evaluation.
+  - `OPENROUTER_MODEL` — defaults to `openai/gpt-4o-mini`.
+  - `GEMINI_API_KEY` — enables the floating AI assistant in the app shell.
+  - `GEMINI_MODEL` — defaults to `gemini-1.5-flash`.
+  - `SMTP_*` and `REPORT_FROM` — enables email delivery of PDF reports.
+  - `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` — frontend API and WebSocket endpoints.
 
-## Question Modes
+  ## Core API endpoints
 
-### 🤖 Auto-Generate (default)
-The AI extracts competencies from your JD and generates questions starting at Medium difficulty.  
-The adaptive engine scales up/down based on each answer.
+  - `GET /health`
+  - `GET /api/company/dashboard/:companyId`
+  - `POST /api/company/candidates`
+  - `POST /api/company/questions/generate`
+  - `PUT /api/company/questions/:id`
+  - `GET /api/interview/sessions/:id`
+  - `POST /api/interview/sessions/:id/start`
+  - `GET /api/interview/sessions/:id/vapi-config`
+  - `POST /api/interview/sessions/:id/complete`
+  - `POST /api/interview/sessions/:id/evaluate`
+  - `POST /api/interview/sessions/:id/report`
+  - `POST /api/interview/sessions/:id/email-report`
+  - `WS /ws`
 
-### 📋 Custom Questions
-You provide the interview questions. The agent:
-1. Uses your questions in order.
-2. Adds adaptive follow-up questions based on candidate answers.
-3. Returns to your queue after follow-ups.
-4. Validates your questions against the JD before the interview starts.
+  ## WebSocket message examples
 
----
+  Candidate registration:
 
-## Scoring Rubric
+  ```json
+  {"type":"register","role":"candidate","sessionId":"SESSION_ID"}
+  ```
 
-| Score | Level | Meaning |
-|---|---|---|
-| 9-10 | Exceptional | Architectural thinking, edge cases, proactive trade-off analysis |
-| 7-8  | Strong | Correct answer with good depth, minor gaps |
-| 5-6  | Adequate | Mostly correct, lacks depth |
-| 3-4  | Weak | Partial understanding, significant gaps |
-| 1-2  | Poor | Fundamental misunderstanding |
-| 0    | No answer | Skipped or unable to answer |
+  UE5 registration:
 
----
+  ```json
+  {"type":"register","role":"ue5","sessionId":"SESSION_ID"}
+  ```
 
-## API Reference
+  Candidate transcript:
 
-### `POST /api/session/start`
-```json
-{
-  "job_description": "...",
-  "candidate_name": "Arjun Sharma",
-  "company_name": "Axiom Systems",
-  "role_title": "Senior Backend Engineer",
-  "custom_questions": ["Q1", "Q2"],  // [] for auto-generate
-  "max_questions": 8
-}
-```
+  ```json
+  {"type":"candidate_transcript","sessionId":"SESSION_ID","text":"I led a pricing project...","timestamp":1710000000,"wpm":132,"latencyMs":2200}
+  ```
 
-### `POST /api/session/answer`
-```json
-{ "session_id": "uuid", "candidate_answer": "..." }
-```
-Returns: `{ interviewer_speech, current_level, score_this_turn, hint_given, is_complete, updated_state }`
+  Server to UE5 avatar:
 
-### `POST /api/questions/validate`
-```json
-{ "job_description": "...", "questions": ["Q1", "Q2"] }
-```
-Returns: per-question relevance scores, difficulty estimates, missing competency suggestions.
+  ```json
+  {"type":"avatar_speak","sessionId":"SESSION_ID","text":"Can you walk me through the trade-offs?","interviewPhase":"follow_up","emotionState":"curious"}
+  ```
 
----
+  Proctoring event:
 
-## Production Deployment
+  ```json
+  {"type":"proctoring_event","sessionId":"SESSION_ID","eventType":"FACE_NOT_DETECTED","severity":"HIGH","metadata":{"durationMs":12000},"timestamp":1710000000}
+  ```
 
-### Railway / Render
-1. Push repo to GitHub.
-2. Connect to Railway or Render.
-3. Set env var: `ANTHROPIC_API_KEY`.
-4. Deploy. Done.
+  ## Production hardening checklist
 
-### Self-hosted (Nginx reverse proxy)
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-> ⚠️ HTTPS is required for Web Speech API (voice) in production.  
-> Use Certbot/Let's Encrypt or any SSL provider.
-
-### Session Storage (scale beyond 1 server)
-Replace the in-memory `sessions: dict` in `main.py` with Redis:
-```python
-import redis, pickle
-r = redis.from_url(os.getenv("REDIS_URL"))
-r.setex(session_id, 3600, pickle.dumps(agent))   # 1hr TTL
-```
-
----
-
-## File Structure
-
-```
-interviewer_os_v2/
-├── agent.py           ← Core AI agent + adaptive engine
-├── main.py            ← FastAPI backend
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-├── README.md
-└── static/
-    └── index.html     ← Full frontend (setup + interview + wrapup)
-```
+  - Add authentication and RBAC before external pilots.
+  - Replace demo localStorage company selection with authenticated tenancy.
+  - Add signed upload storage for resumes and interview recordings.
+  - Enable MediaPipe model assets for face count, gaze estimation, and object detection.
+  - Add audit logs for every candidate-data access.
+  - Configure data-retention and deletion workflows for GDPR/DPDP compliance.
+  - Add managed Postgres, Redis, object storage, CI/CD, Sentry, and structured logs.
