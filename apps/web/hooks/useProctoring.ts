@@ -183,7 +183,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null) {
         lastObservationAt: null,
       });
 
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       streamRef.current = stream;
 
       if (!aliveRef.current) {
@@ -391,5 +391,97 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null) {
     };
   }, [sessionId, socket]);
 
-  return { videoRef, events, emit, state };
+  // Basic audio analytics: detect sustained background voices / high ambient audio
+  useEffect(() => {
+    let audioCtx: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let audioInterval: number | null = null;
+    const AUDIO_RMS_THRESHOLD = 0.05; // tuned heuristically
+    const AUDIO_SUSTAIN_MS = 2000;
+    const audioHighSince: { current: number | null } = { current: null };
+
+    if (streamRef.current && streamRef.current.getAudioTracks().length) {
+      try {
+        audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(streamRef.current);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+        audioInterval = window.setInterval(() => {
+          if (!analyser) return;
+          analyser.getByteTimeDomainData(data);
+          // compute RMS
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) {
+            const v = (data[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          if (rms > AUDIO_RMS_THRESHOLD) {
+            if (!audioHighSince.current) audioHighSince.current = Date.now();
+            if (Date.now() - (audioHighSince.current || 0) > AUDIO_SUSTAIN_MS) {
+              emitWithCooldown(faceAlertAt, 'BACKGROUND_AUDIO_DETECTED', 'MEDIUM', { rms });
+              audioHighSince.current = null;
+            }
+          } else {
+            audioHighSince.current = null;
+          }
+        }, 500);
+      } catch (e) {
+        console.warn('audio analytics unavailable', e);
+      }
+    }
+
+    return () => {
+      if (audioInterval) window.clearInterval(audioInterval);
+      try { audioCtx?.close(); } catch (e) { /* ignore */ }
+    };
+  }, [streamRef.current]);
+
+  // Compare a provided image (ID) with the currently-detected face using facial landmarks.
+  async function compareIdentity(idImage: HTMLImageElement | ImageBitmap): Promise<{ score: number; details?: any }> {
+    const faceTask = faceLandmarkerRef.current;
+    if (!faceTask) return { score: 0, details: { reason: 'Face detector not ready' } };
+    try {
+      const idResult = await (faceTask as any).detect(idImage);
+      // try to capture a single frame from the active video for live face
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return { score: 0, details: { reason: 'Camera not ready' } };
+      // create an offscreen canvas to copy current video frame
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const bitmap = await createImageBitmap(canvas);
+      const liveResult = await (faceTask as any).detect(bitmap);
+
+      const idLandmarks = idResult?.faceLandmarks?.[0];
+      const liveLandmarks = liveResult?.faceLandmarks?.[0];
+      if (!idLandmarks || !liveLandmarks) return { score: 0, details: { reason: 'Face not found in one of images' } };
+
+      // use nose (1), left eye (33), right eye (263) as anchors
+      const idx = [1, 33, 263];
+      function getPoints(landmarks: any[]) {
+        return idx.map((i) => landmarks[i]).filter(Boolean).map((p) => [p.x, p.y]);
+      }
+      const pId = getPoints(idLandmarks);
+      const pLive = getPoints(liveLandmarks);
+      if (pId.length !== pLive.length) return { score: 0, details: { reason: 'Insufficient landmarks' } };
+
+      let diffs = 0;
+      for (let i = 0; i < pId.length; i++) {
+        diffs += Math.hypot(pId[i][0] - pLive[i][0], pId[i][1] - pLive[i][1]);
+      }
+      const avg = diffs / pId.length;
+      // normalize avg (landmarks are in 0..1 space) into score
+      const score = Math.max(0, Math.round((1 - Math.min(1, avg / 0.15)) * 100));
+      return { score, details: { avg } };
+    } catch (e) {
+      return { score: 0, details: { error: e instanceof Error ? e.message : e } };
+    }
+  }
+
+  return { videoRef, events, emit, state, compareIdentity };
 }

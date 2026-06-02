@@ -7,6 +7,9 @@ import path from 'node:path';
 import { buildVapiAssistantConfig } from '../services/vapi-config.service.js';
 import { processRecordingForSession } from '../services/transcription.service.js';
 
+const HIGH_CONCURRENCY_CACHE_QUESTION =
+  'If you were truly designing a cache for a high-concurrency environment that demands both fast lookups and efficient range queries, how would you address the limitations of each? Simply stating the trade-offs is not sufficient for a production-grade system. Would you consider a composite data structure? Perhaps a multi-layered caching strategy? Walk me through a concrete architectural approach that mitigates these individual weaknesses while satisfying both requirements. Think about how you would handle synchronization and data consistency.';
+
 export async function interviewRoutes(app: FastifyInstance) {
   app.get('/demo-session', async () => {
     const company = await prisma.company.upsert({
@@ -34,6 +37,29 @@ export async function interviewRoutes(app: FastifyInstance) {
           secondaryCriteria: ['industry knowledge', 'analytics', 'presentation'],
           atsScoringWeights: { primary: 0.4, secondary: 0.3, education: 0.1, experience: 0.1, communication: 0.1 },
           evaluationCriteria: { answerDepth: 1, confidence: 1, communication: 1, domainKnowledge: 1, problemSolving: 1 },
+        },
+      });
+    }
+
+    const existingCacheQuestion = await prisma.question.findFirst({
+      where: {
+        companyId: company.id,
+        jobRoleId: role.id,
+        text: HIGH_CONCURRENCY_CACHE_QUESTION,
+      },
+    });
+    if (!existingCacheQuestion) {
+      await prisma.question.create({
+        data: {
+          companyId: company.id,
+          jobRoleId: role.id,
+          text: HIGH_CONCURRENCY_CACHE_QUESTION,
+          roleApplicability: ['CONSULTING'],
+          difficulty: 'HARD',
+          topicCategories: ['system design', 'caching', 'concurrency', 'data consistency'],
+          aiEvaluationGuidance:
+            'Look for a concrete architecture that combines key-value lookup with an ordered index, explains range-query mechanics, uses sharding or partitioning for high concurrency, and covers synchronization, invalidation, consistency model, write path, and failure handling.',
+          estimatedMinutes: 8,
         },
       });
     }
@@ -75,15 +101,44 @@ export async function interviewRoutes(app: FastifyInstance) {
   app.post('/sessions/:id/start', async (req:any) => prisma.interviewSession.update({where:{id:req.params.id}, data:{status:'IN_PROGRESS', startedAt:new Date()}}));
   app.get('/sessions/:id/vapi-config', async (req:any) => {
     const session = await prisma.interviewSession.findUniqueOrThrow({where:{id:req.params.id}, include:{company:true,jobRole:{include:{questions:true}}}});
-    return buildVapiAssistantConfig({companyName:session.company.name, companyDescription:session.company.description || undefined, jobRole:session.jobRole.title, roleRequirements:session.jobRole.requirements, questions:session.jobRole.questions.map(q=>q.text), evaluationCriteria:session.jobRole.evaluationCriteria as any});
+    return buildVapiAssistantConfig({companyName:session.company.name, companyDescription:session.company.description || undefined, jobRole:session.jobRole.title, roleRequirements:session.jobRole.requirements, questions:session.jobRole.questions.map((q: { text: string })=>q.text), evaluationCriteria:session.jobRole.evaluationCriteria as any});
   });
   app.post('/sessions/:id/complete', async (req:any) => prisma.interviewSession.update({where:{id:req.params.id}, data:{status:'COMPLETED', completedAt:new Date()}}));
   app.post('/sessions/:id/evaluate', async (req:any) => ({evaluation: await evaluateInterview(req.params.id)}));
-  app.post('/sessions/:id/report', async (req:any) => ({filePath: await generatePdfReport(req.params.id)}));
+  app.post('/sessions/:id/report', async (req:any) => {
+    const result = await generatePdfReport(req.params.id);
+    return { filePath: result.pdfPath, jsonPath: result.jsonPath, report: result.report };
+  });
+
+  app.get('/sessions/:id/report', async (req:any, reply) => {
+    const session = await prisma.interviewSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return reply.code(404).send({ error: 'Session not found' });
+
+    let pdfPath = session.reportUrl;
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      const result = await generatePdfReport(req.params.id);
+      pdfPath = result.pdfPath;
+    }
+
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      return reply.code(404).send({ error: 'Report not found' });
+    }
+
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="${req.params.id}-report.pdf"`);
+    return reply.send(fs.createReadStream(pdfPath));
+  });
+
+  app.get('/sessions/:id/report.json', async (req:any, reply) => {
+    const jsonPath = path.resolve('reports', `${req.params.id}.json`);
+    if (!fs.existsSync(jsonPath)) return reply.code(404).send({ error: 'Report JSON not found' });
+    reply.header('Content-Type', 'application/json');
+    return reply.send(fs.createReadStream(jsonPath));
+  });
   app.post('/sessions/:id/email-report', async (req:any) => {
     const session = await prisma.interviewSession.findUnique({where:{id:req.params.id}, include:{company:true,candidate:true}});
     if (!session) throw new Error('Session not found');
-    const filePath = session.reportUrl || await generatePdfReport(req.params.id);
+    const filePath = session.reportUrl || (await generatePdfReport(req.params.id)).pdfPath;
     const transporter = nodemailer.createTransport({host:process.env.SMTP_HOST, port:Number(process.env.SMTP_PORT || 587), secure:false, auth:{user:process.env.SMTP_USER, pass:process.env.SMTP_PASS}});
     await transporter.sendMail({from:process.env.REPORT_FROM, to: session.company.reportEmail || req.body?.to, subject:`Interview report: ${session.candidate.fullName}`, text:'Attached is the IntervieHire evaluation report.', attachments:[{filename:`${session.candidate.fullName}-report.pdf`, content:fs.createReadStream(filePath)}]});
     return {sent:true};

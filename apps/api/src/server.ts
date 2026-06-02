@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
@@ -20,5 +20,5 @@ await app.register(interviewRoutes, { prefix: '/api/interview' });
 await app.register(assistantRoutes, { prefix: '/api/assistant' });
 await registerWebsocket(app);
 
-const port = Number(process.env.PORT || 4000);
+const port = Number(process.env.API_PORT || 4000);
 app.listen({ port, host: '0.0.0.0' }).catch(err => { app.log.error(err); process.exit(1); });
