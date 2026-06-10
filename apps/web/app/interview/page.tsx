@@ -4,9 +4,10 @@ import { WS_URL, API_URL } from '@/lib/api';
  import { useProctoring } from '@/hooks/useProctoring';
  import { useSpeechMetrics } from '@/hooks/useSpeechMetrics';
 import ProctoringPanel from '@/components/ProctoringPanel';
+import { AvatarStreamFrame } from '@/components/AvatarStreamFrame';
 import { BookOpenCheck, Mic, Send, ShieldCheck, Timer, Video } from 'lucide-react';
 
-const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL || 'http://172.24.64.1/';
+const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL;
 
 export default function Interview(){
   const [sessionId,setSessionId]=useState('demo-session');
@@ -356,12 +357,7 @@ export default function Interview(){
               </div>
             ) : null}
             <div className="absolute inset-0">
-              <iframe
-                src={AVATAR_URL}
-                title="AI interviewer avatar"
-                className="h-full w-full border-0"
-                allow="microphone; camera; autoplay; fullscreen"
-              />
+              <AvatarStreamFrame url={AVATAR_URL} title="AI interviewer avatar" />
             </div>
             <video ref={videoRef} muted playsInline className="absolute bottom-5 right-5 h-36 w-52 rounded-2xl border border-white/20 object-cover shadow-2xl"/>
           </div>

@@ -4,4 +4,6 @@ dist
 .env
 reports
 *.log
+*.tsbuildinfo
+apps/api/uploads/
 .DS_Store
