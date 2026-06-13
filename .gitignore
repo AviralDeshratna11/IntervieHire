@@ -1,0 +1,14 @@
+.next/
+.vscode/
+apps/api/uploads/
+node_modules/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+dev.err.log
+dev.out.log
