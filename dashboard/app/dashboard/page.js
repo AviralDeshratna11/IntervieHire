@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { initDashboardPage } from '../../src/dashboard/index.js';
 import { html } from '../../src/html/dashboard-crystal';
@@ -14,9 +14,9 @@ const UNAUTHED_RE = /401|not authenticated|unauthor|credential|user not found/i;
 
 function VerifyingScreen() {
   return (
-    <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: '#020203', color: '#a3a39e', fontFamily: "'Space Grotesk', system-ui, sans-serif", zIndex: 50 }}>
+    <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', background: '#0a0a0a', color: '#9a9a9a', fontFamily: "'Outfit', system-ui, sans-serif", zIndex: 50 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 34, height: 34, margin: '0 auto 14px', borderRadius: '50%', border: '2px solid rgba(212,175,55,0.2)', borderTopColor: '#d4af37', animation: 'ih-auth-spin 0.8s linear infinite' }} />
+        <div style={{ width: 34, height: 34, margin: '0 auto 14px', borderRadius: '50%', border: '2px solid rgba(45,212,191,0.2)', borderTopColor: '#2dd4bf', animation: 'ih-auth-spin 0.8s linear infinite' }} />
         <div style={{ fontSize: '0.85rem', letterSpacing: '0.02em' }}>Verifying your session…</div>
       </div>
       <style>{'@keyframes ih-auth-spin{to{transform:rotate(360deg)}}'}</style>
@@ -24,11 +24,31 @@ function VerifyingScreen() {
   );
 }
 
+// The vanilla dashboard surface. memo() + no props => it renders exactly once and
+// React never re-runs it, so parent re-renders can't reset the dangerouslySet
+// innerHTML and wipe the vanilla-JS-injected content (job cards, etc.).
+const DashboardSurface = memo(function DashboardSurface() {
+  useEffect(() => {
+    const cleanup = initDashboardPage();
+    return () => { if (cleanup) cleanup(); };
+  }, []);
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
 export default function DashboardCrystalPage() {
   const router = useRouter();
-  // 'checking' → verifying with no prior session; 'authed' → render dashboard.
-  const [phase, setPhase] = useState(() => (isAuthed() ? 'authed' : 'checking'));
+  // IMPORTANT: start in 'checking' on BOTH server and first client render so the
+  // statically-prerendered HTML matches — reading localStorage in the initializer
+  // caused a hydration mismatch (server rendered "Verifying", client rendered the
+  // dashboard) that flickered and wiped the vanilla content.
+  const [phase, setPhase] = useState('checking');
   const [user, setUser] = useState(null);
+
+  // Optimistic upgrade — client-only, after hydration. If we have a prior session
+  // flag, show the dashboard immediately while /me verifies in the background.
+  useEffect(() => {
+    if (isAuthed()) setPhase('authed');
+  }, []);
 
   // Authoritative session check against the backend.
   useEffect(() => {
@@ -57,14 +77,8 @@ export default function DashboardCrystalPage() {
     return () => { cancelled = true; };
   }, [router]);
 
-  // Mount the vanilla dashboard once we're actually showing it.
-  useEffect(() => {
-    if (phase !== 'authed') return;
-    const cleanup = initDashboardPage();
-    return () => { if (cleanup) cleanup(); };
-  }, [phase]);
-
-  // Reflect the signed-in user into the sidebar profile.
+  // Reflect the signed-in user into the sidebar profile (runs after the surface
+  // has mounted and /me has returned).
   useEffect(() => {
     if (phase !== 'authed' || !user) return;
     const label = (user.name || user.username || 'Account').trim();
@@ -103,5 +117,5 @@ export default function DashboardCrystalPage() {
 
   if (phase !== 'authed') return <VerifyingScreen />;
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+  return <DashboardSurface />;
 }
