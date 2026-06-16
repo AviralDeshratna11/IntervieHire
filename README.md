@@ -1,161 +1,89 @@
-<<<<<<< HEAD
-# InterviewerOS v2 🚀
+# IntervieHire — MVP
 
-**Autonomous Adaptive Technical Interview Platform**  
-AI-powered interviewer with dynamic difficulty scaling, custom question support, and a professional enterprise UI.
+An AI-driven hiring platform: recruiters author rubric-grade interview blueprints, a **live AI avatar** runs the interview under full proctoring, and candidates are scored against the recruiter's own rubric into a structured evaluation report.
 
----
+This MVP folder stitches three pieces into one working product. The recruiter dashboard drives everything; clicking **Test Interview** on a job launches the candidate pipeline (**system test → gaze calibration → live avatar interview with proctoring**) built from the IntervieHire 2.0 interview engine.
 
-## What's New in v2
+This repo stitches three pieces into one working MVP:
 
-| Feature | v1 | v2 |
-|---|---|---|
-| Question modes | Auto-generate only | ✅ Auto-generate OR custom questions |
-| Question validation | ❌ | ✅ AI validates custom questions vs JD |
-| Voice for questions | ❌ | ✅ Add custom questions by voice |
-| Multi-step setup | ❌ | ✅ 3-step wizard (Company → Questions → Candidate) |
-| Scoring detail | Score only | ✅ Score + per-topic notes |
-| Hint tracking | ❌ | ✅ Flagged in UI and report |
-| Wrapup report | Basic | ✅ STRONG HIRE / HIRE / CONSIDER / NO HIRE |
-| Docker | ❌ | ✅ Dockerfile + docker-compose |
-| Live question queue | ❌ | ✅ Sidebar shows custom question progress |
-| Progress bar | ❌ | ✅ Real-time progress indicator |
+| Component | Dir | Role |
+|-----------|-----|------|
+| **Recruiter dashboard** | [`dashboard/`](dashboard/) | The product surface — job pipelines, the **Interview Blueprint Studio** (authors questions + graded rubrics), and **Deep Analysis** (post-interview candidate intelligence). Leads the contract. |
+| **AI interview engine** | [`interview-engine/`](interview-engine/) | Fastify API (`:4000`) + candidate interview room (Next.js) + the **Aviral evaluation engine** (`apps/api/src/aviral-eval/`). Runs the interview and scores it with DeepSeek. |
+| **Backend** | [`backend/`](backend/) | FastAPI (`:8000`) over Supabase Postgres — jobs, applicants, auth, and the bridge that feeds blueprints to the engine and serves reports back. |
 
----
-
-## Architecture
+## How it fits together
 
 ```
-Browser (Frontend)
-  └── static/index.html
-      ├── 3-step Setup Wizard (Company → Questions → Candidate)
-      ├── Interview Screen (Chat + Sidebar + Scores)
-      ├── Wrapup Report (Scores + Recommendation + Full Report)
-      ├── Web Speech API (STT voice input)
-      └── speechSynthesis (TTS output)
+Recruiter (dashboard :3000)
+   │  authors blueprint + rubric in the Blueprint Studio
+   ▼
+FastAPI backend (:8000)  ──persists──►  Supabase Postgres
+   │  on schedule: syncs the job's questions + rubric into the engine's tables
+   ▼
+Candidate interview room (interview-engine web)
+   │  text/voice answers  →  Fastify engine (:4000)
+   ▼
+Aviral evaluation engine + DeepSeek
+   │  grades each answer against the recruiter's rubric → CandidateReport
+   ▼
+Supabase  ──►  FastAPI serves the report  ──►  Deep Analysis renders it
+```
 
-FastAPI Backend (main.py)
-  ├── POST /api/session/start     Bootstrap session
-  ├── POST /api/session/answer    Evaluate + next question
-  ├── GET  /api/session/summary   Final scores
-  ├── DELETE /api/session/{id}    End session
-  # IntervieHire — AI-Powered Interview Platform
+The dashboard, engine, and backend integrate through a **shared Supabase database** — the FastAPI backend mirrors the engine's tables, so a blueprint authored in the dashboard reaches the interview, and the resulting `CandidateReport` flows straight back to Deep Analysis.
 
-  A deployable full-stack MVP for AI-assisted hiring: ATS screening, structured AI interviews, avatar-ready WebSocket bridge, proctoring event pipeline, LLM evaluation, PDF reports, and a professional recruiter/candidate UI.
+### Evaluation
 
-  ## What is included
+Scoring uses the **Aviral evaluation engine** (`interview-engine/apps/api/src/aviral-eval/`): for each answer it builds a rubric-grounded prompt, asks DeepSeek to grade it, validates the result, and aggregates a canonical `CandidateReport` (overall score, recommendation, per-dimension skill scores, per-question breakdown, red flags). Without a `DEEPSEEK_API_KEY` it falls back to a deterministic evaluator, so an interview still runs and scores with **zero API keys**.
 
-  - **Frontend:** Next.js, React, TypeScript, Tailwind, Framer Motion-ready UI, Recharts dashboard.
-  - **Backend:** Fastify, Prisma, PostgreSQL, WebSockets, OpenRouter integration, PDFKit reports, Nodemailer email delivery.
-  - **AI interview loop:** Candidate transcript → backend context builder → OpenRouter → frontend + UE5 avatar payload.
-  - **Avatar bridge:** WebSocket payloads for UE5/MetaHuman/Convai style lip-sync: `avatar_speak` and `avatar_status`.
-  - **ATS engine:** Weighted role scoring for Consulting, PM, Business Analyst, Founders' Office, and General roles.
-  - **Question builder:** LLM-generated questions with role-specific competencies and editable metadata.
-  - **Proctoring:** Webcam/mic permission flow, event pipeline, severity logs, backend persistence. MediaPipe is included as a dependency and the hook is structured for detector model activation.
-  - **Reports:** Post-interview evaluation JSON and professional PDF generation; optional email delivery.
+## Quick start
 
-  ## Local setup
+Each component has its own `.env.example` — copy it to `.env` (or `.env.local` for the dashboard) and fill in the values. The three services share one Supabase database.
 
-  Prerequisite: start Docker Desktop first and wait until the Linux engine is running. On Windows, `docker compose` needs access to the `dockerDesktopLinuxEngine` pipe before it can pull `postgres:16-alpine` and `redis:7-alpine`.
+**1. Backend (FastAPI, `:8000`)**
+```bash
+cd backend
+python -m venv venv && venv/Scripts/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env                                  # fill DATABASE_URL, SECRET_KEY
+python -m uvicorn main:app --port 8000 --reload
+```
 
-  ```bash
-  cp .env.example .env
-  cd infra && docker compose up -d postgres redis
-  cd ..
-  npm install
-  npm run db:generate
-  npm run db:migrate
-  npm run seed
-  npm run dev
-  ```
+**2. Interview engine (Fastify `:4000` + candidate web `:3001`)**
+```bash
+cd interview-engine
+npm install
+cp .env.example .env                                  # fill DATABASE_URL (+ DEEPSEEK_API_KEY for LLM scoring)
+# candidate web env is in apps/web/.env.local — set NEXT_PUBLIC_AVATAR_URL there
+npm run build -w packages/shared
+npm run db:generate -w apps/api
+npm run dev                                           # api :4000 + web :3001
+```
+A keyless **test interview** is available immediately at `/interview` (it seeds a demo session via `GET /api/interview/demo-session`). The candidate room runs the full pipeline: **pre-interview system test → 8-point gaze calibration → live avatar interview with proctoring** (gaze/face/object/tab/fullscreen) and per-answer rubric scoring.
 
-  If you see `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`, Docker Desktop is not running yet or WSL2/Linux containers are not ready. Start Docker Desktop, wait for it to finish initializing, then rerun the compose command.
+**2b. Avatar service (Unreal Engine Pixel Streaming, `:80`)** — optional
+The interview room embeds a live avatar via `NEXT_PUBLIC_AVATAR_URL` (set in `interview-engine/apps/web/.env.local`, default `http://localhost:80/?AutoConnect=true`). Point it at your Pixel Streaming instance. If it is unset or unreachable, the room shows a graceful "configure the avatar" panel — the interview, calibration, and proctoring still run.
 
-  Open:
+**3. Dashboard (Next.js, `:3000`)**
+```bash
+cd dashboard
+npm install
+cp .env.example .env.local
+npm run dev
+```
+The dashboard runs on localStorage by default. Flip it to the live backend with `IHApi.setDataSource('api')` in the browser console (it then hydrates jobs, persists authored blueprints, and renders live reports in Deep Analysis).
 
-  - Web app: http://localhost:3000
-  - API health: http://localhost:4000/health
-  - Candidate room: http://localhost:3000/interview
-  - Company dashboard: http://localhost:3000/dashboard
+## Notes
 
-  After seeding, copy the printed `companyId` into browser localStorage:
+- **Secrets** live only in `.env` files, which are gitignored. Never commit real keys or database URLs.
+- The recruiter dashboard is the source of truth for the `CandidateReport` shape; the engine and backend conform to it.
+- The candidate room supports proctoring (gaze/face/object) and voice, but a typed text interview needs no paid voice keys.
 
-  ```js
-  localStorage.setItem('companyId', 'PASTE_SEEDED_COMPANY_ID')
-  ```
+## What was stitched (IntervieHire 2.0 → this MVP)
 
-  ## Docker deployment
+The candidate interview room is the IntervieHire 2.0 pipeline, integrated into the engine while preserving the dashboard's launch contract (`Test Interview` → FastAPI `POST /jobs/{id}/test-session` → opens `:3001/interview?sessionId=…`). Specifically:
 
-  ```bash
-  cp .env.example .env
-  cd infra
-  docker compose up --build
-  ```
-
-  ## Important environment variables
-
-  - `DATABASE_URL` — PostgreSQL connection string.
-  - `OPENROUTER_API_KEY` — enables live LLM question generation, interview follow-ups, and evaluation.
-  - `OPENROUTER_MODEL` — defaults to `openai/gpt-4o-mini`.
-  - `GEMINI_API_KEY` — enables the floating AI assistant in the app shell.
-  - `GEMINI_MODEL` — defaults to `gemini-1.5-flash`.
-  - `SMTP_*` and `REPORT_FROM` — enables email delivery of PDF reports.
-  - `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` — frontend API and WebSocket endpoints.
-
-  ## Core API endpoints
-
-  - `GET /health`
-  - `GET /api/company/dashboard/:companyId`
-  - `POST /api/company/candidates`
-  - `POST /api/company/questions/generate`
-  - `PUT /api/company/questions/:id`
-  - `GET /api/interview/sessions/:id`
-  - `POST /api/interview/sessions/:id/start`
-  - `GET /api/interview/sessions/:id/vapi-config`
-  - `POST /api/interview/sessions/:id/complete`
-  - `POST /api/interview/sessions/:id/evaluate`
-  - `POST /api/interview/sessions/:id/report`
-  - `POST /api/interview/sessions/:id/email-report`
-  - `WS /ws`
-
-  ## WebSocket message examples
-
-  Candidate registration:
-
-  ```json
-  {"type":"register","role":"candidate","sessionId":"SESSION_ID"}
-  ```
-
-  UE5 registration:
-
-  ```json
-  {"type":"register","role":"ue5","sessionId":"SESSION_ID"}
-  ```
-
-  Candidate transcript:
-
-  ```json
-  {"type":"candidate_transcript","sessionId":"SESSION_ID","text":"I led a pricing project...","timestamp":1710000000,"wpm":132,"latencyMs":2200}
-  ```
-
-  Server to UE5 avatar:
-
-  ```json
-  {"type":"avatar_speak","sessionId":"SESSION_ID","text":"Can you walk me through the trade-offs?","interviewPhase":"follow_up","emotionState":"curious"}
-  ```
-
-  Proctoring event:
-
-  ```json
-  {"type":"proctoring_event","sessionId":"SESSION_ID","eventType":"FACE_NOT_DETECTED","severity":"HIGH","metadata":{"durationMs":12000},"timestamp":1710000000}
-  ```
-
-  ## Production hardening checklist
-
-  - Add authentication and RBAC before external pilots.
-  - Replace demo localStorage company selection with authenticated tenancy.
-  - Add signed upload storage for resumes and interview recordings.
-  - Enable MediaPipe model assets for face count, gaze estimation, and object detection.
-  - Add audit logs for every candidate-data access.
-  - Configure data-retention and deletion workflows for GDPR/DPDP compliance.
-  - Add managed Postgres, Redis, object storage, CI/CD, Sentry, and structured logs.
+- **Live avatar** — `apps/web/components/AvatarStreamFrame.tsx` (Pixel Streaming iframe) replaced the static placeholder image in `apps/web/app/interview/page.tsx`, wired to `NEXT_PUBLIC_AVATAR_URL`.
+- **Improved gaze calibration** — `apps/web/hooks/useGazeCalibration.ts` now infers the neutral baseline from opposite dot-pairs (the 8-dot calibration never samples center), fixing a case where neutral defaulted to 0.
+- **Engine-superior proctoring kept** — the engine's `useProctoring` (integrity scoring, session control), live transcription, schedule-lock, and rubric evaluation were retained; the 2.0 room's hardcoded-question / self-demo flow was **not** used, since this MVP uses the per-job blueprint via the dashboard.
+- The engine's own candidate dashboard/landing was removed — the engine root (`/`) now redirects straight to `/interview`.
