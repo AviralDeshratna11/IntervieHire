@@ -6,7 +6,7 @@ import { appendTerminalLog } from './kanban-swarm.js';
 import { openReportDrawerForCandidate } from './report.js';
 import { computeWeightedScore, getScoringConfig, recommendationFromScore } from './scoring-config.js';
 import { soundEngine } from './sound.js';
-import { extractResumeIdentity, showPremiumToast } from './sourcing.js';
+import { addCandidateToAppState, extractResumeIdentity, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 
 // ==========================================
@@ -95,6 +95,11 @@ function renderResumeStagePaneForJob(candidates, job, container) {
           <span class="ra-toolbar-stat pending">${pendingCount} pending</span>
         </div>
         <div class="ra-toolbar-right">
+          <button class="btn-ra-import" id="btn-ra-import" title="Import a CSV/Excel of candidates with public Google-Doc/Drive resume links">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import CSV/Excel
+          </button>
+          <input type="file" id="ra-import-file" accept=".csv,.xlsx,.xls" hidden />
           ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all" id="btn-ra-reanalyse-all" title="Re-run analysis on all analysed resumes using the current parameters">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Reanalyse all (${analysedCount})
@@ -248,6 +253,15 @@ function bindResumeAnalysisEvents(job) {
       return;
     }
     runBulkResumeAnalysis(pendingCids, job);
+  });
+
+  const importBtn = document.getElementById('btn-ra-import');
+  const importInput = document.getElementById('ra-import-file');
+  importBtn?.addEventListener('click', () => importInput?.click());
+  importInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) handleResumeImportFile(file, job);
+    e.target.value = '';
   });
 
   const reanalyseAllBtn = document.getElementById('btn-ra-reanalyse-all');
@@ -655,14 +669,38 @@ async function runResumeAnalysis(cid, job, opts = {}) {
   const quiet = opts.quiet === true;
   const pasteArea = document.getElementById(`ra-paste-${cid}`);
   const btn = document.getElementById(`ra-btn-${cid}`);
+  const origHTML = btn ? btn.innerHTML : '';
   let resumeText = ((resumeTextCache[cid] || '') + '\n' + (pasteArea?.value || '')).trim();
   const candidate = AppState.candidates.find(c => c.id === cid);
+
+  // Candidates imported via CSV/Excel carry a resume link but no uploaded text.
+  // Fetch + extract the linked doc server-side (public Google Docs/Drive) first.
+  if ((!resumeText || isGarbageText(resumeText)) && candidate?.resumeLink) {
+    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="ra-spinner"></span> Fetching…`; }
+    try {
+      const res = await fetch('/api/fetch-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: candidate.resumeLink }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.text) {
+        resumeTextCache[cid] = data.text;
+        resumeText = data.text.trim();
+      } else if (!quiet) {
+        showPremiumToast(data.error || 'Could not fetch the linked resume.', 'error');
+      }
+    } catch {
+      if (!quiet) showPremiumToast('Could not fetch the linked resume.', 'error');
+    }
+  }
+
   if (!resumeText || isGarbageText(resumeText)) {
-    if (!quiet) showPremiumToast('Upload a resume or paste resume text first.', 'error');
+    if (!quiet) showPremiumToast('Upload a resume, paste text, or add a valid public resume link.', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
     return false;
   }
 
-  const origHTML = btn ? btn.innerHTML : '';
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = `<span class="ra-spinner"></span> Analysing…`;
@@ -969,6 +1007,106 @@ function toggleResumeCriteriaEdit(job) {
     const totalGood = criteria.goodToHave.length;
     minMatchEl.innerHTML = `Minimum match: <input type="number" class="ra-min-match-input" value="${currentMin}" min="1" max="${totalGood}" style="width:40px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:4px;color:var(--color-text-primary);text-align:center;padding:2px;font-size:0.78rem;" /> out of ${totalGood} criteria`;
   }
+}
+
+// --- CSV / Excel resume-link import (Resume Analysis) ---
+
+// Parse delimited text into a matrix of trimmed cells, respecting "quoted, fields".
+function parseDelimited(text) {
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const cells = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += ch;
+      } else if (ch === '"') { inQ = true; }
+      else if (ch === ',') { cells.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    cells.push(cur);
+    rows.push(cells.map(c => c.trim()));
+  }
+  return rows;
+}
+
+// Map a header+rows matrix to { name, email, phone, link }, keeping only rows
+// that carry an http(s) resume link.
+function matrixToCandidates(matrix) {
+  if (!matrix.length) return [];
+  const headers = matrix[0].map(h => String(h).toLowerCase().trim());
+  const exact = (...keys) => headers.findIndex(h => keys.includes(h));
+  const contains = (...subs) => headers.findIndex(h => subs.some(s => h.includes(s)));
+  const nameIdx = exact('name', 'candidate', 'candidate name');
+  const emailIdx = exact('email', 'e-mail', 'email address');
+  const phoneIdx = exact('phone', 'mobile', 'contact');
+  let linkIdx = exact('resume link', 'resume url', 'resume', 'link', 'url', 'google doc', 'document', 'doc');
+  if (linkIdx === -1) linkIdx = contains('link', 'url', 'doc');
+
+  const out = [];
+  for (let i = 1; i < matrix.length; i++) {
+    const cols = matrix[i] || [];
+    const link = linkIdx !== -1 ? String(cols[linkIdx] || '').trim() : '';
+    if (!/^https?:\/\//i.test(link)) continue;
+    out.push({
+      name: nameIdx !== -1 ? String(cols[nameIdx] || '').trim() : '',
+      email: emailIdx !== -1 ? String(cols[emailIdx] || '').trim() : '',
+      phone: phoneIdx !== -1 ? String(cols[phoneIdx] || '').trim() : '',
+      link,
+    });
+  }
+  return out;
+}
+
+async function handleResumeImportFile(file, job) {
+  let matrix = [];
+  const fname = (file.name || '').toLowerCase();
+  try {
+    if (fname.endsWith('.xlsx') || fname.endsWith('.xls')) {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' })
+        .map(r => r.map(c => String(c)));
+    } else {
+      matrix = parseDelimited(await file.text());
+    }
+  } catch {
+    showPremiumToast('Could not read the file. Use a .csv or .xlsx with a resume link column.', 'error');
+    return;
+  }
+
+  const rows = matrixToCandidates(matrix);
+  if (!rows.length) {
+    showPremiumToast('No rows with a resume link found. Add a "Resume Link" column of public Google-Doc/Drive URLs.', 'error');
+    return;
+  }
+
+  rows.forEach(r => {
+    const cid = addCandidateToAppState(r.name || r.email || 'Imported Candidate', r.email, r.phone, job);
+    const cand = AppState.candidates.find(c => c.id === cid);
+    if (cand) { cand.status = 'Resume'; cand.resumeLink = r.link; }
+  });
+  saveStateToLocalStorage();
+  renderJobDetailPanes(job);
+  showPremiumToast(`Imported ${rows.length} candidate${rows.length > 1 ? 's' : ''}. Click "Analyse All" to fetch & score their resumes.`, 'success');
+}
+
+function downloadResumeImportTemplate() {
+  const csv = 'Name,Email,Phone,Resume Link\nJohn Doe,john@example.com,+15550192834,https://docs.google.com/document/d/EXAMPLE_ID/edit\nJane Smith,jane@example.com,,https://drive.google.com/file/d/EXAMPLE_ID/view';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'IntervieHire_resume_links_template.csv';
+  a.style.visibility = 'hidden';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 const SCHEDULE_TIMEZONES = [

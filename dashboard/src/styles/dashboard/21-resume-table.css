@@ -163,8 +163,9 @@
   align-items: center;
   gap: 8px;
 }
-/* Secondary (neutral) variant so it reads as distinct from the primary "Analyse All". */
-.btn-ra-reanalyse-all {
+/* Secondary (neutral) variants so they read as distinct from the primary "Analyse All". */
+.btn-ra-reanalyse-all,
+.btn-ra-import {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -178,13 +179,15 @@
   cursor: pointer;
   transition: var(--spring-fast);
 }
-.btn-ra-reanalyse-all:hover {
+.btn-ra-reanalyse-all:hover,
+.btn-ra-import:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: var(--glass-border-hover);
   color: var(--color-text-primary);
   transform: translateY(-1px);
 }
-.btn-ra-reanalyse-all svg { stroke: currentColor; }
+.btn-ra-reanalyse-all svg,
+.btn-ra-import svg { stroke: currentColor; }
 
 /* RA Recommendation Badge */
 .ra-rec-badge {
