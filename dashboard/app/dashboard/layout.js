@@ -1,4 +1,5 @@
 import '../../src/styles/dashboard/index.css';
+import DashboardShell from './DashboardShell';
 
 export const metadata = {
   title: 'Dashboard · intervieHire',
@@ -6,6 +7,6 @@ export const metadata = {
 };
 
 export default function DashboardLayout({ children }) {
-  return <>{children}</>;
+  return <DashboardShell>{children}</DashboardShell>;
 }
 

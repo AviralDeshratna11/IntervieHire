@@ -7,6 +7,7 @@ import { navigateToSourcing, removeCandidateFromQueue } from './sourcing.js';
 import { initSpotlightShortcuts } from './spotlight.js';
 import { initMountBindings } from './mount.js';
 import { initUrlSync } from './url-sync.js';
+import { navigateToTab, navigateToSubtab } from './navigation.js';
 import * as IHApi from './api.js';
 
 export function initDashboardPage() {
@@ -14,6 +15,8 @@ export function initDashboardPage() {
 
   window.AppState = AppState;
   window.IHApi = IHApi;
+  window.navigateToTab = navigateToTab;
+  window.navigateToSubtab = navigateToSubtab;
   window.navigateToJobDetail = navigateToJobDetail;
   window.openReportDrawerForCandidate = openReportDrawerForCandidate;
   window.openJobFlowView = openJobFlowView;
@@ -30,6 +33,8 @@ export function initDashboardPage() {
   return () => {
     disposeRuntime();
 
+    delete window.navigateToTab;
+    delete window.navigateToSubtab;
     delete window.navigateToJobDetail;
     delete window.openReportDrawerForCandidate;
     delete window.AppState;

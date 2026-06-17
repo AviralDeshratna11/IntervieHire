@@ -39,7 +39,11 @@ function pushUrl(url) {
   if (window.location.pathname === url) return;
   _pushPending = true;
   requestAnimationFrame(() => {
-    history.pushState(null, '', url);
+    if (typeof window.__ihPushState === 'function') {
+      window.__ihPushState(url);
+    } else {
+      history.pushState(null, '', url);
+    }
     _pushPending = false;
   });
 }

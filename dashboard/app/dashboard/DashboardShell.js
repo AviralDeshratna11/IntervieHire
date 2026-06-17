@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { initDashboardPage } from '../../src/dashboard/index.js';
 import { html } from '../../src/html/dashboard-crystal';
 import { apiMe, apiLogout, isAuthed, clearAuthed } from '../../src/auth-client.js';
@@ -37,27 +37,68 @@ const DashboardSurface = memo(function DashboardSurface({ onMounted }) {
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
+function navigateToPath(path) {
+  if (!path) return;
+  const segments = path.split('/').filter(Boolean); // e.g. ['dashboard', 'jobs', 'JOB-123']
+  if (segments[0] !== 'dashboard') return;
+
+  const sub = segments[1]; // e.g. 'jobs', 'analytics', etc.
+  if (!sub) {
+    window.navigateToTab?.('jobs');
+    return;
+  }
+
+  if (sub === 'jobs') {
+    const jobId = segments[2];
+    const subSub = segments[3];
+    if (jobId) {
+      if (subSub === 'flow') {
+        window.openJobFlowView?.(jobId);
+      } else {
+        window.navigateToJobDetail?.(jobId);
+      }
+    } else {
+      window.navigateToTab?.('jobs');
+    }
+  } else if (sub === 'sourcing') {
+    const jobId = segments[2];
+    if (jobId) {
+      window.navigateToSourcing?.(jobId);
+    }
+  } else if (sub === 'settings') {
+    window.navigateToSubtab?.('settings-general');
+  } else if (['analytics', 'swarm', 'team', 'career'].includes(sub)) {
+    window.navigateToTab?.(sub);
+  }
+}
+
 /**
  * DashboardShell
  *
- * Shared auth-guarded wrapper for every dashboard route page.
- *
- * @param {Object}   props
- * @param {Function} props.navigateTo  Called once after the vanilla engine mounts.
- *                                     Should call e.g. window.navigateToTab?.('jobs').
- *                                     Receives no arguments. May be async-deferred internally.
+ * Shared auth-guarded wrapper in layout to persist vanilla DOM across route transitions.
  */
-export default function DashboardShell({ navigateTo }) {
+export default function DashboardShell({ children }) {
   const router = useRouter();
+  const pathname = usePathname();
   // Start 'checking' on both server and first client render to avoid hydration mismatch.
   const [phase, setPhase] = useState('checking');
   const [user, setUser] = useState(null);
-  const navigateCalled = useRef(false);
+  const mountedRef = useRef(false);
 
   // Optimistic upgrade — client-only, after hydration.
   useEffect(() => {
     if (isAuthed()) setPhase('authed');
   }, []);
+
+  // Expose routing function to window for url-sync to push to next router
+  useEffect(() => {
+    window.__ihPushState = (url) => {
+      router.push(url, { scroll: false });
+    };
+    return () => {
+      delete window.__ihPushState;
+    };
+  }, [router]);
 
   // Authoritative session check against the backend.
   useEffect(() => {
@@ -84,6 +125,12 @@ export default function DashboardShell({ navigateTo }) {
 
     return () => { cancelled = true; };
   }, [router]);
+
+  // Pathname sync effect (runs on route transitions after initial mount)
+  useEffect(() => {
+    if (phase !== 'authed' || !mountedRef.current) return;
+    navigateToPath(pathname);
+  }, [pathname, phase]);
 
   // Reflect the signed-in user into the sidebar profile (runs after the surface
   // has mounted and /me has returned).
@@ -132,16 +179,21 @@ export default function DashboardShell({ navigateTo }) {
 
   if (phase !== 'authed') return <VerifyingScreen />;
 
-  // onMounted fires once when the vanilla engine initialises. We call navigateTo
+  // onMounted fires once when the vanilla engine initialises. We call navigateToPath
   // there so that navigateToTab / openJobFlowView etc. have the DOM ready.
   const handleMounted = () => {
-    if (navigateCalled.current) return;
-    navigateCalled.current = true;
+    if (mountedRef.current) return;
+    mountedRef.current = true;
     // Small tick to let the vanilla mount bindings settle (mirrors original setTimeout(initMountBindings, 0))
     setTimeout(() => {
-      if (typeof navigateTo === 'function') navigateTo();
-    }, 20);
+      navigateToPath(pathname);
+    }, 50);
   };
 
-  return <DashboardSurface onMounted={handleMounted} />;
+  return (
+    <>
+      <DashboardSurface onMounted={handleMounted} />
+      {children}
+    </>
+  );
 }
