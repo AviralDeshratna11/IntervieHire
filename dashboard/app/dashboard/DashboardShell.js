@@ -27,13 +27,22 @@ function VerifyingScreen() {
 // The vanilla dashboard surface. memo() + no props => renders exactly once,
 // React never re-runs it — parent re-renders can't reset dangerouslySetInnerHTML
 // and wipe the vanilla-JS-injected content (job cards, kanban, etc.).
-const DashboardSurface = memo(function DashboardSurface({ onMounted }) {
+const DashboardSurface = memo(function DashboardSurface() {
   useEffect(() => {
     const cleanup = initDashboardPage();
-    // Signal to parent that the vanilla engine is running
-    if (onMounted) onMounted();
-    return () => { if (cleanup) cleanup(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    
+    // Small tick to let the vanilla mount bindings settle (mirrors original setTimeout(initMountBindings, 0))
+    const timer = setTimeout(() => {
+      window.__ihDashboardMounted = true;
+      navigateToPath(window.location.pathname);
+    }, 50);
+
+    return () => {
+      window.__ihDashboardMounted = false;
+      clearTimeout(timer);
+      if (cleanup) cleanup();
+    };
+  }, []);
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
@@ -83,7 +92,6 @@ export default function DashboardShell({ children }) {
   // Start 'checking' on both server and first client render to avoid hydration mismatch.
   const [phase, setPhase] = useState('checking');
   const [user, setUser] = useState(null);
-  const mountedRef = useRef(false);
 
   // Optimistic upgrade — client-only, after hydration.
   useEffect(() => {
@@ -128,7 +136,7 @@ export default function DashboardShell({ children }) {
 
   // Pathname sync effect (runs on route transitions after initial mount)
   useEffect(() => {
-    if (phase !== 'authed' || !mountedRef.current) return;
+    if (phase !== 'authed' || !window.__ihDashboardMounted) return;
     navigateToPath(pathname);
   }, [pathname, phase]);
 
@@ -179,20 +187,9 @@ export default function DashboardShell({ children }) {
 
   if (phase !== 'authed') return <VerifyingScreen />;
 
-  // onMounted fires once when the vanilla engine initialises. We call navigateToPath
-  // there so that navigateToTab / openJobFlowView etc. have the DOM ready.
-  const handleMounted = () => {
-    if (mountedRef.current) return;
-    mountedRef.current = true;
-    // Small tick to let the vanilla mount bindings settle (mirrors original setTimeout(initMountBindings, 0))
-    setTimeout(() => {
-      navigateToPath(pathname);
-    }, 50);
-  };
-
   return (
     <>
-      <DashboardSurface onMounted={handleMounted} />
+      <DashboardSurface />
       {children}
     </>
   );
