@@ -82,6 +82,7 @@ function mapJobOutToJob(j = {}) {
     id: j.id,
     roleName: j.role_name || j.title || '',
     cardName: j.card_name || j.title || j.role_name || '',
+    companyName: j.organisation_name || '',
     customJobId: j.custom_job_id || '-',
     status: j.status || 'published',
     experienceBand: j.experience_band || '',
@@ -163,6 +164,19 @@ function mapJobToParametersPayload(job) {
   };
 }
 
+// Normalise a backend interview status (snake_case) to the dashboard enum so the
+// status chips never mislabel — unknown/absent reads as null (→ "Not Started").
+function mapInterviewStatus(s) {
+  if (!s) return null;
+  const k = String(s).toLowerCase().replace(/\s+/g, '_');
+  const map = {
+    completed: 'Completed', incomplete: 'Incomplete', evaluating: 'Evaluating',
+    attempting: 'Attempting', in_progress: 'Attempting', not_started: 'Not Started',
+    scheduled: 'Not Started', pending: 'Not Started', slot_missed: 'Slot Missed', missed: 'Slot Missed',
+  };
+  return map[k] || (k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' '));
+}
+
 function mapApplicantOutToCandidate(a = {}) {
   return {
     id: a.id,
@@ -171,7 +185,7 @@ function mapApplicantOutToCandidate(a = {}) {
     jobApplied: a.job_role_title || a.role_name || '',
     status: a.functional_status === 'completed' ? 'Functional' : (a.screening_status === 'completed' ? 'Screening' : 'Resume'),
     source: a.source || 'ATS',
-    interviewStatus: a.functional_status === 'completed' ? 'Completed' : (a.functional_status || null),
+    interviewStatus: mapInterviewStatus(a.functional_status),
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,

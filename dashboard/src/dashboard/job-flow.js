@@ -420,7 +420,7 @@ function renderJobFlowConfig(job, stageKey) {
 
 function getVerboseJobDescription(job) {
   const role = job.roleName || 'This role';
-  const company = job.companyName || 'Akross';
+  const company = job.companyName || 'IntervieHire';
   const normalizedRole = role.toLowerCase();
   const consultingName = company.toLowerCase().includes('consulting') ? company : `${company} Consulting`;
 
@@ -494,7 +494,7 @@ function getVerboseJobDescription(job) {
 
 function renderVerboseJobDescription(job) {
   const content = getVerboseJobDescription(job);
-  const company = escapeHTML(job.companyName || 'Akross');
+  const company = escapeHTML(job.companyName || 'IntervieHire');
   const location = escapeHTML(job.location || 'Delhi, India');
   const role = escapeHTML(job.cardName || job.roleName || 'Untitled Role');
   const roleName = escapeHTML(job.roleName || 'Untitled Role');

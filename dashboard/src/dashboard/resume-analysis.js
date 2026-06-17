@@ -69,6 +69,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
   // Hydrate the in-memory cache from analyses persisted on candidates
   candidates.forEach(c => {
     if (!resumeAnalysisCache[c.id] && c.resumeAnalysis) resumeAnalysisCache[c.id] = c.resumeAnalysis;
+    if (!resumeTextCache[c.id] && c.resumeText) resumeTextCache[c.id] = c.resumeText;
   });
 
   const getMatchClass = (score) => {
@@ -695,6 +696,14 @@ async function runResumeAnalysis(cid, job, opts = {}) {
     }
   }
 
+  // Demo/seed candidates (and any analysed candidate whose text wasn't persisted
+  // before this fix) have no uploaded text and no link — regenerate synthetic
+  // text so "Reanalyse" works instead of failing on every row.
+  if ((!resumeText || isGarbageText(resumeText)) && candidate && !candidate.resumeLink) {
+    resumeText = generateSyntheticResume(candidate, job) || resumeText;
+    if (resumeText) resumeTextCache[cid] = resumeText;
+  }
+
   if (!resumeText || isGarbageText(resumeText)) {
     if (!quiet) showPremiumToast('Upload a resume, paste text, or add a valid public resume link.', 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
@@ -790,6 +799,7 @@ ${resumeText.slice(0, 5000)}`;
   if (cand) {
     cand.score = `${result.matchScore}%`;
     cand.resumeAnalysis = result;
+    cand.resumeText = resumeText; // persist so "Reanalyse" works after reloads
     saveStateToLocalStorage();
   }
   renderAnalysisResult(cid, result);
@@ -1135,6 +1145,80 @@ function formatSlot(dtLocal) {
 
 // opts: { mode: 'schedule' | 'reschedule', name, email, slotTime, count }
 // callback receives { start, end, timezone, slot } (slot is a friendly formatted start).
+// Compact custom date+time picker: a month calendar (click a day) + a time input.
+// Returns { el, getValue } where getValue() -> Date. Used in the schedule modal.
+function createDateTimePicker(initial) {
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  const sel = new Date(initial.getTime());
+  const view = new Date(initial.getFullYear(), initial.getMonth(), 1);
+
+  const el = document.createElement('div');
+  el.className = 'sdt';
+  const field = document.createElement('button');
+  field.type = 'button';
+  field.className = 'sdt-field';
+  const pop = document.createElement('div');
+  pop.className = 'sdt-pop';
+  pop.hidden = true;
+  el.appendChild(field);
+  el.appendChild(pop);
+
+  const fmtField = () => {
+    field.textContent = sel.toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+  const renderCal = () => {
+    const y = view.getFullYear(), m = view.getMonth();
+    const firstDow = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < firstDow; i++) cells += '<span class="sdt-day empty"></span>';
+    for (let d = 1; d <= days; d++) {
+      const on = sel.getFullYear() === y && sel.getMonth() === m && sel.getDate() === d;
+      cells += `<button type="button" class="sdt-day${on ? ' sel' : ''}" data-d="${d}">${d}</button>`;
+    }
+    pop.innerHTML = `
+      <div class="sdt-head">
+        <button type="button" class="sdt-nav" data-nav="-1" aria-label="Previous month">‹</button>
+        <span class="sdt-title">${MONTHS[m]} ${y}</span>
+        <button type="button" class="sdt-nav" data-nav="1" aria-label="Next month">›</button>
+      </div>
+      <div class="sdt-dow">${DOW.map(d => `<span>${d}</span>`).join('')}</div>
+      <div class="sdt-grid">${cells}</div>
+      <div class="sdt-time-row">
+        <label>Time</label>
+        <input type="time" class="sdt-time" value="${pad2(sel.getHours())}:${pad2(sel.getMinutes())}" />
+      </div>`;
+  };
+
+  field.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !pop.hidden;
+    el.closest('.schedule-modal')?.querySelectorAll('.sdt-pop').forEach(p => { p.hidden = true; });
+    if (!open) { renderCal(); pop.hidden = false; }
+  });
+  pop.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const nav = e.target.closest('.sdt-nav');
+    if (nav) { view.setMonth(view.getMonth() + Number(nav.dataset.nav)); renderCal(); return; }
+    const day = e.target.closest('.sdt-day');
+    if (day && day.dataset.d) {
+      sel.setFullYear(view.getFullYear(), view.getMonth(), Number(day.dataset.d));
+      fmtField(); renderCal();
+    }
+  });
+  pop.addEventListener('change', (e) => {
+    if (e.target.classList.contains('sdt-time')) {
+      const [h, mi] = e.target.value.split(':').map(Number);
+      sel.setHours(h || 0, mi || 0, 0, 0);
+      fmtField();
+    }
+  });
+
+  fmtField();
+  return { el, getValue: () => new Date(sel.getTime()) };
+}
+
 function openScheduleModal(opts, callback) {
   if (typeof opts === 'string') opts = { name: opts, mode: arguments[1] }, callback = arguments[2];
   const { mode = 'schedule', name = 'Candidate', email = '', slotTime = '', count = 1 } = opts || {};
@@ -1171,22 +1255,33 @@ function openScheduleModal(opts, callback) {
       <div class="schedule-form-group">
         <label>Enter Date &amp; Time</label>
         <div class="sched-range-row">
-          <input type="datetime-local" id="sched-start" value="${toLocalInputValue(start)}" />
+          <div id="sched-start-mount" class="sdt-mount"></div>
           <span class="sched-range-sep">to</span>
-          <input type="datetime-local" id="sched-end" value="${toLocalInputValue(end)}" />
+          <div id="sched-end-mount" class="sdt-mount"></div>
         </div>
       </div>
       <button class="btn-schedule-continue" id="sched-confirm">Continue</button>
     </div>`;
   document.body.appendChild(overlay);
+
+  const startPicker = createDateTimePicker(start);
+  const endPicker = createDateTimePicker(end);
+  overlay.querySelector('#sched-start-mount').appendChild(startPicker.el);
+  overlay.querySelector('#sched-end-mount').appendChild(endPicker.el);
+  const modalEl = overlay.querySelector('.schedule-modal');
+  modalEl.addEventListener('click', (e) => {
+    if (!e.target.closest('.sdt')) modalEl.querySelectorAll('.sdt-pop').forEach(p => { p.hidden = true; });
+  });
+
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.getElementById('sched-cancel').addEventListener('click', () => overlay.remove());
   document.getElementById('sched-confirm').addEventListener('click', () => {
-    const startV = document.getElementById('sched-start').value;
-    const endV = document.getElementById('sched-end').value;
+    const startDate = startPicker.getValue();
+    const endDate = endPicker.getValue();
     const timezone = document.getElementById('sched-tz').value;
-    if (!startV) { showPremiumToast('Please pick a start time.', 'error'); return; }
-    if (endV && endV < startV) { showPremiumToast('End time must be after the start time.', 'error'); return; }
+    if (endDate < startDate) { showPremiumToast('End time must be after the start time.', 'error'); return; }
+    const startV = toLocalInputValue(startDate);
+    const endV = toLocalInputValue(endDate);
     overlay.remove();
     if (callback) callback({ start: startV, end: endV, timezone, slot: formatSlot(startV) });
     soundEngine.playChime([523.25, 659.25], 0.15, 0.08);

@@ -186,13 +186,6 @@ function renderJobDetailPanes(job) {
         </div>
       `;
     } else {
-      const statusIcon = (status) => {
-        if (status === 'Completed') return '<span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span>';
-        if (status === 'Incomplete') return '<span class="status-chip incomplete"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg> Incomplete</span>';
-        if (status === 'Slot Missed') return '<span class="status-chip slot-missed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Slot Missed</span>';
-        return '<span class="status-chip">—</span>';
-      };
-
       const allScreeningCands = screeningCands;
       const displayScreeningCands = applyStageFilters(screeningCands, 'screening');
       const sf = AppState.stageFilters.screening;
@@ -244,7 +237,7 @@ function renderJobDetailPanes(job) {
                       </div>
                     </td>
                     <td>${c.phone ? escapeHTML(c.phone) : '—'}</td>
-                    <td>${statusIcon(c.interviewStatus)}</td>
+                    <td>${interviewStatusChip(c.interviewStatus)}</td>
                     <td>—</td>
                     <td>—</td>
                     <td>${hasReport ? `<a href="#" class="report-link" data-cand-id="${c.id}">Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '—'}</td>
@@ -351,7 +344,7 @@ function renderJobDetailPanes(job) {
                       </div>
                     </td>
                     <td>${c.phone ? escapeHTML(c.phone) : '—'}</td>
-                    <td><span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span></td>
+                    <td>${interviewStatusChip(c.interviewStatus)}</td>
                     <td><a href="#" class="report-link report-new" data-cand-id="${c.id}">Report <span class="new-badge">New</span> <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></td>
                     <td><span class="interview-score-dot ${scoreColor(c.interviewScore)}"></span> ${c.interviewScore != null ? c.interviewScore : '—'}</td>
                     <td><span class="cheat-prob-badge ${cheatColor(c.cheatProbability)}">${c.cheatProbability ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg> ' + c.cheatProbability : '—'}</span></td>
@@ -721,6 +714,21 @@ function renderJobDetailPanes(job) {
 // Recompute pipelines + refresh the job-detail tab counts, funnels and panes.
 // Shared by the single-candidate path (updateCandidateStatus) and the bulk
 // advance/reject path so stage counts never go stale after a stage change.
+// Single source of truth for the interview-status chip across stage panes.
+// A candidate with no recorded status reads as "Not Started" — never "Completed".
+function interviewStatusChip(status) {
+  const ic = (inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${inner}</svg>`;
+  const chip = (cls, svg, label) => `<span class="status-chip ${cls}">${svg} ${label}</span>`;
+  switch (status) {
+    case 'Completed': return chip('completed', ic('<polyline points="20 6 9 17 4 12"></polyline>'), 'Completed');
+    case 'Incomplete': return chip('incomplete', ic('<line x1="5" y1="12" x2="19" y2="12"></line>'), 'Incomplete');
+    case 'Evaluating': return chip('evaluating', ic('<path d="M21 12a9 9 0 1 1-6.219-8.56"></path>'), 'Evaluating');
+    case 'Attempting': return chip('attempting', ic('<circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline>'), 'Attempting');
+    case 'Slot Missed': return chip('slot-missed', ic('<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>'), 'Slot Missed');
+    default: return chip('not-started', ic('<circle cx="12" cy="12" r="9"></circle><line x1="8" y1="12" x2="16" y2="12"></line>'), 'Not Started');
+  }
+}
+
 function refreshAfterStageChange() {
   recalculateJobPipelines();
   updateSummaryMetrics();
