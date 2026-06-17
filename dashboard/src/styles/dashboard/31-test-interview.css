@@ -107,6 +107,16 @@
 .ti-launch-btn:active { transform: translateY(0); }
 .ti-launch-btn:disabled,
 .ti-launch-btn.is-loading { cursor: progress; opacity: 0.85; transform: none; filter: saturate(0.8); }
+.ti-launch-row { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Convai voice launch — secondary (outline) so the primary text-room launch stays dominant. */
+.ti-launch-convai {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  box-shadow: none;
+}
+.ti-launch-convai:hover { background: rgba(255, 255, 255, 0.08); box-shadow: none; filter: none; }
+.ti-launch-convai svg { stroke: var(--color-gold); }
 
 .ti-spinner {
   width: 13px;

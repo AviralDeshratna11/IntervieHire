@@ -69,11 +69,17 @@ export function renderTestInterviewPane(job, container) {
           </div>
 
           ${ready ? `
-            <button class="ti-launch-btn" id="ti-launch-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-              Launch test interview
-            </button>
-            <p class="ti-hint">Opens the candidate room in a new tab (<code>${escapeHTML(ENGINE_WEB_URL)}</code>).</p>
+            <div class="ti-launch-row">
+              <button class="ti-launch-btn" id="ti-launch-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                Launch test interview
+              </button>
+              <button class="ti-launch-btn ti-launch-convai" id="ti-launch-convai" title="Open the Convai voice/avatar interview room">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+                Launch (Convai voice)
+              </button>
+            </div>
+            <p class="ti-hint">Opens the candidate room in a new tab (<code>${escapeHTML(ENGINE_WEB_URL)}</code>). Convai voice mode uses the <code>/interview/convai</code> room.</p>
             <div class="ti-result" id="ti-result" hidden></div>
           ` : `
             <div class="ti-warn">
@@ -98,11 +104,15 @@ export function renderTestInterviewPane(job, container) {
 
   const launchBtn = container.querySelector('#ti-launch-btn');
   if (launchBtn) {
-    launchBtn.addEventListener('click', () => launchTestInterview(job, launchBtn, container));
+    launchBtn.addEventListener('click', () => launchTestInterview(job, launchBtn, container, '/interview'));
+  }
+  const convaiBtn = container.querySelector('#ti-launch-convai');
+  if (convaiBtn) {
+    convaiBtn.addEventListener('click', () => launchTestInterview(job, convaiBtn, container, '/interview/convai'));
   }
 }
 
-async function launchTestInterview(job, btn, container) {
+async function launchTestInterview(job, btn, container, routePath = '/interview') {
   soundEngine.playChime([392, 523.25], 0.1, 0.1);
   const original = btn.innerHTML;
   btn.disabled = true;
@@ -113,7 +123,7 @@ async function launchTestInterview(job, btn, container) {
     const sessionId = await apiCreateTestSession(job.id);
     if (!sessionId) throw new Error('No session id returned');
 
-    const url = `${ENGINE_WEB_URL}/interview?sessionId=${encodeURIComponent(sessionId)}`;
+    const url = `${ENGINE_WEB_URL}${routePath}?sessionId=${encodeURIComponent(sessionId)}`;
     const opened = window.open(url, '_blank');
 
     const result = container.querySelector('#ti-result');
