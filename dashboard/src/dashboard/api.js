@@ -64,7 +64,7 @@ export async function apiCreateTestSession(jobId) {
 }
 
 export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
-  const data = await request(`/applicants/${applicantId}/schedule`, {
+  const data = await request(`/jobs/applicants/${applicantId}/schedule`, {
     method: 'POST',
     body: {
       scheduled_at: scheduledAt,
