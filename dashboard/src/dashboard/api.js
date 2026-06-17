@@ -62,6 +62,17 @@ export async function apiCreateTestSession(jobId) {
   return data?.session_id || null;
 }
 
+export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
+  const data = await request(`/applicants/${applicantId}/schedule`, {
+    method: 'POST',
+    body: {
+      scheduled_at: scheduledAt,
+      stage: stage,
+    },
+  });
+  return mapApplicantOutToCandidate(data);
+}
+
 // ── Mappers: backend (snake_case) ⇄ dashboard (camelCase) ──────────────────
 const arr = (v) => (Array.isArray(v) ? v : []);
 

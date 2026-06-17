@@ -17,6 +17,7 @@ import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
+import { getDataSource, apiScheduleCandidate } from './api.js';
 
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
@@ -554,18 +555,43 @@ function renderJobDetailPanes(job) {
             refreshAfterStageChange();
             showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
           } else if (action === 'schedule' || action === 'reschedule') {
-            openScheduleModal({ mode: action, name: label, count: ids.length }, ({ start, end, timezone, slot }) => {
-              ids.forEach(cid => {
-                const cand = AppState.candidates.find(c => c.id === cid);
-                if (cand) {
-                  cand.attemptedAt = slot;
-                  cand.scheduledWindow = { start, end, timezone };
-                  cand.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
+            openScheduleModal({ mode: action, name: label, count: ids.length }, async ({ start, end, timezone, slot }) => {
+              if (getDataSource() === 'api') {
+                showPremiumToast(`Scheduling ${ids.length} candidate(s) and sending email invites...`, 'info');
+                try {
+                  const utcIso = new Date(start).toISOString();
+                  await Promise.all(ids.map(async (cid) => {
+                    const c2 = AppState.candidates.find(c => c.id === cid);
+                    if (!c2) return;
+                    const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
+                    const updated = await apiScheduleCandidate(cid, utcIso, stage);
+                    if (updated) {
+                      Object.assign(c2, updated);
+                    } else {
+                      c2.attemptedAt = slot;
+                      c2.scheduledWindow = { start, end, timezone };
+                      c2.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
+                    }
+                  }));
+                  saveStateToLocalStorage();
+                  renderJobDetailPanes(job);
+                  showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot} and email invites sent.`, 'success');
+                } catch (err) {
+                  showPremiumToast(`Failed to schedule candidates: ${err.message || err}`, 'error');
                 }
-              });
-              saveStateToLocalStorage();
-              renderJobDetailPanes(job);
-              showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot}.`, 'success');
+              } else {
+                ids.forEach(cid => {
+                  const cand = AppState.candidates.find(c => c.id === cid);
+                  if (cand) {
+                    cand.attemptedAt = slot;
+                    cand.scheduledWindow = { start, end, timezone };
+                    cand.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
+                  }
+                });
+                saveStateToLocalStorage();
+                renderJobDetailPanes(job);
+                showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot}.`, 'success');
+              }
             });
           } else if (action === 'export') {
             triggerExcelExport('candidates');
@@ -596,9 +622,31 @@ function renderJobDetailPanes(job) {
         const name = cand?.name || btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
         openScheduleModal(
           { mode, name, email: cand?.email || '', slotTime: cand?.attemptedAt || '' },
-          ({ start, end, timezone, slot }) => {
+          async ({ start, end, timezone, slot }) => {
             const c2 = AppState.candidates.find(c => c.id === candId);
-            if (c2) {
+            if (!c2) return;
+
+            if (getDataSource() === 'api') {
+              showPremiumToast(`Scheduling ${c2.name} and sending email invite...`, 'info');
+              try {
+                const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
+                const utcIso = new Date(start).toISOString();
+                const updated = await apiScheduleCandidate(candId, utcIso, stage);
+
+                if (updated) {
+                  Object.assign(c2, updated);
+                } else {
+                  c2.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
+                  c2.attemptedAt = slot;
+                  c2.scheduledWindow = { start, end, timezone };
+                }
+                saveStateToLocalStorage();
+                renderJobDetailPanes(job);
+                showPremiumToast(`${mode === 'reschedule' ? 'Rescheduled' : 'Scheduled'} ${c2.name} for ${slot} and email invite sent.`, 'success');
+              } catch (err) {
+                showPremiumToast(`Failed to schedule candidate: ${err.message || err}`, 'error');
+              }
+            } else {
               c2.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
               c2.attemptedAt = slot;
               c2.scheduledWindow = { start, end, timezone };
