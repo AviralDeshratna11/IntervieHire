@@ -1,5 +1,11 @@
 import '../../src/styles/dashboard/index.css';
 
-export default function DashboardCrystalLayout({ children }) {
+export const metadata = {
+  title: 'Dashboard · intervieHire',
+  description: 'intervieHire AI-powered talent acquisition dashboard.',
+};
+
+export default function DashboardLayout({ children }) {
   return <>{children}</>;
 }
+

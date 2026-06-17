@@ -6,6 +6,7 @@ import { openJobFlowView } from './job-flow.js';
 import { navigateToSourcing, removeCandidateFromQueue } from './sourcing.js';
 import { initSpotlightShortcuts } from './spotlight.js';
 import { initMountBindings } from './mount.js';
+import { initUrlSync } from './url-sync.js';
 import * as IHApi from './api.js';
 
 export function initDashboardPage() {
@@ -20,8 +21,11 @@ export function initDashboardPage() {
   window.removeCandidateFromQueue = removeCandidateFromQueue;
 
   initSpotlightShortcuts();
-  // DOM is already hydrated; the original runtime ran mount bindings on the next tick
+  // DOM is already hydrated; the original runtime ran mount bindings on the next tick.
+  // initUrlSync runs after initMountBindings so it can patch the window globals that
+  // mount.js/index.js expose and intercept sidebar clicks already bound by mount.js.
   setTimeout(initMountBindings, 0);
+  setTimeout(initUrlSync, 10);
 
   return () => {
     disposeRuntime();
