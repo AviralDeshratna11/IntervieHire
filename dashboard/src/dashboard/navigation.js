@@ -251,7 +251,7 @@ If you need more info, respond ONLY with this JSON (no extra text):
         status: 'draft',
         customJobId: '-',
         experienceBand: parsed.experienceBand || 'Upto 2 Years',
-        createdBy: 'Devasri',
+        createdBy: globalThis.IH_USER_NAME || 'You',
         description: parsed.description,
         questions: [],
         pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }

@@ -99,7 +99,7 @@ export const html = `
           <div class="user-profile">
             <div class="user-avatar">D</div>
             <div class="user-info">
-              <div class="user-name">Devasri</div>
+              <div class="user-name">Account</div>
               <div class="user-role">Org. Admin</div>
             </div>
             <button class="btn-logout" aria-label="Logout">
@@ -193,7 +193,7 @@ export const html = `
                 <span class="meta-label">Created by:</span>
                 <select class="meta-select" id="jobs-creator-select">
                   <option value="all">All</option>
-                  <option value="me">Devasri</option>
+                  <option value="me">Me</option>
                 </select>
               </div>
             </div>
@@ -1279,7 +1279,7 @@ export const html = `
             </div>
             <div class="form-group">
               <label for="job-creator-input">Created By</label>
-              <input type="text" id="job-creator-input" value="Devasri" readonly />
+              <input type="text" id="job-creator-input" value="" readonly />
             </div>
             <div class="form-group">
               <label for="job-description-input">Job Description</label>

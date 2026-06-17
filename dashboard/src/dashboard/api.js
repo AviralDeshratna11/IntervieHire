@@ -22,7 +22,8 @@ export const ENGINE_WEB_URL = (typeof process !== 'undefined' && process.env && 
   || 'http://localhost:3001';
 
 export function getDataSource() {
-  try { return localStorage.getItem(LS_SOURCE) === 'api' ? 'api' : 'local'; } catch { return 'local'; }
+  // Default to 'api' (live backend); only stay local if explicitly opted in.
+  try { return localStorage.getItem(LS_SOURCE) === 'local' ? 'local' : 'api'; } catch { return 'api'; }
 }
 export function setDataSource(mode) {
   try { localStorage.setItem(LS_SOURCE, mode === 'api' ? 'api' : 'local'); } catch {}

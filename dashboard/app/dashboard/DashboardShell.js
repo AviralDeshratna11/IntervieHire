@@ -154,6 +154,12 @@ export default function DashboardShell({ children }) {
 
     const firstName = label.split(/\s+/)[0] || label;
     window.IH_USER_NAME = firstName;
+
+    // Personalise the "Created By" defaults so they show the signed-in user.
+    const creatorInput = document.getElementById('job-creator-input');
+    if (creatorInput) creatorInput.value = label;
+    const creatorOpt = document.querySelector('#jobs-creator-select option[value="me"]');
+    if (creatorOpt) creatorOpt.textContent = label;
     const titleEl = document.getElementById('header-main-title');
     if (titleEl && /^good (morning|afternoon|evening)/i.test((titleEl.textContent || '').trim())) {
       titleEl.textContent = typeof window.__ihBuildGreeting === 'function'

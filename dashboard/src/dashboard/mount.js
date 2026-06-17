@@ -623,7 +623,7 @@ function initMountBindings() {
         status: 'draft',
         customJobId: customId,
         experienceBand: expBand,
-        createdBy: 'Devasri',
+        createdBy: globalThis.IH_USER_NAME || 'You',
         description: description || "No job description provided.",
         questions: [],
         pipeline: {
@@ -1155,7 +1155,7 @@ Return ONLY valid JSON:
           status: 'draft',
           customJobId: '-',
           experienceBand: parsed.experienceBand || 'Upto 2 Years',
-          createdBy: 'Devasri',
+          createdBy: globalThis.IH_USER_NAME || 'You',
           description: parsed.description || textToProcess.slice(0, 500),
           questions: [],
           pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }

@@ -53,7 +53,7 @@ function renderJobCards() {
     card.className = 'job-card';
     
     // Build safe defaults for all fields
-    const createdBy = job.createdBy || 'Devasri';
+    const createdBy = job.createdBy || globalThis.IH_USER_NAME || 'You';
     const experienceBand = job.experienceBand || 'Upto 2 Years';
     const created = job.created || 'Recently';
     const pipeline = job.pipeline || { total: 0, resume: 0, screening: 0, functional: 0 };

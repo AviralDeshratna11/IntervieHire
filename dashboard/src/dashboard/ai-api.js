@@ -113,7 +113,7 @@ function loadStateFromLocalStorage() {
         status: pj.status || 'published',
         customJobId: pj.customJobId || '-',
         experienceBand: pj.experienceBand || (hardcodedDefault ? hardcodedDefault.experienceBand : 'Upto 2 Years'),
-        createdBy: pj.createdBy || (hardcodedDefault ? hardcodedDefault.createdBy : 'Devasri'),
+        createdBy: pj.createdBy || (hardcodedDefault ? hardcodedDefault.createdBy : (globalThis.IH_USER_NAME || 'You')),
         description: pj.description || fallbackDesc,
         questions: pj.questions || fallbackQuestions,
         pipeline: pj.pipeline || fallbackPipeline
