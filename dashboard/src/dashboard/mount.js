@@ -18,7 +18,7 @@ import { soundEngine } from './sound.js';
 import { initSourcing, navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { renderSpotlightResults, SpotlightCommands, spotlightUi, toggleSpotlightModal } from './spotlight.js';
 import { AppState, generateJobId } from './state.js';
-import { apiCreateJob, apiPatchJobParameters, isApiMode, getDataSource } from './api.js';
+import { apiCreateJob, apiPatchJobParameters, isApiMode, getDataSource, apiInviteMember, apiUpdateOrganisation } from './api.js';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -725,7 +725,7 @@ function initMountBindings() {
 
   // 2. Invite Team Member Submission
   const inviteMemberForm = document.getElementById('form-invite-member');
-  inviteMemberForm.addEventListener('submit', (e) => {
+  inviteMemberForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const name = document.getElementById('member-name-input').value;
@@ -733,16 +733,42 @@ function initMountBindings() {
     const designation = document.getElementById('member-designation-input').value;
     const usertype = document.getElementById('member-role-input').value;
 
-    const newMember = {
-      name: name,
-      email: email,
-      designation: designation,
-      usertype: usertype,
-      registeredOn: new Date().toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-      status: 'Invited'
-    };
+    const submitBtn = inviteMemberForm.querySelector('button[type="submit"]');
+    const originalText = submitBtn ? submitBtn.textContent : '';
 
-    AppState.team.push(newMember);
+    if (isApiMode()) {
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Inviting...';
+      }
+      try {
+        const newMember = await apiInviteMember(name, email, designation, usertype);
+        AppState.team.push(newMember);
+      } catch (err) {
+        console.error('Failed to invite team member:', err);
+        showPremiumToast(`Could not invite team member: ${err.message}`, 'error');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
+        }
+        return;
+      }
+    } else {
+      const newMember = {
+        name: name,
+        email: email,
+        designation: designation,
+        usertype: usertype,
+        registeredOn: new Date().toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+        status: 'Invited'
+      };
+      AppState.team.push(newMember);
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
 
     // Refresh display
     renderTeamTable();
@@ -754,16 +780,38 @@ function initMountBindings() {
   });
 
   // 3. Settings Forms (Mock updates with inline alerts)
-  document.getElementById('career-settings-form')?.addEventListener('submit', (e) => {
+  document.getElementById('career-settings-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     soundEngine.playChime([523.25], 0.15);
     const domainName = document.getElementById('career-subdomain').value;
+    const introText = document.getElementById('career-intro')?.value || 'Build the future of technology with us.';
     const statusLink = document.querySelector('.status-link');
-    statusLink.textContent = `IntervieHire.com/careers/${domainName} ↗`;
-    statusLink.href = `https://IntervieHire.com/careers/${domainName}`;
+    statusLink.textContent = `interviehire.com/careers/${domainName} ↗`;
+    statusLink.href = `https://interviehire.com/careers/${domainName}`;
     
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const origText = submitBtn.textContent;
+    
+    if (isApiMode()) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving...';
+      try {
+        await apiUpdateOrganisation({
+          org_name: window.IH_ORG_NAME,
+          domain: domainName,
+          description: introText
+        });
+        window.IH_ORG_DOMAIN = domainName;
+      } catch (err) {
+        console.error('Failed to update organisation details:', err);
+        showPremiumToast(`Could not save career settings: ${err.message}`, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = origText;
+        return;
+      }
+    }
+    
+    submitBtn.disabled = false;
     submitBtn.textContent = '✓ Saved Settings!';
     submitBtn.style.background = 'var(--color-success)';
     submitBtn.style.color = '#fff';

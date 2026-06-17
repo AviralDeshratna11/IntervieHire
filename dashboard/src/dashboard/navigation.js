@@ -20,6 +20,7 @@ import { renderAnalyticsTable, renderJobCards, renderTeamTable, updateSummaryMet
 import { soundEngine } from './sound.js';
 import { AppState, generateJobId } from './state.js';
 import { pushUrl } from './url-sync.js';
+import { isApiMode, apiFetchTeam, apiFetchUsageCandidates, apiFetchOrganisation } from './api.js';
 
 // ==========================================
 // VIEW SWITCHER ROUTING
@@ -92,8 +93,19 @@ function navigateToTab(tabId) {
     subText.textContent = 'Track applicants funnel metrics and pipelines';
     actionBtnText.textContent = 'New Job';
     document.getElementById('view-analytics').classList.add('active-view');
-    updateSummaryMetrics();
-    renderAnalyticsTable();
+    
+    if (isApiMode()) {
+      apiFetchUsageCandidates().then(candidates => {
+        AppState.candidates = candidates;
+        updateSummaryMetrics();
+        renderAnalyticsTable();
+      }).catch(err => {
+        console.error("Failed to fetch usage candidates:", err);
+      });
+    } else {
+      updateSummaryMetrics();
+      renderAnalyticsTable();
+    }
     soundEngine.playChime([261.63, 329.63, 392.00], 0.12, 0.12);
 
   } else if (tabId === 'swarm') {
@@ -108,10 +120,20 @@ function navigateToTab(tabId) {
   } else if (tabId === 'team') {
     breadcrumb.textContent = 'Team Access';
     mainTitle.textContent = 'Team Access Settings';
-    subText.textContent = 'Manage organisation access, usertypes, and invite collaborators';
+    subText.textContent = `Manage organisation access, usertypes, and invite collaborators for ${window.IH_ORG_NAME || 'your organisation'}`;
     actionBtnText.textContent = 'Invite Member';
     document.getElementById('view-team').classList.add('active-view');
-    renderTeamTable();
+    
+    if (isApiMode()) {
+      apiFetchTeam().then(team => {
+        AppState.team = team;
+        renderTeamTable();
+      }).catch(err => {
+        console.error("Failed to fetch team:", err);
+      });
+    } else {
+      renderTeamTable();
+    }
     soundEngine.playChime([261.63, 329.63, 493.88], 0.15, 0.12);
 
   } else if (tabId === 'career') {
@@ -120,6 +142,39 @@ function navigateToTab(tabId) {
     subText.textContent = 'Design corporate listings page appearance and themes';
     actionBtn.style.display = 'none'; // No primary CTA for career config page
     document.getElementById('view-career').classList.add('active-view');
+    
+    if (isApiMode()) {
+      apiFetchOrganisation().then(org => {
+        if (org) {
+          window.IH_ORG_NAME = (org.org_name || '').trim();
+          window.IH_ORG_DOMAIN = (org.domain || '').trim();
+          
+          const domainName = window.IH_ORG_DOMAIN || 'devasri-tech';
+          const subDomInput = document.getElementById('career-subdomain');
+          if (subDomInput) subDomInput.value = domainName;
+          
+          const introInput = document.getElementById('career-intro');
+          if (introInput) introInput.value = org.description || 'Build the future of technology with us.';
+          
+          const statusLink = document.querySelector('.status-link');
+          if (statusLink) {
+            statusLink.textContent = `interviehire.com/careers/${domainName} ↗`;
+            statusLink.href = `https://interviehire.com/careers/${domainName}`;
+          }
+        }
+      }).catch(err => {
+        console.error("Failed to fetch organisation details for career page:", err);
+      });
+    } else {
+      const domainName = 'devasri-tech';
+      const subDomInput = document.getElementById('career-subdomain');
+      if (subDomInput) subDomInput.value = domainName;
+      const statusLink = document.querySelector('.status-link');
+      if (statusLink) {
+        statusLink.textContent = `interviehire.com/careers/${domainName} ↗`;
+        statusLink.href = `https://interviehire.com/careers/${domainName}`;
+      }
+    }
     soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.15);
   }
 }

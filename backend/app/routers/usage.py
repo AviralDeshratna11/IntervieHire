@@ -184,6 +184,7 @@ def get_candidates_table(
             "phone": a.phone,
             "source": a.source,
             "job_id": str(a.job_id),
+            "job_role_title": a.job.role_name or a.job.title if a.job else "",
             "screening_status": a.screening_status,
             "screening_score": a.screening_score,
             "functional_status": a.functional_status,

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { initDashboardPage } from '../../src/dashboard/index.js';
 import { html } from '../../src/html/dashboard-crystal';
 import { apiMe, apiLogout, isAuthed, clearAuthed } from '../../src/auth-client.js';
+import { apiFetchOrganisation } from '../../src/dashboard/api.js';
 
 const ROLE_LABEL = { super_admin: 'Admin', org_admin: 'Org. Admin', member: 'Member' };
 
@@ -158,7 +159,21 @@ export default function DashboardShell({ children }) {
 
     const firstName = label.split(/\s+/)[0] || label;
     window.IH_USER_NAME = firstName;
+    window.IH_USER_FULLNAME = label;
+    window.IH_USER_EMAIL = user.email;
     window.IH_ORG_NAME = (user.organisation_name || '').trim();
+
+    // Fetch live organisation details if available
+    apiFetchOrganisation()
+      .then((org) => {
+        if (org) {
+          window.IH_ORG_NAME = (org.org_name || '').trim();
+          window.IH_ORG_DOMAIN = (org.domain || '').trim();
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch organisation details:", err);
+      });
 
     // Personalise the "Created By" defaults so they show the signed-in user.
     const creatorInput = document.getElementById('job-creator-input');

@@ -9,7 +9,7 @@ import { openCandidateReport } from './report.js';
 import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource } from './api.js';
+import { getDataSource, isApiMode, apiRemoveMember } from './api.js';
 
 // ==========================================
 // RENDERING & INTERACTIVE VIEWS
@@ -504,23 +504,25 @@ function renderTeamTable() {
     if (member.status === 'Invited') statusClass = 'draft';
     else if (member.status === 'Inactive') statusClass = 'archived';
     
+    const isMe = member.email === (globalThis.IH_USER_EMAIL || 'devasri@interviehire.ai');
+    
     let cellsHtml = '';
     if (visible.includes('member')) {
       cellsHtml += `
         <td>
           <div class="user-cell">
-            <div class="user-avatar-mini" style="background-color: var(--color-gold-dim); border-color: var(--color-gold); color: var(--color-gold-light);">${member.name.charAt(0)}</div>
+            <div class="user-avatar-mini" style="background-color: var(--color-gold-dim); border-color: var(--color-gold); color: var(--color-gold-light);">${member.name ? member.name.charAt(0) : ''}</div>
             <div class="user-details">
-              <span style="font-weight: 600;">${member.name} ${member.name === 'Devasri' ? '(me)' : ''}</span>
+              <span style="font-weight: 600;">${member.name} ${isMe ? '(me)' : ''}</span>
               <span class="user-email-mini">${member.email}</span>
             </div>
           </div>
         </td>
       `;
     }
-    if (visible.includes('designation')) cellsHtml += `<td>${member.designation}</td>`;
+    if (visible.includes('designation')) cellsHtml += `<td>${member.designation || ''}</td>`;
     if (visible.includes('usertype')) {
-      if (member.name === 'Devasri') {
+      if (isMe) {
         cellsHtml += `
           <td>
             <span class="badge-role">
@@ -532,7 +534,7 @@ function renderTeamTable() {
       } else {
         cellsHtml += `
           <td>
-            <select class="select-styled-table team-usertype-select" data-email="${member.email}">
+            <select class="select-styled-table team-usertype-select" data-email="${member.email}" ${member._backend ? 'disabled' : ''}>
               <option value="Org. Admin" ${member.usertype === 'Org. Admin' ? 'selected' : ''}>Org. Admin</option>
               <option value="Recruiter" ${member.usertype === 'Recruiter' ? 'selected' : ''}>Recruiter</option>
               <option value="Interviewer" ${member.usertype === 'Interviewer' ? 'selected' : ''}>Interviewer</option>
@@ -543,7 +545,7 @@ function renderTeamTable() {
     }
     if (visible.includes('registeredOn')) cellsHtml += `<td class="cell-mono">${member.registeredOn}</td>`;
     if (visible.includes('status')) {
-      if (member.name === 'Devasri') {
+      if (isMe) {
         cellsHtml += `
           <td>
             <span class="status-badge published">
@@ -555,7 +557,7 @@ function renderTeamTable() {
       } else {
         cellsHtml += `
           <td>
-            <select class="select-styled-table team-status-select" data-email="${member.email}">
+            <select class="select-styled-table team-status-select" data-email="${member.email}" ${member._backend ? 'disabled' : ''}>
               <option value="Active" ${member.status === 'Active' ? 'selected' : ''}>Active</option>
               <option value="Inactive" ${member.status === 'Inactive' ? 'selected' : ''}>Inactive</option>
               <option value="Invited" ${member.status === 'Invited' ? 'selected' : ''}>Invited</option>
@@ -567,7 +569,7 @@ function renderTeamTable() {
     if (visible.includes('actions')) {
       cellsHtml += `
         <td>
-          <button class="table-btn-action btn-revoke-member" data-email="${member.email}" style="color: var(--color-orange);" title="Deactivate/Revoke Member" ${member.name === 'Devasri' ? 'disabled style="opacity: 0.2; cursor: not-allowed;"' : ''}>
+          <button class="table-btn-action btn-revoke-member" data-email="${member.email}" style="color: var(--color-orange);" title="Deactivate/Revoke Member" ${isMe ? 'disabled style="opacity: 0.2; cursor: not-allowed;"' : ''}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
           </button>
         </td>
@@ -606,10 +608,24 @@ function renderTeamTable() {
   });
 
   tbody.querySelectorAll('.btn-revoke-member').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const email = btn.getAttribute('data-email');
       const member = AppState.team.find(m => m.email === email);
       if (member) {
+        if (isApiMode() && member.id) {
+          const originalHTML = btn.innerHTML;
+          btn.disabled = true;
+          btn.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:5px;vertical-align:middle;"></span>`;
+          try {
+            await apiRemoveMember(member.id);
+          } catch (err) {
+            console.error('Failed to revoke member:', err);
+            showPremiumToast(`Could not revoke member: ${err.message}`, 'error');
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            return;
+          }
+        }
         AppState.team = AppState.team.filter(m => m.email !== email);
         soundEngine.playChime([392, 293.66], 0.15, 0.08);
         showPremiumToast(`${member.name} has been revoked from the team access list.`, 'success');

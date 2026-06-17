@@ -220,3 +220,63 @@ function mapFullReportToCandidateReport(data) {
   if (data.evaluated && report && Array.isArray(report.questionBreakdown)) return report;
   return null;
 }
+
+// ── Team ─────────────────────────────────────────────────────────────────
+export async function apiFetchTeam() {
+  const data = await request('/team');
+  const members = Array.isArray(data) ? data : (data?.members || []);
+  return members.map(mapUserOutToMember);
+}
+
+export async function apiInviteMember(name, email, designation, usertype) {
+  const user_type = (usertype === 'Org. Admin') ? 'org_admin' : 'member';
+  const body = { name, email, designation, user_type };
+  const data = await request('/team/invite', { method: 'POST', body });
+  return mapUserOutToMember(data);
+}
+
+export async function apiRemoveMember(userId) {
+  return request(`/team/${userId}`, { method: 'DELETE' });
+}
+
+// ── Usage/Analytics Candidates ───────────────────────────────────────────
+export async function apiFetchUsageCandidates() {
+  const data = await request('/usage/candidates-table');
+  const list = Array.isArray(data) ? data : [];
+  return list.map(mapApplicantOutToCandidate);
+}
+
+// ── Organisation ──────────────────────────────────────────────────────────
+export async function apiFetchOrganisation() {
+  return request('/organisation');
+}
+
+export async function apiUpdateOrganisation(orgDetails) {
+  return request('/organisation', { method: 'PUT', body: orgDetails });
+}
+
+function mapUserOutToMember(m = {}) {
+  let usertype = 'Recruiter';
+  if (m.user_type === 'org_admin' || m.user_type === 'super_admin') {
+    usertype = 'Org. Admin';
+  } else if (m.designation && /interview/i.test(m.designation)) {
+    usertype = 'Interviewer';
+  }
+  
+  const statusMap = {
+    active: 'Active',
+    invited: 'Invited',
+    inactive: 'Inactive'
+  };
+
+  return {
+    id: m.id,
+    name: m.name,
+    email: m.email,
+    designation: m.designation || '',
+    usertype: usertype,
+    registeredOn: m.registered_on ? new Date(m.registered_on).toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—',
+    status: statusMap[m.status] || 'Active',
+    _backend: true
+  };
+}
