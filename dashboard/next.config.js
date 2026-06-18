@@ -11,6 +11,7 @@ const BACKEND_API_PREFIXES = [
   'auth', 'jobs', 'team', 'organisation', 'usage', 'settings', 'public', 'leaderboard',
 ];
 
+
 const nextConfig = {
   serverExternalPackages: ['@napi-rs/canvas'],
   async rewrites() {

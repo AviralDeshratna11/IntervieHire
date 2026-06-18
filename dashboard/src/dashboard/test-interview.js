@@ -56,7 +56,7 @@ export function renderTestInterviewPane(job, container) {
     if (demoBtn) {
       demoBtn.addEventListener('click', () => {
         soundEngine.playChime([392, 523.25], 0.1, 0.1);
-        embedInterviewRoom(job, container, `${ENGINE_WEB_URL}/interview`, roleLabelLocal);
+        embedInterviewRoom(job, container, '/interview', roleLabelLocal);
         showPremiumToast('Test interview started inside the portal.', 'success');
       });
     }
@@ -141,7 +141,7 @@ export function renderTestInterviewPane(job, container) {
     openRoomBtn.addEventListener('click', () => {
       soundEngine.playChime([392, 523.25], 0.1, 0.1);
       const roleLabelOpen = escapeHTML(job.cardName || job.roleName || 'this role');
-      embedInterviewRoom(job, container, `${ENGINE_WEB_URL}/interview`, roleLabelOpen);
+      embedInterviewRoom(job, container, '/interview', roleLabelOpen);
       showPremiumToast('Candidate room opened inside the portal.', 'success');
     });
   }
@@ -158,7 +158,7 @@ async function launchTestInterview(job, btn, container) {
     const sessionId = await apiCreateTestSession(job.id);
     if (!sessionId) throw new Error('No session id returned');
 
-    const url = `${ENGINE_WEB_URL}/interview?sessionId=${encodeURIComponent(sessionId)}`;
+    const url = `/interview?sessionId=${encodeURIComponent(sessionId)}`;
     embedInterviewRoom(job, container, url, escapeHTML(job.cardName || job.roleName || 'this role'));
     showPremiumToast('Test interview started inside the portal.', 'success');
     soundEngine.playChime([523.25, 659.25, 783.99], 0.14, 0.08);
