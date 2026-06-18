@@ -61,6 +61,18 @@ export async function apiPatchJobParameters(id, job) {
   const body = mapJobToParametersPayload(job);
   return request(`/jobs/${id}/parameters`, { method: 'PATCH', body });
 }
+
+// Debounced backend autosave for job parameters (scoring config, criteria, flow,
+// questions). Any feature that mutates a job calls this right after
+// saveStateToLocalStorage(); no-op outside API mode or for local-only jobs.
+const _jobSaveTimers = {};
+export function scheduleJobSave(job) {
+  if (getDataSource() !== 'api' || !job || !job._backend || !job.id) return;
+  clearTimeout(_jobSaveTimers[job.id]);
+  _jobSaveTimers[job.id] = setTimeout(() => {
+    apiPatchJobParameters(job.id, job).catch((e) => console.warn('Job sync failed:', e));
+  }, 800);
+}
 export async function apiFetchApplicants(jobId, tab = 'functional') {
   const data = await request(`/jobs/${jobId}/responses?tab=${encodeURIComponent(tab)}`);
   const list = Array.isArray(data) ? data : (data?.applicants || data?.data || []);
@@ -109,6 +121,14 @@ export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'sc
   return mapApplicantOutToCandidate(data);
 }
 
+// Persist a partial applicant update (resume score/report, shortlist flag, etc.)
+// to the backend. `patch` keys are backend snake_case (ApplicantUpdateIn). The
+// route ignores unset fields, so send only what changed. Returns the mapped row.
+export async function apiUpdateApplicant(applicantId, patch) {
+  const data = await request(`/jobs/applicants/${applicantId}`, { method: 'PATCH', body: patch });
+  return mapApplicantOutToCandidate(data);
+}
+
 // ── Mappers: backend (snake_case) ⇄ dashboard (camelCase) ──────────────────
 const arr = (v) => (Array.isArray(v) ? v : []);
 
@@ -131,6 +151,7 @@ function mapJobOutToJob(j = {}) {
       goodToHave: arr(rp.good_to_have || rp.goodToHave),
       goodToHaveMinMatch: rp.good_to_have_min_match ?? 1,
     },
+    scoringConfig: rp.scoring_config || undefined,
     screeningParams: mapScreeningParamsIn(j.screening_parameters),
     screeningBlueprint: { questions: arr(j.screening_questions).map((q) => createQuestionBlueprint({ prompt: typeof q === 'string' ? q : q.text, questionType: 'hr_screening', difficulty: 'Easy' })) },
     functionalParameters: mapFunctionalIn(j.functional_parameters),
@@ -196,7 +217,12 @@ function mapJobToParametersPayload(job) {
   return {
     screening_questions: toScreeningQuestions(sb),
     functional_parameters: toFunctionalParameters(fp),
-    resume_parameters: { must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave) },
+    // scoring_config rides inside resume_parameters (a freeform JSON column) so the
+    // recruiter's weights/criteria persist without a schema change.
+    resume_parameters: {
+      must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave),
+      ...(job.scoringConfig ? { scoring_config: job.scoringConfig } : {}),
+    },
   };
 }
 
@@ -226,7 +252,15 @@ function mapSource(s) {
 }
 
 function mapApplicantOutToCandidate(a = {}) {
-  const status = a.functional_status ? 'Functional' : (a.screening_status ? 'Screening' : 'Resume');
+  // decision (the recruiter's explicit call) wins over derived stage so Hired/Rejected
+  // and a pre-schedule shortlist survive a refetch. 'shortlisted' shows as Screening
+  // (advanced past resume); exact Screening-vs-Functional persists once scheduled.
+  const status = a.decision === 'hired' ? 'Hired'
+    : a.decision === 'rejected' ? 'Rejected'
+    : a.functional_status ? 'Functional'
+    : a.screening_status ? 'Screening'
+    : a.decision === 'shortlisted' ? 'Screening'
+    : 'Resume';
   const rawInterviewStatus = status === 'Functional' ? a.functional_status : (status === 'Screening' ? a.screening_status : null);
   return {
     id: a.id,
@@ -239,6 +273,7 @@ function mapApplicantOutToCandidate(a = {}) {
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
+    decision: a.decision ?? null,
     _backend: true,
   };
 }
