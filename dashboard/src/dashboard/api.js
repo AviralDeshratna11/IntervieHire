@@ -252,7 +252,15 @@ function mapSource(s) {
 }
 
 function mapApplicantOutToCandidate(a = {}) {
-  const status = a.functional_status ? 'Functional' : (a.screening_status ? 'Screening' : 'Resume');
+  // decision (the recruiter's explicit call) wins over derived stage so Hired/Rejected
+  // and a pre-schedule shortlist survive a refetch. 'shortlisted' shows as Screening
+  // (advanced past resume); exact Screening-vs-Functional persists once scheduled.
+  const status = a.decision === 'hired' ? 'Hired'
+    : a.decision === 'rejected' ? 'Rejected'
+    : a.functional_status ? 'Functional'
+    : a.screening_status ? 'Screening'
+    : a.decision === 'shortlisted' ? 'Screening'
+    : 'Resume';
   const rawInterviewStatus = status === 'Functional' ? a.functional_status : (status === 'Screening' ? a.screening_status : null);
   return {
     id: a.id,
@@ -265,6 +273,7 @@ function mapApplicantOutToCandidate(a = {}) {
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
+    decision: a.decision ?? null,
     _backend: true,
   };
 }
