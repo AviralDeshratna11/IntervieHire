@@ -472,7 +472,6 @@ async function evaluateSingleAnswerWithDeepSeek(
   prepared: PreparedAnswer,
 ): Promise<EvalResponseEvaluation> {
   const response = await callDeepSeekJson<unknown>({
-    task: 'evaluation',
     systemInstruction: EVALUATION_SYSTEM_INSTRUCTION,
     prompt: buildSingleAnswerEvaluationPrompt(context, prepared),
     maxOutputTokens: Number(process.env.DEEPSEEK_ANSWER_EVALUATION_MAX_TOKENS || 4000),
@@ -551,7 +550,6 @@ async function evaluatePreparedAnswersWithDeepSeek(
   preparedAnswers: PreparedAnswer[],
 ): Promise<EvalResponseEvaluation[]> {
   const response = await callDeepSeekJson<LlmEvaluationResponse>({
-    task: 'evaluation',
     systemInstruction: EVALUATION_SYSTEM_INSTRUCTION,
     prompt: buildBatchEvaluationPrompt(context, preparedAnswers),
     maxOutputTokens: Number(process.env.DEEPSEEK_EVALUATION_MAX_TOKENS || 12000),
