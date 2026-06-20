@@ -12,9 +12,9 @@ const MAX_MESSAGES = 30;          // cap conversation length forwarded upstream
 const MAX_TOTAL_CHARS = 50_000;   // cap total prompt size forwarded upstream
 
 // Mixture-of-experts allowlist — callers pick a model per task; we never forward
-// an arbitrary model string at the paid key. deepseek-reasoner = stronger
-// judgment, but it ignores temperature and does NOT support JSON mode.
-const ALLOWED_MODELS = new Set(['deepseek-chat', 'deepseek-reasoner']);
+// an arbitrary model string at the paid key. v4-pro = stronger judgement,
+// v4-flash = fast/light (both support JSON mode + temperature).
+const ALLOWED_MODELS = new Set(['deepseek-v4-pro', 'deepseek-v4-flash']);
 
 // In-memory limiter. Adequate as a basic guard, but it only protects a single
 // warm serverless instance and resets on cold start — for real protection back
@@ -60,14 +60,9 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Prompt too large' }, { status: 413 });
     }
 
-    const useModel = ALLOWED_MODELS.has(model) ? model : 'deepseek-chat';
-    const payload = { model: useModel, messages, max_tokens: 3000 };
-    // deepseek-reasoner rejects temperature + response_format; the client extracts
-    // JSON from its content instead (parseAIJson). Only chat gets JSON mode.
-    if (useModel !== 'deepseek-reasoner') {
-      payload.temperature = 0.7;
-      if (jsonMode) payload.response_format = { type: 'json_object' };
-    }
+    const useModel = ALLOWED_MODELS.has(model) ? model : 'deepseek-v4-flash';
+    const payload = { model: useModel, messages, temperature: 0.7, max_tokens: 3000 };
+    if (jsonMode) payload.response_format = { type: 'json_object' };
 
     const upstream = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',

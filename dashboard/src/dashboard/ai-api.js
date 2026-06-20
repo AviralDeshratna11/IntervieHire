@@ -138,16 +138,15 @@ function loadStateFromLocalStorage() {
 
 // Mixture-of-experts routing: each task maps to the model best suited to it.
 // This single map IS the routing "infra" — callers pass a task, nothing else
-// changes. ponytail: deepseek-reasoner = stronger judgment but slower + no JSON
-// mode (the proxy drops response_format; parseAIJson extracts). Flip a task back
-// to 'deepseek-chat' here if its latency/cost bites — one line, no other edits.
+// changes. v4-pro = stronger judgement, v4-flash = fast/light. Flip a task's
+// model here in one line; the proxy allowlist (route.js) must include it.
 const MODEL_BY_TASK = {
-  default: 'deepseek-chat',
-  resumeExtract: 'deepseek-chat',   // pull facts — cheap + fast
-  resumeScore: 'deepseek-reasoner', // the judgment — let it reason
-  resumeCritique: 'deepseek-chat',  // narrative + sanity pass
+  default: 'deepseek-v4-flash',
+  resumeExtract: 'deepseek-v4-flash',  // pull facts — fast + light
+  resumeScore: 'deepseek-v4-pro',      // the judgement — the stronger model
+  resumeCritique: 'deepseek-v4-flash', // narrative + sanity pass
 };
-const SLOW_MODELS = new Set(['deepseek-reasoner']); // reasoner can take >35s
+const SLOW_MODELS = new Set(['deepseek-v4-pro']); // pro tier may take longer
 
 async function callDeepSeekAPI(messages, jsonMode = false, task = 'default') {
   const model = MODEL_BY_TASK[task] || MODEL_BY_TASK.default;
