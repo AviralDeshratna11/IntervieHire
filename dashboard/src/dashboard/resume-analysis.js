@@ -668,18 +668,12 @@ ${JSON.stringify(extract)}` },
   };
 }
 
-async function runResumeAnalysis(cid, job, opts = {}) {
-  const quiet = opts.quiet === true;
-  const pasteArea = document.getElementById(`ra-paste-${cid}`);
-  const btn = document.getElementById(`ra-btn-${cid}`);
-  const origHTML = btn ? btn.innerHTML : '';
-  let resumeText = ((resumeTextCache[cid] || '') + '\n' + (pasteArea?.value || '')).trim();
-  const candidate = AppState.candidates.find(c => c.id === cid);
-
-  // Candidates imported via CSV/Excel carry a resume link but no uploaded text.
-  // Fetch + extract the linked doc server-side (public Google Docs/Drive) first.
-  if ((!resumeText || isGarbageText(resumeText)) && candidate?.resumeLink) {
-    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="ra-spinner"></span> Fetching…`; }
+// Resolve a candidate's resume text from the fastest source available: cached
+// upload/paste, else a fetched public link, else the backend's stored copy.
+// Returns '' when nothing usable is found. Pure I/O — no LLM.
+async function ensureResumeText(cid, candidate) {
+  let text = ((resumeTextCache[cid] || '') + '\n' + (document.getElementById(`ra-paste-${cid}`)?.value || '')).trim();
+  if ((!text || isGarbageText(text)) && candidate?.resumeLink) {
     try {
       const res = await fetch('/api/fetch-doc', {
         method: 'POST',
@@ -687,33 +681,50 @@ async function runResumeAnalysis(cid, job, opts = {}) {
         body: JSON.stringify({ url: candidate.resumeLink }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.text) {
-        resumeTextCache[cid] = data.text;
-        resumeText = data.text.trim();
-      } else if (!quiet) {
-        showPremiumToast(data.error || 'Could not fetch the linked resume.', 'error');
-      }
-    } catch {
-      if (!quiet) showPremiumToast('Could not fetch the linked resume.', 'error');
-    }
+      if (res.ok && data.text) { resumeTextCache[cid] = data.text; text = data.text.trim(); }
+    } catch { /* fall through to the no-text path */ }
   }
-
-  // Backend candidates carry no local resume text (it lives server-side). Pull the
-  // real parsed text instead of fabricating one, so the score reflects the actual
-  // resume rather than synthetic filler.
-  if ((!resumeText || isGarbageText(resumeText)) && candidate && candidate._backend && getDataSource() === 'api') {
+  if ((!text || isGarbageText(text)) && candidate && candidate._backend && getDataSource() === 'api') {
     try {
       const serverText = await apiGetResumeText(cid);
-      if (serverText && !isGarbageText(serverText)) {
-        resumeTextCache[cid] = serverText;
-        resumeText = serverText.trim();
-      }
-    } catch (e) {
-      console.warn('resume-text fetch failed', e);
-    }
+      if (serverText && !isGarbageText(serverText)) { resumeTextCache[cid] = serverText; text = serverText.trim(); }
+    } catch (e) { console.warn('resume-text fetch failed', e); }
   }
+  return (!text || isGarbageText(text)) ? '' : text;
+}
 
-  if (!resumeText || isGarbageText(resumeText)) {
+// Fast first pass for bulk analyse: fetch each resume and parse ONLY name + id
+// into the list, so the recruiter sees WHO is being processed before the slow
+// scoring starts. No LLM — just identity extraction (bounded concurrency).
+async function prefetchIdentities(cids) {
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < cids.length) {
+      const cid = cids[cursor++];
+      const candidate = AppState.candidates.find(c => c.id === cid);
+      if (!candidate) continue;
+      try {
+        const text = await ensureResumeText(cid, candidate);
+        if (text) cacheResumeTextAndIdentity(cid, text); // sets name/email + refreshes the row
+      } catch { /* one failed identity shouldn't block the rest */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(RESUME_ANALYSIS_CONCURRENCY, cids.length) }, () => worker()));
+}
+
+async function runResumeAnalysis(cid, job, opts = {}) {
+  const quiet = opts.quiet === true;
+  const btn = document.getElementById(`ra-btn-${cid}`);
+  const origHTML = btn ? btn.innerHTML : '';
+  const candidate = AppState.candidates.find(c => c.id === cid);
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="ra-spinner"></span> Fetching…`; }
+
+  const resumeText = await ensureResumeText(cid, candidate);
+  // Parse name/id from the resume up front so the row shows the real candidate
+  // before scoring (no-op if the bulk prefetch already did it).
+  if (resumeText) cacheResumeTextAndIdentity(cid, resumeText);
+
+  if (!resumeText) {
     if (!quiet) showPremiumToast('Upload a resume, paste text, or add a valid public resume link.', 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
     return false;
@@ -880,6 +891,13 @@ async function runBulkResumeAnalysis(candidateIds, job, opts = {}) {
     return;
   }
   const total = pending.length;
+
+  // Phase 1 — names first: parse every candidate's name + id into the list right
+  // away so the recruiter sees who's being processed; the scoring follows.
+  showPremiumToast(`Listing ${total} candidate name${total > 1 ? 's' : ''}…`, 'info');
+  await prefetchIdentities(pending);
+
+  // Phase 2 — the slow per-candidate scoring.
   showPremiumToast(`${force ? 'Reanalysing' : 'Analysing'} ${total} candidate${total > 1 ? 's' : ''} (${Math.min(RESUME_ANALYSIS_CONCURRENCY, total)} at a time)…`, 'info');
 
   // Bounded-concurrency worker pool: each worker pulls the next candidate off a
