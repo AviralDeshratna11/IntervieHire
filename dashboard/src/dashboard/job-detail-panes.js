@@ -11,7 +11,7 @@ import { renderBlueprintStudio } from './blueprint-studio.js';
 import { renderTestInterviewPane } from './test-interview.js';
 import { filterCandidatesByDateRange, renderAnalyticsTable, renderJobCards, updateSummaryMetrics } from './render-views.js';
 import { openReportDrawerForCandidate } from './report.js';
-import { applyStageFilters, buildFilterDropdown, hasActiveFilters, openScheduleModal, renderResumeStagePaneForJob, toggleResumeCriteriaEdit } from './resume-analysis.js';
+import { applyStageFilters, buildFilterDropdown, hasActiveFilters, openScheduleModal, renderResumeStagePaneForJob, toggleResumeCriteriaEdit, runBulkResumeAnalysis } from './resume-analysis.js';
 import { renderScoringEditor } from './scoring-config.js';
 import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
@@ -512,12 +512,21 @@ function renderJobDetailPanes(job) {
 
         const dd = document.createElement('div');
         dd.className = 'bulk-actions-dropdown';
-        dd.innerHTML = `
-          <button class="bulk-dd-item" data-action="advance"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg> Advance</button>
-          <button class="bulk-dd-item" data-action="reject"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Reject</button>
-          <button class="bulk-dd-item" data-action="schedule"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Schedule</button>
-          <button class="bulk-dd-item" data-action="reschedule"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> Reschedule</button>
-          <button class="bulk-dd-item" data-action="export"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export</button>`;
+        const isResumeStage = container && !!container.querySelector('.ra-data-table');
+        if (isResumeStage) {
+          dd.innerHTML = `
+            <button class="bulk-dd-item" data-action="analyse"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Analyse</button>
+            <button class="bulk-dd-item" data-action="advance"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg> Advance</button>
+            <button class="bulk-dd-item" data-action="reject"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Reject</button>
+            <button class="bulk-dd-item" data-action="export"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export</button>`;
+        } else {
+          dd.innerHTML = `
+            <button class="bulk-dd-item" data-action="advance"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg> Advance</button>
+            <button class="bulk-dd-item" data-action="reject"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Reject</button>
+            <button class="bulk-dd-item" data-action="schedule"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Schedule</button>
+            <button class="bulk-dd-item" data-action="reschedule"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> Reschedule</button>
+            <button class="bulk-dd-item" data-action="export"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export</button>`;
+        }
         dd.addEventListener('click', (ev) => {
           ev.stopPropagation();
           const item = ev.target.closest('.bulk-dd-item');
@@ -530,6 +539,12 @@ function renderJobDetailPanes(job) {
             return;
           }
           const label = names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+          if (action === 'analyse') {
+            dd.remove();
+            showPremiumToast(`Analysing ${ids.length} candidate(s)...`, 'info');
+            runBulkResumeAnalysis(ids, job);
+            return;
+          }
           if (action === 'advance') {
             const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
             ids.forEach(cid => {
@@ -542,6 +557,16 @@ function renderJobDetailPanes(job) {
                   if ((next === 'Screening' || next === 'Functional') && cand.interviewStatus == null) {
                     cand.interviewStatus = 'Not Started';
                   }
+                  // Persist status change to API backend in API mode
+                  const decision = next === 'Rejected' ? 'rejected'
+                    : next === 'Hired' ? 'hired'
+                    : (next === 'Screening' || next === 'Functional') ? 'shortlisted'
+                    : null;
+                  if (decision && cand._backend && getDataSource() === 'api') {
+                    apiUpdateApplicant(cid, { decision }).catch((err) => {
+                      console.warn('Stage change sync failed:', err);
+                    });
+                  }
                 }
               }
             });
@@ -551,7 +576,14 @@ function renderJobDetailPanes(job) {
           } else if (action === 'reject') {
             ids.forEach(cid => {
               const cand = AppState.candidates.find(c => c.id === cid);
-              if (cand) cand.status = 'Rejected';
+              if (cand) {
+                cand.status = 'Rejected';
+                if (cand._backend && getDataSource() === 'api') {
+                  apiUpdateApplicant(cid, { decision: 'rejected' }).catch((err) => {
+                    console.warn('Reject sync failed:', err);
+                  });
+                }
+              }
             });
             saveStateToLocalStorage();
             refreshAfterStageChange();

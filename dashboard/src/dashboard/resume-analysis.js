@@ -79,23 +79,24 @@ function renderResumeStagePaneForJob(candidates, job, container) {
 
   container.innerHTML = `
     <div class="stage-table-container">
-      <div class="ra-toolbar">
-        <div class="ra-toolbar-left">
-          <span class="ra-toolbar-stat">${analysedCount} analysed</span>
-          <span class="ra-toolbar-stat pending">${pendingCount} pending</span>
+      <div class="stage-table-filters" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background: none; padding: 0;">
+        <div style="display: flex; gap: 8px;">
+          <span class="ra-toolbar-stat" style="font-size: 0.76rem; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); padding: 3px 10px; border-radius: 12px; color: var(--color-text-muted);">${analysedCount} analysed</span>
+          <span class="ra-toolbar-stat pending" style="font-size: 0.76rem; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); padding: 3px 10px; border-radius: 12px; color: var(--color-text-muted);">${pendingCount} pending</span>
         </div>
-        <div class="ra-toolbar-right">
-          <button class="btn-ra-import" id="btn-ra-import" title="Import a CSV/Excel of candidates with public Google-Doc/Drive resume links">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div class="stage-table-actions-bar" style="margin: 0; display: flex; gap: 8px; align-items: center;">
+          <button class="btn-bulk-actions">Bulk Actions <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          <button class="btn-ra-import" id="btn-ra-import" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:600; color:var(--color-text-muted); background:rgba(255,255,255,0.04); border:1px solid var(--glass-border); cursor:pointer; font-family:var(--font-body);" title="Import a CSV/Excel of candidates with public Google-Doc/Drive resume links">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Import CSV/Excel
           </button>
           <input type="file" id="ra-import-file" accept=".csv,.xlsx,.xls" hidden />
-          ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all" id="btn-ra-reanalyse-all" title="Re-run analysis on all analysed resumes using the current parameters">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all" id="btn-ra-reanalyse-all" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:600; color:var(--color-text-muted); background:rgba(255,255,255,0.04); border:1px solid var(--glass-border); cursor:pointer; font-family:var(--font-body);" title="Re-run analysis on all analysed resumes using the current parameters">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Reanalyse all (${analysedCount})
           </button>` : ''}
-          ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:600; color:var(--color-gold); background:rgba(var(--color-gold-rgb),0.08); border:1px solid rgba(var(--color-gold-rgb),0.2); cursor:pointer; font-family:var(--font-body);">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             Analyse All (${pendingCount})
           </button>` : ''}
         </div>
