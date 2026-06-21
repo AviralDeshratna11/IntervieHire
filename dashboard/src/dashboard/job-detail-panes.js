@@ -17,12 +17,29 @@ import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
+import { getDataSource, apiScheduleCandidate, apiAddApplicant } from './api.js';
+
+// A candidate added in the UI may only carry a local "CAN-…" code (not yet
+// persisted to the backend). Scheduling needs a real backend UUID, so create the
+// applicant on demand and adopt its UUID. Returns the id to schedule against.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function ensureBackendApplicantId(c2, jobId) {
+  if (UUID_RE.test(String(c2.id || ''))) return c2.id;
+  if (!c2.email) throw new Error(`${c2.name || 'Candidate'} has no email — add one before scheduling.`);
+  const created = await apiAddApplicant(jobId, { name: c2.name, email: c2.email, phone: c2.phone });
+  if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
+  c2.id = created.id;       // adopt the real backend UUID for all future actions
+  c2._backend = true;
+  return created.id;
+}
 
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
   
   const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
-    const matchesJob = c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+    const matchesJob = (getDataSource() === 'api' && job._backend)
+      ? c.jobId === job.id
+      : (c.jobApplied === job.roleName || c.jobApplied === job.cardName);
     if (!matchesJob) return false;
     if (searchVal) {
       return c.name.toLowerCase().includes(searchVal) || c.email.toLowerCase().includes(searchVal);
@@ -185,13 +202,6 @@ function renderJobDetailPanes(job) {
         </div>
       `;
     } else {
-      const statusIcon = (status) => {
-        if (status === 'Completed') return '<span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span>';
-        if (status === 'Incomplete') return '<span class="status-chip incomplete"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg> Incomplete</span>';
-        if (status === 'Slot Missed') return '<span class="status-chip slot-missed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg> Slot Missed</span>';
-        return '<span class="status-chip">—</span>';
-      };
-
       const allScreeningCands = screeningCands;
       const displayScreeningCands = applyStageFilters(screeningCands, 'screening');
       const sf = AppState.stageFilters.screening;
@@ -243,7 +253,7 @@ function renderJobDetailPanes(job) {
                       </div>
                     </td>
                     <td>${c.phone ? escapeHTML(c.phone) : '—'}</td>
-                    <td>${statusIcon(c.interviewStatus)}</td>
+                    <td>${interviewStatusChip(c.interviewStatus)}</td>
                     <td>—</td>
                     <td>—</td>
                     <td>${hasReport ? `<a href="#" class="report-link" data-cand-id="${c.id}">Report <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : '—'}</td>
@@ -350,14 +360,14 @@ function renderJobDetailPanes(job) {
                       </div>
                     </td>
                     <td>${c.phone ? escapeHTML(c.phone) : '—'}</td>
-                    <td><span class="status-chip completed"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Completed</span></td>
+                    <td>${interviewStatusChip(c.interviewStatus)}</td>
                     <td><a href="#" class="report-link report-new" data-cand-id="${c.id}">Report <span class="new-badge">New</span> <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></td>
                     <td><span class="interview-score-dot ${scoreColor(c.interviewScore)}"></span> ${c.interviewScore != null ? c.interviewScore : '—'}</td>
                     <td><span class="cheat-prob-badge ${cheatColor(c.cheatProbability)}">${c.cheatProbability ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg> ' + c.cheatProbability : '—'}</span></td>
                     <td><span class="source-badge">${sourceIcon} ${c.source || '—'}</span></td>
                     <td>${screeningBadge(c.recruiterScreening)}</td>
                     <td>
-                      <select class="action-select-status">
+                      <select class="action-select-status" data-cand-id="${c.id}">
                         <option value="">Select Sta...</option>
                         <option value="advance">Advance</option>
                         <option value="reject">Reject</option>
@@ -459,7 +469,12 @@ function renderJobDetailPanes(job) {
       });
     });
 
-    const jobCands = AppState.candidates.filter(c => c.jobApplied === job.roleName || c.jobApplied === job.cardName);
+    const jobCands = AppState.candidates.filter(c => {
+      if (getDataSource() === 'api' && job._backend) {
+        return c.jobId === job.id;
+      }
+      return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+    });
     const stageStatusMap = { screening: 'Screening', functional: 'Functional' };
     pane.querySelectorAll('.filter-chip[data-filter]').forEach(chip => {
       chip.addEventListener('click', (e) => {
@@ -543,7 +558,7 @@ function renderJobDetailPanes(job) {
               }
             });
             saveStateToLocalStorage();
-            renderJobDetailPanes(job);
+            refreshAfterStageChange();
             showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
           } else if (action === 'reject') {
             ids.forEach(cid => {
@@ -551,20 +566,47 @@ function renderJobDetailPanes(job) {
               if (cand) cand.status = 'Rejected';
             });
             saveStateToLocalStorage();
-            renderJobDetailPanes(job);
+            refreshAfterStageChange();
             showPremiumToast(`Rejected ${ids.length} candidate(s).`, 'success');
           } else if (action === 'schedule' || action === 'reschedule') {
-            openScheduleModal(label, action, (date, time) => {
-              ids.forEach(cid => {
-                const cand = AppState.candidates.find(c => c.id === cid);
-                if (cand) {
-                  cand.attemptedAt = `${date} ${time}`;
-                  cand.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
+            openScheduleModal({ mode: action, name: label, count: ids.length }, async ({ start, end, timezone, slot }) => {
+              if (getDataSource() === 'api') {
+                showPremiumToast(`Scheduling ${ids.length} candidate(s) and sending email invites...`, 'info');
+                try {
+                  const utcIso = new Date(start).toISOString();
+                  await Promise.all(ids.map(async (cid) => {
+                    const c2 = AppState.candidates.find(c => c.id === cid);
+                    if (!c2) return;
+                    const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
+                    const scheduleId = await ensureBackendApplicantId(c2, job.id);
+                    const updated = await apiScheduleCandidate(scheduleId, utcIso, stage);
+                    if (updated) {
+                      Object.assign(c2, updated);
+                    } else {
+                      c2.attemptedAt = slot;
+                      c2.scheduledWindow = { start, end, timezone };
+                      c2.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
+                    }
+                  }));
+                  saveStateToLocalStorage();
+                  renderJobDetailPanes(job);
+                  showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot} and email invites sent.`, 'success');
+                } catch (err) {
+                  showPremiumToast(`Failed to schedule candidates: ${err.message || err}`, 'error');
                 }
-              });
-              saveStateToLocalStorage();
-              renderJobDetailPanes(job);
-              showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) to ${date} at ${time}.`, 'success');
+              } else {
+                ids.forEach(cid => {
+                  const cand = AppState.candidates.find(c => c.id === cid);
+                  if (cand) {
+                    cand.attemptedAt = slot;
+                    cand.scheduledWindow = { start, end, timezone };
+                    cand.interviewStatus = action === 'reschedule' ? 'Incomplete' : 'Not Started';
+                  }
+                });
+                saveStateToLocalStorage();
+                renderJobDetailPanes(job);
+                showPremiumToast(`${action === 'schedule' ? 'Scheduled' : 'Rescheduled'} ${ids.length} candidate(s) for ${slot}.`, 'success');
+              }
             });
           } else if (action === 'export') {
             triggerExcelExport('candidates');
@@ -589,18 +631,47 @@ function renderJobDetailPanes(job) {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         soundEngine.playClick();
-        const name = btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
         const mode = btn.classList.contains('btn-reschedule') ? 'reschedule' : 'schedule';
         const candId = btn.getAttribute('data-candidate-id');
-        openScheduleModal(name, mode, (date, time) => {
-          const cand = AppState.candidates.find(c => c.id === candId);
-          if (cand) {
-            cand.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
-            cand.attemptedAt = `${date} ${time}`;
-            saveStateToLocalStorage();
-            renderJobDetailPanes(job);
+        const cand = AppState.candidates.find(c => c.id === candId);
+        const name = cand?.name || btn.closest('tr')?.querySelector('.cand-name-link')?.textContent?.trim() || 'Candidate';
+        openScheduleModal(
+          { mode, name, email: cand?.email || '', slotTime: cand?.attemptedAt || '' },
+          async ({ start, end, timezone, slot }) => {
+            const c2 = AppState.candidates.find(c => c.id === candId);
+            if (!c2) return;
+
+            if (getDataSource() === 'api') {
+              showPremiumToast(`Scheduling ${c2.name} and sending email invite...`, 'info');
+              try {
+                const stage = c2.status?.toLowerCase() === 'screening' ? 'screening' : 'functional';
+                const utcIso = new Date(start).toISOString();
+                const scheduleId = await ensureBackendApplicantId(c2, job.id);
+                const updated = await apiScheduleCandidate(scheduleId, utcIso, stage);
+
+                if (updated) {
+                  Object.assign(c2, updated);
+                } else {
+                  c2.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
+                  c2.attemptedAt = slot;
+                  c2.scheduledWindow = { start, end, timezone };
+                }
+                saveStateToLocalStorage();
+                renderJobDetailPanes(job);
+                showPremiumToast(`${mode === 'reschedule' ? 'Rescheduled' : 'Scheduled'} ${c2.name} for ${slot} and email invite sent.`, 'success');
+              } catch (err) {
+                showPremiumToast(`Failed to schedule candidate: ${err.message || err}`, 'error');
+              }
+            } else {
+              c2.interviewStatus = mode === 'reschedule' ? 'Incomplete' : 'Not Started';
+              c2.attemptedAt = slot;
+              c2.scheduledWindow = { start, end, timezone };
+              saveStateToLocalStorage();
+              renderJobDetailPanes(job);
+              showPremiumToast(`${mode === 'reschedule' ? 'Rescheduled' : 'Scheduled'} ${c2.name} for ${slot}.`, 'success');
+            }
           }
-        });
+        );
       });
     });
 
@@ -663,6 +734,62 @@ function renderJobDetailPanes(job) {
   }
 }
 
+// Recompute pipelines + refresh the job-detail tab counts, funnels and panes.
+// Shared by the single-candidate path (updateCandidateStatus) and the bulk
+// advance/reject path so stage counts never go stale after a stage change.
+// Single source of truth for the interview-status chip across stage panes.
+// A candidate with no recorded status reads as "Not Started" — never "Completed".
+function interviewStatusChip(status) {
+  const ic = (inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${inner}</svg>`;
+  const chip = (cls, svg, label) => `<span class="status-chip ${cls}">${svg} ${label}</span>`;
+  switch (status) {
+    case 'Completed': return chip('completed', ic('<polyline points="20 6 9 17 4 12"></polyline>'), 'Completed');
+    case 'Incomplete': return chip('incomplete', ic('<line x1="5" y1="12" x2="19" y2="12"></line>'), 'Incomplete');
+    case 'Evaluating': return chip('evaluating', ic('<path d="M21 12a9 9 0 1 1-6.219-8.56"></path>'), 'Evaluating');
+    case 'Attempting': return chip('attempting', ic('<circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline>'), 'Attempting');
+    case 'Slot Missed': return chip('slot-missed', ic('<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line>'), 'Slot Missed');
+    default: return chip('not-started', ic('<circle cx="12" cy="12" r="9"></circle><line x1="8" y1="12" x2="16" y2="12"></line>'), 'Not Started');
+  }
+}
+
+function refreshAfterStageChange() {
+  recalculateJobPipelines();
+  updateSummaryMetrics();
+  renderAnalyticsTable();
+
+  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
+  if (activeJob) {
+    const elScreening = document.getElementById('jd-count-screening');
+    if (elScreening) elScreening.textContent = activeJob.pipeline.screening;
+    const elFunctional = document.getElementById('jd-count-functional');
+    if (elFunctional) {
+      elFunctional.textContent = activeJob.pipeline.screening > 0
+        ? `${activeJob.pipeline.functional} of ${activeJob.pipeline.screening}`
+        : activeJob.pipeline.functional;
+    }
+
+    renderFunnelStages(activeJob);
+    renderFunnelInsights(activeJob);
+
+    const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+      if (getDataSource() === 'api' && activeJob._backend) {
+        return c.jobId === activeJob.id;
+      }
+      return c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName;
+    });
+    drawFunnelSVG(activeJob, jobCandidates);
+    drawScoreDistributionSVG(activeJob, jobCandidates);
+
+    renderJobDetailPanes(activeJob);
+  }
+
+  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
+    renderKanbanBoard();
+  } else {
+    renderJobCards();
+  }
+}
+
 function updateCandidateStatus(candId, newStatus) {
   const candidate = AppState.candidates.find(c => c.id === candId);
   if (!candidate) return;
@@ -685,35 +812,7 @@ function updateCandidateStatus(candId, newStatus) {
     soundEngine.playChime([329.63, 440.00, 523.25], 0.2, 0.08);
   }
   
-  recalculateJobPipelines();
-  updateSummaryMetrics();
-  renderAnalyticsTable();
-  
-  const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
-  if (activeJob) {
-    document.getElementById('jd-count-screening').textContent = activeJob.pipeline.screening;
-    const funcLabel = activeJob.pipeline.screening > 0
-      ? `${activeJob.pipeline.functional} of ${activeJob.pipeline.screening}`
-      : activeJob.pipeline.functional;
-    document.getElementById('jd-count-functional').textContent = funcLabel;
-    
-    renderFunnelStages(activeJob);
-    renderFunnelInsights(activeJob);
-    
-    const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
-      c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName
-    );
-    drawFunnelSVG(activeJob, jobCandidates);
-    drawScoreDistributionSVG(activeJob, jobCandidates);
-
-    renderJobDetailPanes(activeJob);
-  }
-  
-  if (document.getElementById('jobs-board-container') && document.getElementById('jobs-board-container').style.display !== 'none') {
-    renderKanbanBoard();
-  } else {
-    renderJobCards();
-  }
+  refreshAfterStageChange();
 }
 
 

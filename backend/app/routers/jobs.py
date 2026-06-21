@@ -1680,11 +1680,12 @@ def upload_resumes(
     deepseek_key = os.getenv("DEEPSEEK_API_KEY")
 
     for file_path, filename in files_to_process:
-        from app.utils.resume_parser import parse_resume_with_deepseek
+        from app.utils.resume_parser import parse_resume_with_deepseek, extract_text_from_file
         parsed_info = parse_resume_with_deepseek(file_path, filename, deepseek_key)
         parsed_name = parsed_info.get("name")
         parsed_email = parsed_info.get("email")
         parsed_phone = parsed_info.get("phone")
+        resume_text = extract_text_from_file(file_path)  # store the real text for analysis
         
         # Look for an existing candidate in this job pipeline with a matching email or name
         existing_applicant = None
@@ -1705,6 +1706,8 @@ def upload_resumes(
         if existing_applicant:
             # Map resume to the existing candidate record
             existing_applicant.resume_url = file_path
+            if resume_text:
+                existing_applicant.resume_text = resume_text
             
             # Preserve the source: do not overwrite existing source if already set
             if not existing_applicant.source and source:
@@ -1734,6 +1737,7 @@ def upload_resumes(
                 phone=parsed_phone or "+1 555-0199",
                 source=source or ApplicantSource.bulk_upload,
                 resume_url=file_path,
+                resume_text=resume_text or None,
                 job_id=job_id,
                 resume_analysed=False
             )
@@ -1901,7 +1905,9 @@ def schedule_interview(
     # Send confirmation email with calendar invite and interview link
     try:
         reschedule_link = f"{settings.FRONTEND_URL}/reschedule.html?token={applicant.scheduling_token}"
-        interview_link = f"{settings.FRONTEND_URL}/interview?sessionId={applicant.id}"
+        # The candidate joins the SAME AI interview room as "Run test interview"
+        # (the engine web app), keyed by the applicant id as the session id.
+        interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interview?sessionId={applicant.id}"
         uid = f"interview-{stage_name.lower().replace(' ', '-')}-{applicant.id}@interviehire.com"
         send_ical_invitation_email(
             candidate_name=applicant.name,
@@ -2026,6 +2032,47 @@ def get_functional_report(
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
     from app.utils.ai_sync import get_applicant_full_report
     return get_applicant_full_report(db, str(applicant_id))
+
+
+@router.get("/applicants/{applicant_id}/transcript-download")
+def download_interview_transcript(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    """Download the full interview transcript as plain text. Reads the projected
+    transcript from the shared InterviewSession (candidate + AI interviewer turns)."""
+    from fastapi import Response
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    from app.models.ai_integration import InterviewSession
+    session = db.query(InterviewSession).filter(InterviewSession.id == str(applicant_id)).first()
+    turns = (session.transcript if session else None) or []
+    if not turns:
+        raise HTTPException(status_code=404, detail="No transcript recorded for this interview yet.")
+
+    def speaker_label(s: str) -> str:
+        s = (s or "").lower()
+        if s in ("ai", "interviewer", "assistant"):
+            return "Interviewer"
+        if s in ("candidate", "user", "human"):
+            return "Candidate"
+        return (s or "Speaker").title()
+
+    lines = [f"Interview transcript — {applicant.name}", "=" * 48, ""]
+    for t in turns:
+        text = (t.get("text") if isinstance(t, dict) else str(t)) or ""
+        if not str(text).strip():
+            continue
+        spk = speaker_label(t.get("speaker") if isinstance(t, dict) else "")
+        lines.append(f"{spk}: {str(text).strip()}")
+    body = "\n".join(lines) + "\n"
+    safe_name = "".join(c for c in (applicant.name or "candidate") if c.isalnum() or c in " -_").strip().replace(" ", "_")
+    return Response(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="transcript_{safe_name}.txt"'},
+    )
 
 from fastapi import Header
 

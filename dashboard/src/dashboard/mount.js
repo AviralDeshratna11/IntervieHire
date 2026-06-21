@@ -18,6 +18,7 @@ import { soundEngine } from './sound.js';
 import { initSourcing, navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { renderSpotlightResults, SpotlightCommands, spotlightUi, toggleSpotlightModal } from './spotlight.js';
 import { AppState, generateJobId } from './state.js';
+import { apiCreateJob, apiPatchJobParameters, isApiMode, getDataSource } from './api.js';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -208,19 +209,25 @@ function initMountBindings() {
 
   window.openJobDescriptionDrawer = (jobId) => openDrawer('view-jd', jobId);
 
+  const closeAllJobKebabs = () => {
+    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.job-card.kebab-open').forEach(c => c.classList.remove('kebab-open'));
+  };
+
   window.toggleJobKebab = function(btn) {
     const dropdown = btn.nextElementSibling;
     const isOpen = dropdown.classList.contains('open');
-    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (!isOpen) dropdown.classList.add('open');
+    closeAllJobKebabs();
+    if (!isOpen) {
+      dropdown.classList.add('open');
+      btn.closest('.job-card')?.classList.add('kebab-open');
+    }
   };
 
-  document.addEventListener('click', () => {
-    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
-  });
+  document.addEventListener('click', closeAllJobKebabs);
 
   window.handleJobKebab = function(jobId, action) {
-    document.querySelectorAll('.job-kebab-dropdown.open').forEach(d => d.classList.remove('open'));
+    closeAllJobKebabs();
     const job = AppState.jobs.find(j => j.id === jobId);
     if (!job) return;
     switch (action) {
@@ -277,14 +284,35 @@ function initMountBindings() {
         const name = job.cardName || job.roleName;
         const idx = AppState.jobs.findIndex(j => j.id === jobId);
         if (idx === -1) break;
+        const removedJob = AppState.jobs[idx];
+        const removedCandidates = AppState.candidates.filter(c => {
+          if (getDataSource() === 'api' && job._backend) {
+            return c.jobId === job.id;
+          }
+          return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+        });
         AppState.jobs.splice(idx, 1);
-        AppState.candidates = AppState.candidates.filter(c => c.jobApplied !== job.roleName && c.jobApplied !== job.cardName);
+        AppState.candidates = AppState.candidates.filter(c => {
+          if (getDataSource() === 'api' && job._backend) {
+            return c.jobId !== job.id;
+          }
+          return c.jobApplied !== job.roleName && c.jobApplied !== job.cardName;
+        });
         saveStateToLocalStorage();
+        const restoreJob = () => {
+          AppState.jobs.splice(Math.min(idx, AppState.jobs.length), 0, removedJob);
+          AppState.candidates.push(...removedCandidates);
+          saveStateToLocalStorage();
+          renderJobCards();
+          updateJobsCounters();
+          updateSummaryMetrics();
+          showPremiumToast(`"${name}" restored.`, 'success');
+        };
         setTimeout(() => {
           renderJobCards();
           updateJobsCounters();
           updateSummaryMetrics();
-          showPremiumToast(`"${name}" has been permanently deleted.`, 'success');
+          showPremiumToast(`"${name}" deleted.`, 'success', { label: 'Undo', onClick: restoreJob });
         }, 0);
         break;
       }
@@ -555,6 +583,50 @@ function initMountBindings() {
       const addScreening = document.getElementById('chk-screening').checked;
       const addFunctional = document.getElementById('chk-functional').checked;
 
+      // API mode: persist the job to the backend so it survives refetches
+      // (the local-only path below would vanish on the next GET /api/jobs).
+      if (isApiMode()) {
+        const submitBtn = createJobForm.querySelector('button[type="submit"]') || e.submitter;
+        const origBtnHTML = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = 'Creating job…'; }
+        let created;
+        try {
+          created = await apiCreateJob({
+            cardName, roleName, experienceBand: expBand, customJobId: customId,
+            status: 'draft', description: description || 'No job description provided.',
+            pipelineConfig: {
+              resumeAnalysis: { enabled: addResume },
+              recruiterScreening: { enabled: addScreening },
+              functionalInterview: { enabled: addFunctional },
+            },
+          });
+        } catch (err) {
+          console.error('Backend job create failed:', err);
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = origBtnHTML; }
+          showPremiumToast(`Could not create job: ${err.message}`, 'error');
+          return;
+        }
+        AppState.jobs.push(created);
+        saveStateToLocalStorage();
+        // Enrich with AI and persist the blueprint so the draft is reviewable.
+        if (description) {
+          if (submitBtn) submitBtn.innerHTML = 'Generating interview pipeline…';
+          try {
+            await enrichJobWithAI(created, description);
+            await apiPatchJobParameters(created.id, created);
+          } catch (err) {
+            console.error('Job enrichment/persist failed:', err);
+          }
+        }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = origBtnHTML; }
+        closeDrawers();
+        createJobForm.reset();
+        showPremiumToast(`Created job card "${roleName}" as Draft.`, 'success');
+        soundEngine.playChime([261.63, 329.63, 392.00, 523.25], 0.2, 0.08);
+        openJobFlowView(created.id, true);
+        return;
+      }
+
       let totalApplicants = 0;
       let resumeVal = 0;
       let screeningVal = 0;
@@ -606,7 +678,7 @@ function initMountBindings() {
         status: 'draft',
         customJobId: customId,
         experienceBand: expBand,
-        createdBy: 'Devasri',
+        createdBy: globalThis.IH_USER_NAME || 'You',
         description: description || "No job description provided.",
         questions: [],
         pipeline: {
@@ -889,9 +961,12 @@ function initMountBindings() {
     if (AppState.activeTab === 'job-detail' && AppState.activeJobId) {
       const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
       if (activeJob) {
-        const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
-          c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName
-        );
+        const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+          if (getDataSource() === 'api' && activeJob._backend) {
+            return c.jobId === activeJob.id;
+          }
+          return c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName;
+        });
         drawFunnelSVG(activeJob, jobCandidates);
         drawScoreDistributionSVG(activeJob, jobCandidates);
       }
@@ -973,9 +1048,12 @@ function initMountBindings() {
       if (AppState.activeJobId) {
         const job = AppState.jobs.find(j => j.id === AppState.activeJobId);
         if (job) {
-          const jobCandidates = AppState.candidates.filter(
-            c => c.jobApplied === job.roleName || c.jobApplied === job.cardName
-          );
+          const jobCandidates = AppState.candidates.filter(c => {
+            if (getDataSource() === 'api' && job._backend) {
+              return c.jobId === job.id;
+            }
+            return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+          });
           drawScoreDistributionSVG(job, jobCandidates);
         }
       }
@@ -1130,25 +1208,32 @@ Return ONLY valid JSON:
         ], true);
 
         const parsed = parseAIJson(response);
-        const newJob = {
-          id: generateJobId(),
+        const jobDraft = {
           roleName: parsed.roleName,
           cardName: parsed.cardName || parsed.roleName,
           created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
           status: 'draft',
           customJobId: '-',
           experienceBand: parsed.experienceBand || 'Upto 2 Years',
-          createdBy: 'Devasri',
+          createdBy: globalThis.IH_USER_NAME || 'You',
           description: parsed.description || textToProcess.slice(0, 500),
           questions: [],
-          pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }
+          pipeline: { total: 0, resume: 0, screening: 0, functional: 0 },
+          pipelineConfig: { resumeAnalysis: { enabled: true }, recruiterScreening: { enabled: true }, functionalInterview: { enabled: true } },
         };
+        // api mode: create on the backend first so the job (and the AI blueprint
+        // generated below) persists; local mode keeps a local id.
+        const newJob = isApiMode() ? await apiCreateJob(jobDraft) : { ...jobDraft, id: generateJobId() };
         AppState.jobs.unshift(newJob);
         saveStateToLocalStorage();
 
         btnContinue.innerHTML = `<div class="spinner-mini" style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin-mini 0.6s linear infinite;margin-right:6px;vertical-align:middle;"></div> Generating interview pipeline...`;
 
         await enrichJobWithAI(newJob, textToProcess);
+        if (newJob._backend) {
+          try { await apiPatchJobParameters(newJob.id, newJob); }
+          catch (e) { console.warn('Job created but blueprint sync failed:', e); }
+        }
 
         showPremiumToast(`Job "${parsed.roleName}" created with AI-generated pipeline.`, "success");
         soundEngine.playChime([329.63, 392, 523.25, 659.25], 0.2, 0.08);

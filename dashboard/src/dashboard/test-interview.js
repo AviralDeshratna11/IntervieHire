@@ -103,8 +103,14 @@ export function renderTestInterviewPane(job, container) {
           ` : `
             <div class="ti-warn">
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>No functional questions yet. Author a blueprint in the <strong>Questions Generator</strong> tab, then come back to launch a test interview.</span>
+              <span>No functional questions yet. Author a blueprint in the <strong>Questions Generator</strong> tab for a full blueprint run — or open the candidate room now with a sample session.</span>
             </div>
+            <button class="ti-launch-btn" id="ti-open-room">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              Open candidate room
+            </button>
+            <p class="ti-hint">Opens the candidate room in-portal with a keyless sample session — system check, gaze calibration, live avatar and proctoring.</p>
+            <div class="ti-result" id="ti-result" hidden></div>
           `}
         </div>
       </div>
@@ -124,6 +130,20 @@ export function renderTestInterviewPane(job, container) {
   const launchBtn = container.querySelector('#ti-launch-btn');
   if (launchBtn) {
     launchBtn.addEventListener('click', () => launchTestInterview(job, launchBtn, container));
+  }
+
+  // No authored blueprint → still let the recruiter open the (correct) candidate
+  // room with a keyless sample session: the room bootstraps one via
+  // GET /api/interview/demo-session, so no test-session is created from a blank
+  // blueprint. The room itself owns the avatar + proctoring experience.
+  const openRoomBtn = container.querySelector('#ti-open-room');
+  if (openRoomBtn) {
+    openRoomBtn.addEventListener('click', () => {
+      soundEngine.playChime([392, 523.25], 0.1, 0.1);
+      const roleLabelOpen = escapeHTML(job.cardName || job.roleName || 'this role');
+      embedInterviewRoom(job, container, `${ENGINE_WEB_URL}/interview`, roleLabelOpen);
+      showPremiumToast('Candidate room opened inside the portal.', 'success');
+    });
   }
 }
 

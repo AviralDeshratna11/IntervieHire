@@ -122,6 +122,13 @@ body.light-theme .funnel-svg-tooltip {
   transform: none !important;
 }
 
+/* When the kebab menu is open, do NOT apply transform:none so the
+   z-index stacking context on .job-card.kebab-open works correctly. */
+.job-card.kebab-open {
+  transform: none !important; /* keep — just restate so specificity is fine */
+  z-index: 500 !important;
+}
+
 .header-heading {
   font-size: 1.25rem !important;
   line-height: 1.2 !important;
@@ -185,6 +192,8 @@ body.light-theme .funnel-svg-tooltip {
 
 .jobs-cards-grid {
   gap: 16px !important;
+  /* Ensure the open kebab-card's z-index can escape sibling stacking contexts */
+  isolation: isolate;
 }
 
 .btn-job-kebab {
@@ -192,7 +201,7 @@ body.light-theme .funnel-svg-tooltip {
 }
 
 .job-kebab-dropdown {
-  z-index: 320;
+  z-index: 1000;
 }
 
 .card-flow-cta {

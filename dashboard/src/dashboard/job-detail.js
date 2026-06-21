@@ -8,6 +8,7 @@ import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
 import { isApiMode, apiFetchApplicants } from './api.js';
 import { showPremiumToast } from './sourcing.js';
+import { pushUrl } from './url-sync.js';
 
 // ==========================================
 // JOB DETAIL VIEW
@@ -19,6 +20,8 @@ function navigateToJobDetail(jobId) {
 
   AppState.activeJobId = jobId;
   AppState.activeTab = 'job-detail';
+  pushUrl(`/dashboard/jobs/${jobId}`);
+
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -77,9 +80,12 @@ function navigateToJobDetail(jobId) {
   document.querySelectorAll('.jd-pane').forEach(p => p.classList.remove('active'));
   document.getElementById('jd-pane-overview').classList.add('active');
 
-  const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
-    c => c.jobApplied === job.roleName || c.jobApplied === job.cardName
-  );
+  const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+    if (isApiMode() && job._backend) {
+      return c.jobId === job.id;
+    }
+    return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+  });
 
   renderFunnelStages(job);
   renderFunnelInsights(job);
@@ -118,9 +124,12 @@ async function hydrateBackendApplicants(job) {
   renderFunnelStages(job);
   renderFunnelInsights(job);
   renderJobDetailPanes(job);
-  const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(
-    (c) => c.jobApplied === job.roleName || c.jobApplied === job.cardName,
-  );
+  const jobCandidates = filterCandidatesByDateRange(AppState.candidates).filter(c => {
+    if (isApiMode() && job._backend) {
+      return c.jobId === job.id;
+    }
+    return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+  });
   requestAnimationFrame(() => {
     drawFunnelSVG(job, jobCandidates);
     drawScoreDistributionSVG(job, jobCandidates);

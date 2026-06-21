@@ -107,6 +107,16 @@
 .ti-launch-btn:active { transform: translateY(0); }
 .ti-launch-btn:disabled,
 .ti-launch-btn.is-loading { cursor: progress; opacity: 0.85; transform: none; filter: saturate(0.8); }
+.ti-launch-row { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Convai voice launch — secondary (outline) so the primary text-room launch stays dominant. */
+.ti-launch-convai {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  box-shadow: none;
+}
+.ti-launch-convai:hover { background: rgba(255, 255, 255, 0.08); box-shadow: none; filter: none; }
+.ti-launch-convai svg { stroke: var(--color-gold); }
 
 .ti-spinner {
   width: 13px;
@@ -256,7 +266,7 @@
   .ti-stats { gap: 18px; }
 }
 
-/* ── Embedded interview room (runs inside the portal) ──────────────────────── */
+/* ── Embedded candidate room (in-portal iframe) ────────────────────────── */
 .ti-embed {
   display: flex;
   flex-direction: column;
@@ -290,7 +300,6 @@
   box-shadow: 0 0 10px var(--color-success, #34d399);
   animation: ti-pulse 1.6s ease-in-out infinite;
 }
-@keyframes ti-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 .ti-embed-actions { display: flex; align-items: center; gap: 10px; }
 .ti-embed-link {
   font-size: 12px;
@@ -320,3 +329,4 @@
   background: #05070e;
   display: block;
 }
+@keyframes ti-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }

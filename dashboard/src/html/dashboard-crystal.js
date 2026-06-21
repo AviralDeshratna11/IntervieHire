@@ -49,6 +49,14 @@ export const html = `
               </svg>
               <span>AI Swarm</span>
             </li>
+            <li class="nav-item" data-tab="talent">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                <path d="M8 11h6"></path>
+              </svg>
+              <span>Talent Finder</span>
+            </li>
             <li class="nav-item" data-tab="team">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -99,7 +107,7 @@ export const html = `
           <div class="user-profile">
             <div class="user-avatar">D</div>
             <div class="user-info">
-              <div class="user-name">Devasri</div>
+              <div class="user-name">Account</div>
               <div class="user-role">Org. Admin</div>
             </div>
             <button class="btn-logout" aria-label="Logout">
@@ -162,7 +170,7 @@ export const html = `
         <div class="dashboard-view-body">
           <!-- Dashboard Greeting Banner -->
           <div class="dashboard-banner-wrapper" id="dashboard-banner-wrapper">
-            <h1 class="header-heading" id="header-main-title">Good morning, Devasri</h1>
+            <h1 class="header-heading" id="header-main-title">Good morning</h1>
             <p class="header-subheading" id="header-sub-text">A squad of AI agents working for you</p>
           </div>
           
@@ -193,7 +201,7 @@ export const html = `
                 <span class="meta-label">Created by:</span>
                 <select class="meta-select" id="jobs-creator-select">
                   <option value="all">All</option>
-                  <option value="me">Devasri</option>
+                  <option value="me">Me</option>
                 </select>
               </div>
             </div>
@@ -562,6 +570,16 @@ export const html = `
                   <button id="btn-swarm-prompt" class="btn-term-send">Send</button>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <!-- ===================================== -->
+          <!-- TALENT FINDER VIEW (top-level page) -->
+          <!-- ===================================== -->
+          <section class="dashboard-view" id="view-talent">
+            <!-- Rendered by talent-finder-panel.js into #jd-pane-talent -->
+            <div id="jd-pane-talent">
+              <div class="tf-muted" style="padding:20px">Loading Talent Finder…</div>
             </div>
           </section>
 
@@ -1279,7 +1297,7 @@ export const html = `
             </div>
             <div class="form-group">
               <label for="job-creator-input">Created By</label>
-              <input type="text" id="job-creator-input" value="Devasri" readonly />
+              <input type="text" id="job-creator-input" value="" readonly />
             </div>
             <div class="form-group">
               <label for="job-description-input">Job Description</label>

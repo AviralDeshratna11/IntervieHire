@@ -8,6 +8,8 @@ import { getCandidateNextStage, getCandidateTranscriptLines } from './report.js'
 import { getScoringConfig } from './scoring-config.js';
 import { soundEngine } from './sound.js';
 import { AppState } from './state.js';
+import { getDataSource, apiUpdateApplicant, apiFetchCandidateReport } from './api.js';
+import { API_BASE } from '../auth-client.js';
 
 // ==========================================
 // CANDIDATE REPORT — FULL PAGE VIEW
@@ -24,6 +26,10 @@ function findCandidate(cid) {
 }
 
 function findJobForCandidate(candidate) {
+  if (candidate.jobId) {
+    const job = AppState.jobs.find(j => j.id === candidate.jobId);
+    if (job) return job;
+  }
   return AppState.jobs.find(j => j.roleName === candidate.jobApplied || j.cardName === candidate.jobApplied) || AppState.jobs[0];
 }
 
@@ -140,7 +146,12 @@ function renderOverviewPane(candidate, job, analysis) {
   const score = overallScoreOf(candidate, analysis);
   const comps = getCompetencies(analysis);
   const config = getScoringConfig(job);
-  const jobCandidateCount = AppState.candidates.filter(c => c.jobApplied === candidate.jobApplied).length;
+  const jobCandidateCount = AppState.candidates.filter(c => {
+    if (getDataSource() === 'api' && job && job._backend) {
+      return c.jobId === job.id;
+    }
+    return c.jobApplied === candidate.jobApplied;
+  }).length;
 
   const positionBlock = jobCandidateCount > 20
     ? `<div class="rp-position-track"><div class="rp-position-marker" style="left:${score}%"></div></div>`
@@ -398,7 +409,162 @@ function renderScreeningPane(candidate) {
 
 // ---------- Proctoring ----------
 
-function renderProctoringPane(candidate) {
+// ---------- Interview Analysis (structured rubric + dimensions + proctoring) ----------
+
+const DIM_LABELS = {
+  model_answer_alignment: 'Model-answer alignment',
+  factual_correctness: 'Factual correctness',
+  completeness: 'Completeness',
+  reasoning_quality: 'Reasoning quality',
+  clarity_structure: 'Clarity & structure',
+  role_level_alignment: 'Role-level alignment',
+  communication_quality: 'Communication quality',
+};
+const dimLabel = (k) => DIM_LABELS[k] || String(k).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const sevTone = (s) => ({ low: 'partial', medium: 'partial', high: 'missed', critical: 'missed' }[String(s || '').toLowerCase()] || 'partial');
+
+// The structured (aviral) report is nested under `.structured`, or is the report
+// itself when it was generated standalone. null until the engine scores the interview.
+function getStructuredReport(report) {
+  if (!report) return null;
+  if (report.structured && report.structured.scoreBreakdown) return report.structured;
+  if (report.scoreBreakdown) return report;
+  return null;
+}
+
+async function downloadInterviewTranscript(candidateId, name) {
+  try {
+    const res = await fetch(`${API_BASE}/jobs/applicants/${candidateId}/transcript-download`, { credentials: 'include' });
+    if (!res.ok) { soundEngine.playClick(); alert('Transcript not available yet for this candidate.'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `transcript_${(name || 'candidate').replace(/\s+/g, '_')}.txt`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { alert('Could not download transcript: ' + (e.message || 'error')); }
+}
+
+function renderDimensionBars(dimensionScores) {
+  const entries = Object.entries(dimensionScores || {});
+  if (!entries.length) return '';
+  return `<div class="rp-dim-bars">${entries.map(([k, d]) => {
+    const sc = Math.max(0, Math.min(100, Math.round((d && d.score) || 0)));
+    return `<div class="rp-dim-row">
+      <div class="rp-dim-head"><span>${escapeHTML(dimLabel(k))}</span><strong class="${scoreTone(sc)}">${sc}</strong></div>
+      <div class="rp-dim-track"><i class="rp-dim-fill ${scoreTone(sc)}" style="width:${sc}%"></i></div>
+      ${d && d.reason ? `<p class="rp-muted rp-dim-reason">${escapeHTML(d.reason)}</p>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function renderInterviewAnalysisPane(candidate, report) {
+  const dlBtn = `<button class="rp-dl-btn" id="rp-dl-transcript">⬇ Download transcript</button>`;
+  const s = getStructuredReport(report);
+  if (!s) {
+    return `<div class="rp-analysis-head"><div></div>${dlBtn}</div>` + emptyCard(
+      'Interview not analysed yet',
+      'The structured rubric + dimensional analysis appears once the candidate finishes a monitored interview and the AI scores the transcript.');
+  }
+
+  const sb = s.scoreBreakdown || {};
+  const proc = s.proctoring || { integrityScore: 100, penalty: 0, violations: [], totalEvents: 0 };
+  const qs = Array.isArray(s.questionBreakdown) ? s.questionBreakdown : [];
+  const finalScore = Math.round(sb.finalScore != null ? sb.finalScore : (s.overallScore || 0));
+  const rec = String(s.recommendation || '').replace(/_/g, ' ');
+
+  const breakdownCard = `
+    <div class="rp-card">
+      <h4 class="rp-card-title">📊 Score Analysis</h4>
+      <div class="rp-score-grid">
+        <div class="rp-score-cell big ${scoreTone(finalScore)}"><span>Final score</span><strong>${finalScore}</strong><em>${escapeHTML(rec || '')}</em></div>
+        <div class="rp-score-cell"><span>Rubric coverage (45%)</span><strong>${Math.round(sb.rubricCoverageAvg || 0)}</strong></div>
+        <div class="rp-score-cell"><span>Weighted dimensions (55%)</span><strong>${Math.round(sb.dimensionAvg || 0)}</strong></div>
+        <div class="rp-score-cell ${(sb.redFlagPenaltyAvg || 0) > 0 ? 'missed' : 'met'}"><span>Red-flag penalty</span><strong>−${Math.round(sb.redFlagPenaltyAvg || 0)}</strong></div>
+        <div class="rp-score-cell ${(sb.proctoringPenalty || 0) > 0 ? 'missed' : 'met'}"><span>Proctoring penalty</span><strong>−${Math.round(sb.proctoringPenalty || 0)}</strong></div>
+        <div class="rp-score-cell ${scoreTone(proc.integrityScore)}"><span>Integrity score</span><strong>${Math.round(proc.integrityScore)}</strong></div>
+      </div>
+      <p class="rp-muted rp-formula">${escapeHTML(sb.formula || 'finalAnswerScore = 45% rubric coverage + 55% weighted dimensions − red-flag penalty; overall − proctoring penalty')}</p>
+    </div>`;
+
+  const flags = Array.isArray(s.redFlags) ? s.redFlags : [];
+  const flagsCard = flags.length ? `
+    <div class="rp-card">
+      <h4 class="rp-card-title">🚩 Red Flags</h4>
+      ${flags.map(f => `<div class="rp-proc-row"><div><strong>${escapeHTML(f.label || 'Concern')}</strong><p>${escapeHTML(f.reason || '')}</p></div><span class="rp-verdict-pill ${sevTone(f.severity)}">${escapeHTML(String(f.severity || '').toUpperCase())}</span></div>`).join('')}
+    </div>` : '';
+
+  const questionsCard = qs.length ? `
+    <div class="rp-card">
+      <h4 class="rp-card-title">🧩 Per-question breakdown</h4>
+      ${qs.map((q, i) => {
+        const cmp = q.modelAnswerComparison || {};
+        const fin = Math.round(q.finalScore != null ? q.finalScore : (q.overallScore || 0));
+        return `<div class="rp-q-block">
+          <div class="rp-q-head">
+            <span class="rp-q-num">Q${i + 1}</span>
+            <span class="rp-q-text">${escapeHTML(q.questionText || q.summary || 'Question')}</span>
+            <span class="rp-q-score ${scoreTone(fin)}">${fin}</span>
+          </div>
+          <div class="rp-q-sub">
+            <span class="rp-pill-mini">Rubric ${Math.round(q.rubricCoverageScore || 0)}</span>
+            <span class="rp-pill-mini">Dimensions ${Math.round(q.dimensionScore || 0)}</span>
+            ${(q.redFlagPenalty || 0) > 0 ? `<span class="rp-pill-mini bad">−${Math.round(q.redFlagPenalty)} flags</span>` : ''}
+          </div>
+          ${q.summary ? `<p class="rp-muted">${escapeHTML(q.summary)}</p>` : ''}
+          ${renderDimensionBars(q.dimensionScores)}
+          ${Array.isArray(cmp.coveredRequiredPoints) && cmp.coveredRequiredPoints.length ? `<p class="rp-cov ok">✓ Covered: ${cmp.coveredRequiredPoints.map(escapeHTML).join(', ')}</p>` : ''}
+          ${Array.isArray(cmp.missedRequiredPoints) && cmp.missedRequiredPoints.length ? `<p class="rp-cov miss">✕ Missed: ${cmp.missedRequiredPoints.map(escapeHTML).join(', ')}</p>` : ''}
+          ${Array.isArray(cmp.incorrectClaims) && cmp.incorrectClaims.length ? `<p class="rp-cov miss">⚠ Incorrect: ${cmp.incorrectClaims.map(escapeHTML).join(', ')}</p>` : ''}
+          ${Array.isArray(q.redFlags) && q.redFlags.length ? q.redFlags.map(f => `<p class="rp-cov miss">🚩 ${escapeHTML(f.label || '')} — ${escapeHTML(f.reason || '')}</p>`).join('') : ''}
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  return `
+    <div class="rp-analysis-head">
+      <div class="rp-muted">${escapeHTML(s.evaluationEngine ? 'Engine: ' + s.evaluationEngine : '')}</div>
+      ${dlBtn}
+    </div>
+    ${breakdownCard}
+    ${flagsCard}
+    ${questionsCard}
+  `;
+}
+
+function renderProctoringPane(candidate, report) {
+  const s = getStructuredReport(report);
+  // Prefer REAL proctoring violations from the interview engine when present.
+  if (s && s.proctoring) {
+    const p = s.proctoring;
+    const tone = p.integrityScore >= 80 ? 'met' : p.integrityScore >= 55 ? 'partial' : 'missed';
+    const bySev = p.bySeverity || {};
+    const sevRows = Object.keys(bySev).length
+      ? Object.entries(bySev).map(([sev, n]) => `<div class="rp-proc-row"><div><strong>${escapeHTML(sev)}</strong></div><span class="rp-proc-count ${sev === 'LOW' ? 'ok' : 'bad'}">${n}</span></div>`).join('')
+      : '<p class="rp-muted">No severity buckets.</p>';
+    const violations = Array.isArray(p.violations) ? p.violations : [];
+    return `
+      <div class="rp-proc-stats">
+        <div class="rp-proc-stat ${tone}"><span>🛡 Integrity Score</span><strong>${Math.round(p.integrityScore)}</strong></div>
+        <div class="rp-proc-stat ${p.penalty > 0 ? 'missed' : 'met'}"><span>➖ Score Penalty</span><strong>−${Math.round(p.penalty)}</strong></div>
+        <div class="rp-proc-stat ${p.totalEvents === 0 ? 'met' : 'missed'}"><span>⚠ Total Violations</span><strong>${p.totalEvents}</strong></div>
+      </div>
+      <div class="rp-proc-grid">
+        <div class="rp-card">
+          <h4 class="rp-card-title">⚠ Violations (${violations.length})</h4>
+          ${violations.length ? violations.map(v => `
+            <div class="rp-proc-row">
+              <div><strong>${escapeHTML(String(v.eventType || 'Violation').replace(/_/g, ' '))}</strong><p>${escapeHTML(v.detail || (v.occurredAt ? new Date(v.occurredAt).toLocaleString() : ''))}</p></div>
+              <span class="rp-verdict-pill ${sevTone(v.severity)}">${escapeHTML(String(v.severity || '').toUpperCase())}</span>
+            </div>`).join('') : '<p class="rp-muted">No integrity violations were logged during this interview. ✓</p>'}
+        </div>
+        <div class="rp-card">
+          <h4 class="rp-card-title">By Severity</h4>
+          ${sevRows}
+        </div>
+      </div>
+    `;
+  }
   if (!candidate.interviewStatus || candidate.interviewStatus === 'Not Started') {
     return emptyCard('No proctoring session yet', 'AI proctoring and integrity analysis appears after the candidate attempts a monitored interview.');
   }
@@ -578,6 +744,11 @@ async function openCandidateReportPage(candidateId) {
   if (!candidate) return;
   const job = findJobForCandidate(candidate);
   const analysis = await getAnalysis(candidateId);
+  // Structured interview evaluation (rubric + dimensions + proctoring) from the engine.
+  let interviewReport = null;
+  if (getDataSource() === 'api') {
+    try { interviewReport = await apiFetchCandidateReport(candidateId); } catch { /* not scored yet */ }
+  }
 
   AppState.activeReportCandidateId = candidateId;
   AppState.activeTab = 'candidate-report';
@@ -606,13 +777,14 @@ async function openCandidateReportPage(candidateId) {
 
   const initials = candidate.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const score = overallScoreOf(candidate, analysis);
-  const decision = candidate.decision || 'Pending';
+  const decision = candidate.decision || '';
 
   const tabs = [
     { key: 'overview', label: 'Overview', icon: '▦' },
     { key: 'competencies', label: 'Competencies', icon: '☆' },
     { key: 'resume', label: 'Resume', icon: '🗎' },
     { key: 'screening', label: 'Recruiter Screening', icon: '☷', badge: candidate.recruiterScreening },
+    { key: 'analysis', label: 'Interview Analysis', icon: '📊' },
     { key: 'proctoring', label: 'Proctoring', icon: '◉' },
     { key: 'transcript', label: 'Transcript', icon: '🗩' },
   ];
@@ -630,7 +802,7 @@ async function openCandidateReportPage(candidateId) {
         </div>
         <div class="rp-topbar-actions">
           <select class="rp-decision" id="rp-decision" title="Hiring decision">
-            ${['Pending', 'Shortlisted', 'On Hold', 'Rejected'].map(d => `<option value="${d}" ${decision === d ? 'selected' : ''}>${d}</option>`).join('')}
+            ${[['', 'Pending'], ['shortlisted', 'Shortlisted'], ['on_hold', 'On Hold'], ['rejected', 'Rejected'], ['hired', 'Hired']].map(([v, label]) => `<option value="${v}" ${decision === v ? 'selected' : ''}>${label}</option>`).join('')}
           </select>
           <button class="rp-icon-btn" id="rp-print" title="Download / print report">⎙</button>
           <button class="rp-icon-btn" id="rp-share" title="Copy share link">⤴</button>
@@ -652,7 +824,8 @@ async function openCandidateReportPage(candidateId) {
         <div class="rp-pane" data-rp-pane="competencies">${renderCompetenciesPane(candidate, analysis)}</div>
         <div class="rp-pane" data-rp-pane="resume">${await renderResumePane(candidate, analysis)}</div>
         <div class="rp-pane" data-rp-pane="screening">${renderScreeningPane(candidate)}</div>
-        <div class="rp-pane" data-rp-pane="proctoring">${renderProctoringPane(candidate)}</div>
+        <div class="rp-pane" data-rp-pane="analysis">${renderInterviewAnalysisPane(candidate, interviewReport)}</div>
+        <div class="rp-pane" data-rp-pane="proctoring">${renderProctoringPane(candidate, interviewReport)}</div>
         <div class="rp-pane" data-rp-pane="transcript">${renderTranscriptPane(candidate)}</div>
         <div class="rp-pane" data-rp-pane="remarks">${renderRemarksPane(candidate, analysis)}</div>
       </div>
@@ -673,7 +846,30 @@ async function openCandidateReportPage(candidateId) {
     }
   });
 
+  // Fill the bars in the initially-active (overview) pane.
+  animateBarsIn(root.querySelector('.rp-pane.active'));
+
   soundEngine.playChime([392.0, 523.25, 659.25], 0.15, 0.08);
+}
+
+// Fill report bars in from 0 so they visibly load (mirrors the score-ring trigger).
+// Called for the active pane on open and whenever a tab is shown, so bars in
+// initially-hidden panes still animate when their tab is opened.
+function animateBarsIn(container) {
+  if (!container) return;
+  container.querySelectorAll('.rp-breakdown-fill, .da-dim-fill').forEach(fill => {
+    const target = fill.style.width;
+    if (!target || target === '0%') return;
+    fill.style.width = '0%';
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = target; }));
+  });
+  container.querySelectorAll('.rp-chart-bar').forEach(bar => {
+    bar.style.transformBox = 'fill-box';
+    bar.style.transformOrigin = 'bottom';
+    bar.style.transition = 'transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease';
+    bar.style.transform = 'scaleY(0)';
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.transform = 'scaleY(1)'; }));
+  });
 }
 
 function bindReportPage(candidate, job, analysis, root) {
@@ -688,6 +884,7 @@ function bindReportPage(candidate, job, analysis, root) {
     root.querySelectorAll('.rp-pane').forEach(p => p.classList.toggle('active', p.dataset.rpPane === key));
     if (key !== 'transcript') resetWaveformAudio();
     soundEngine.playClick();
+    animateBarsIn(root.querySelector('.rp-pane.active'));
   };
   root.querySelectorAll('.rp-tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.rpTab));
@@ -696,18 +893,25 @@ function bindReportPage(candidate, job, analysis, root) {
 
   // Topbar actions
   root.querySelector('#rp-decision')?.addEventListener('change', async (e) => {
-    candidate.decision = e.target.value;
+    const value = e.target.value || null; // null | shortlisted | on_hold | rejected | hired
+    candidate.decision = value;
     saveStateToLocalStorage();
     const { showPremiumToast } = await import('./sourcing.js');
-    if (e.target.value === 'Rejected') {
+    if (value === 'rejected') {
+      // Rejecting also moves the kanban card; updateCandidateStatus persists decision='rejected'.
       const { updateCandidateStatus } = await import('./job-detail-panes.js');
       updateCandidateStatus(candidate.id, 'Rejected');
       showPremiumToast(`${candidate.name} marked as Rejected.`, 'info');
     } else {
-      showPremiumToast(`Decision updated to ${e.target.value}.`, 'success');
+      if (candidate._backend && getDataSource() === 'api') {
+        apiUpdateApplicant(candidate.id, { decision: value }).catch((err) =>
+          console.warn('Decision saved locally but backend sync failed:', err));
+      }
+      showPremiumToast('Decision updated.', 'success');
     }
   });
   root.querySelector('#rp-print')?.addEventListener('click', () => window.print());
+  root.querySelector('#rp-dl-transcript')?.addEventListener('click', () => downloadInterviewTranscript(candidate.id, candidate.name));
   root.querySelector('#rp-share')?.addEventListener('click', async () => {
     const { showPremiumToast } = await import('./sourcing.js');
     try {
@@ -750,6 +954,10 @@ function bindReportPage(candidate, job, analysis, root) {
   root.querySelector('#rp-notes-area')?.addEventListener('blur', (e) => {
     candidate.recruiterNotes = e.target.value;
     saveStateToLocalStorage();
+    if (candidate._backend && getDataSource() === 'api') {
+      apiUpdateApplicant(candidate.id, { remarks: e.target.value }).catch((err) =>
+        console.warn('Notes saved locally but backend sync failed:', err));
+    }
     const saved = root.querySelector('#rp-notes-saved');
     if (saved) { saved.textContent = 'Saved ✓'; setTimeout(() => { saved.textContent = 'Notes save automatically when you click away.'; }, 2000); }
   });

@@ -1,12 +1,27 @@
 import { document, setTimeout } from './runtime.js';
+
+// Time-of-day greeting personalised with the signed-in user's name. The name is
+// bridged in by the React auth guard via globalThis.IH_USER_NAME (set after
+// /api/auth/me resolves). Falls back to a nameless greeting until it's known.
+export function buildGreeting() {
+  const name = (globalThis.IH_USER_NAME || '').trim();
+  const h = new Date().getHours();
+  const part = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  const icon = h < 12 ? '🌤️' : h < 18 ? '☀️' : '🌙';
+  return name ? `${part}, ${name} ${icon}` : `${part} ${icon}`;
+}
+try { globalThis.__ihBuildGreeting = buildGreeting; } catch {}
 import { escapeHTML } from './escape.js';
 import { EXPERIENCE_BANDS_PROMPT } from './constants.js';
 import { callDeepSeekAPI, enrichJobWithAI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
 import { openJobFlowView, toggleHeaderElementsForJobFlow } from './job-flow.js';
 import { renderKanbanBoard, resetWaveformAudio, startSwarmLogs } from './kanban-swarm.js';
+import { renderTalentFinderPane } from './talent-finder-panel.js';
 import { renderAnalyticsTable, renderJobCards, renderTeamTable, updateSummaryMetrics } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { AppState, generateJobId } from './state.js';
+import { pushUrl } from './url-sync.js';
+import { isApiMode, apiFetchTeam, apiFetchUsageCandidates, apiFetchOrganisation, apiCreateJob, apiPatchJobParameters } from './api.js';
 
 // ==========================================
 // VIEW SWITCHER ROUTING
@@ -17,6 +32,20 @@ import { AppState, generateJobId } from './state.js';
 function navigateToTab(tabId) {
   AppState.activeTab = tabId;
   AppState.activeSubtab = '';
+
+  const TAB_URLS = {
+    'jobs':      '/dashboard/jobs',
+    'analytics': '/dashboard/analytics',
+    'swarm':     '/dashboard/swarm',
+    'talent':    '/dashboard/talent',
+    'team':      '/dashboard/team',
+    'career':    '/dashboard/career',
+    'settings':  '/dashboard/settings/general',
+  };
+  const url = TAB_URLS[tabId];
+  if (url) {
+    pushUrl(url);
+  }
 
   // Update Sidebar Active state
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -47,7 +76,7 @@ function navigateToTab(tabId) {
 
   if (tabId === 'jobs') {
     breadcrumb.textContent = 'Jobs';
-    mainTitle.textContent = 'Good morning, Devasri 🌤️';
+    mainTitle.textContent = buildGreeting();
     subText.textContent = 'A squad of AI agents working for you';
     actionBtnText.textContent = 'New Job';
     document.getElementById('view-jobs').classList.add('active-view');
@@ -78,6 +107,15 @@ function navigateToTab(tabId) {
     document.getElementById('view-swarm').classList.add('active-view');
     startSwarmLogs();
     soundEngine.playChime([261.63, 329.63, 440.00], 0.15, 0.12);
+
+  } else if (tabId === 'talent') {
+    breadcrumb.textContent = 'Talent Finder';
+    mainTitle.textContent = 'Talent Finder';
+    subText.textContent = 'Compliant AI sourcing — search, rank, and reach out to candidates';
+    actionBtn.style.display = 'none'; // No primary CTA for the talent finder page
+    document.getElementById('view-talent').classList.add('active-view');
+    renderTalentFinderPane(null);
+    soundEngine.playChime([261.63, 392.00, 523.25], 0.15, 0.12);
 
   } else if (tabId === 'team') {
     breadcrumb.textContent = 'Team Access';
@@ -231,19 +269,21 @@ If you need more info, respond ONLY with this JSON (no extra text):
     const parsed = parseAIJson(response);
 
     if (parsed.ready) {
-      const newJob = {
-        id: generateJobId(),
+      const jobDraft = {
         roleName: parsed.roleName,
         cardName: parsed.cardName || parsed.roleName,
         created: new Date().toLocaleString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
         status: 'draft',
         customJobId: '-',
         experienceBand: parsed.experienceBand || 'Upto 2 Years',
-        createdBy: 'Devasri',
+        createdBy: globalThis.IH_USER_NAME || 'You',
         description: parsed.description,
         questions: [],
-        pipeline: { total: 0, resume: 0, screening: 0, functional: 0 }
+        pipeline: { total: 0, resume: 0, screening: 0, functional: 0 },
+        pipelineConfig: { resumeAnalysis: { enabled: true }, recruiterScreening: { enabled: true }, functionalInterview: { enabled: true } },
       };
+      // api mode: persist to the backend first; local mode keeps a local id.
+      const newJob = isApiMode() ? await apiCreateJob(jobDraft) : { ...jobDraft, id: generateJobId() };
       AppState.jobs.unshift(newJob);
       saveStateToLocalStorage();
       appendAriaMessage(`Great! I've created "${parsed.roleName}". Now generating your screening criteria, interview questions, and pipeline — hang tight...`, 'aria');
@@ -251,6 +291,10 @@ If you need more info, respond ONLY with this JSON (no extra text):
 
       try {
         await enrichJobWithAI(newJob, parsed.description);
+        if (newJob._backend) {
+          try { await apiPatchJobParameters(newJob.id, newJob); }
+          catch (e) { console.warn('Job created but blueprint sync failed:', e); }
+        }
         appendAriaMessage(`Done! Your full interview pipeline is ready. Taking you there now...`, 'aria');
         soundEngine.playChime([523.25, 659.25, 783.99], 0.2, 0.08);
         setTimeout(() => openJobFlowView(newJob.id, true), 1200);
@@ -280,6 +324,14 @@ const createJobUpload = { fileName: null, text: null, file: null };
 function navigateToSubtab(subtabId) {
   AppState.activeTab = 'settings';
   AppState.activeSubtab = subtabId;
+
+  const SUBTAB_URLS = {
+    'settings-general': '/dashboard/settings/general',
+  };
+  const url = SUBTAB_URLS[subtabId];
+  if (url) {
+    pushUrl(url);
+  }
 
   // Make sure settings parent menu node is visually highlighted and open
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {

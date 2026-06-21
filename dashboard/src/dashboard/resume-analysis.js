@@ -6,8 +6,9 @@ import { appendTerminalLog } from './kanban-swarm.js';
 import { openReportDrawerForCandidate } from './report.js';
 import { computeWeightedScore, getScoringConfig, recommendationFromScore } from './scoring-config.js';
 import { soundEngine } from './sound.js';
-import { extractResumeIdentity, showPremiumToast } from './sourcing.js';
+import { addCandidateToAppState, extractResumeIdentity, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
+import { getDataSource, apiUpdateApplicant, apiGetResumeText, apiAddApplicant } from './api.js';
 
 // ==========================================
 // RESUME ANALYSIS (AI-powered, Lina)
@@ -50,25 +51,14 @@ function refreshResumeCandidateRowIdentity(cid) {
   if (emailEl) emailEl.textContent = candidate.email || 'No email found';
 }
 
-function generateAutoResumeAnalysis(candidateName) {
-  // Strictly resume-analysis only — no hallucinated later-stage data
-  const matchScore = Math.round(50 + Math.random() * 45);
-  return {
-    matchScore,
-    summary: `${candidateName}'s resume shows relevant experience and skills for the role.`,
-    skills: {
-      detected: ['Communication', 'Project Management'],
-      matched: ['Proposal Writing'],
-      missing: []
-    },
-    recommendation: matchScore >= 70 ? 'Advance' : 'Hold'
-  };
-}
+// removed generateAutoResumeAnalysis — it fabricated random match scores. Analysis
+// runs only on real resume text now.
 
 function renderResumeStagePaneForJob(candidates, job, container) {
   // Hydrate the in-memory cache from analyses persisted on candidates
   candidates.forEach(c => {
     if (!resumeAnalysisCache[c.id] && c.resumeAnalysis) resumeAnalysisCache[c.id] = c.resumeAnalysis;
+    if (!resumeTextCache[c.id] && c.resumeText) resumeTextCache[c.id] = c.resumeText;
   });
 
   const getMatchClass = (score) => {
@@ -95,6 +85,15 @@ function renderResumeStagePaneForJob(candidates, job, container) {
           <span class="ra-toolbar-stat pending">${pendingCount} pending</span>
         </div>
         <div class="ra-toolbar-right">
+          <button class="btn-ra-import" id="btn-ra-import" title="Import a CSV/Excel of candidates with public Google-Doc/Drive resume links">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import CSV/Excel
+          </button>
+          <input type="file" id="ra-import-file" accept=".csv,.xlsx,.xls" hidden />
+          ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all" id="btn-ra-reanalyse-all" title="Re-run analysis on all analysed resumes using the current parameters">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Reanalyse all (${analysedCount})
+          </button>` : ''}
           ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all">
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             Analyse All (${pendingCount})
@@ -245,6 +244,28 @@ function bindResumeAnalysisEvents(job) {
     }
     runBulkResumeAnalysis(pendingCids, job);
   });
+
+  const importBtn = document.getElementById('btn-ra-import');
+  const importInput = document.getElementById('ra-import-file');
+  importBtn?.addEventListener('click', () => importInput?.click());
+  importInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) handleResumeImportFile(file, job);
+    e.target.value = '';
+  });
+
+  const reanalyseAllBtn = document.getElementById('btn-ra-reanalyse-all');
+  reanalyseAllBtn?.addEventListener('click', () => {
+    const analysedCids = [];
+    document.querySelectorAll('.ra-data-table tr[data-cid]').forEach(row => {
+      if (resumeAnalysisCache[row.dataset.cid]) analysedCids.push(row.dataset.cid);
+    });
+    if (analysedCids.length === 0) {
+      showPremiumToast('No analysed resumes to reanalyse yet.', 'info');
+      return;
+    }
+    runBulkResumeAnalysis(analysedCids, job, { force: true });
+  });
 }
 
 
@@ -297,57 +318,9 @@ async function handleResumeFile(cid, file) {
   });
 }
 
-function generateSyntheticResume(candidate, job) {
-  const allSkills = {
-    'Full Stack Developer': {
-      core: ['JavaScript', 'React', 'Node.js', 'PostgreSQL', 'TypeScript', 'REST APIs', 'Git', 'Docker', 'AWS', 'MongoDB', 'GraphQL', 'Redis', 'Express.js', 'Next.js', 'CI/CD', 'Kubernetes'],
-      companies: ['Infosys', 'TCS', 'Wipro', 'Flipkart', 'Razorpay', 'Swiggy', 'Paytm', 'Zoho'],
-      tasks: ['Built responsive web dashboards serving 50K+ daily users', 'Implemented RESTful microservices reducing API latency by 40%', 'Led migration from monolith to microservices architecture', 'Designed and maintained CI/CD pipelines with GitHub Actions', 'Optimized database queries resulting in 3x faster page loads', 'Mentored 3 junior developers on React best practices']
-    },
-    'Government Tender & Proposal Executive': {
-      core: ['Proposal Writing', 'RFP Analysis', 'Compliance', 'GeM Portal', 'SAP Ariba', 'Tender Management', 'Government Procurement', 'Documentation', 'MS Office', 'Contract Negotiation', 'Bid Management', 'CPPP Portal', 'Public Procurement', 'Financial Proposals'],
-      companies: ['L&T', 'BHEL', 'NTPC', 'Tata Projects', 'Adani Group', 'GMR Group', 'HCL Infra'],
-      tasks: ['Managed end-to-end tender lifecycle for 20+ government contracts', 'Drafted technical and financial proposals worth INR 50Cr+', 'Ensured 100% compliance with GeM and CPPP portal requirements', 'Coordinated with legal and finance teams for bid documentation', 'Won 15 government contracts through competitive bidding process', 'Maintained vendor database with 200+ suppliers']
-    }
-  };
-  const profile = allSkills[job.roleName] || allSkills['Full Stack Developer'];
-  const shuffled = [...profile.core].sort(() => 0.5 - Math.random());
-  const numSkills = 6 + Math.floor(Math.random() * 5);
-  const picked = shuffled.slice(0, numSkills);
-  const yrs = 1 + Math.floor(Math.random() * 7);
-  const company1 = profile.companies[Math.floor(Math.random() * profile.companies.length)];
-  const company2 = profile.companies.filter(c => c !== company1)[Math.floor(Math.random() * (profile.companies.length - 1))];
-  const tasks = [...profile.tasks].sort(() => 0.5 - Math.random()).slice(0, 3);
-  const tasks2 = [...profile.tasks].sort(() => 0.5 - Math.random()).slice(0, 2);
-
-  return `RESUME
-
-Name: ${candidate.name}
-Email: ${candidate.email}
-Phone: ${candidate.phone}
-
-PROFESSIONAL SUMMARY
-Results-driven professional with ${yrs} years of experience in ${job.roleName.toLowerCase()} roles. Strong background in ${picked.slice(0, 3).join(', ')} with a proven ability to deliver high-quality outcomes under deadline pressure.
-
-TECHNICAL SKILLS
-${picked.join(' | ')}
-
-WORK EXPERIENCE
-
-${job.roleName} — ${company1} (${Math.max(yrs - 2, 1)} years, current)
-${tasks.map(t => '  - ' + t).join('\n')}
-
-Associate ${job.roleName} — ${company2} (2 years)
-${tasks2.map(t => '  - ' + t).join('\n')}
-
-EDUCATION
-B.Tech in Computer Science — Indian Institute of Technology, Delhi (2018-2022)
-CGPA: ${(7 + Math.random() * 2.5).toFixed(1)}/10
-
-CERTIFICATIONS
-- AWS Certified Solutions Architect (2024)
-- Google Project Management Certificate (2023)`;
-}
+// removed generateSyntheticResume — it invented fake resumes (Swiggy/Flipkart/
+// fake CGPA/certs) that were scored as if real. Analysis now requires the real
+// resume text (server-fetched or uploaded) and fails loudly when there is none.
 
 function isGarbageText(text) {
   if (!text || text.length < 20) return true;
@@ -638,14 +611,53 @@ async function runResumeAnalysis(cid, job, opts = {}) {
   const quiet = opts.quiet === true;
   const pasteArea = document.getElementById(`ra-paste-${cid}`);
   const btn = document.getElementById(`ra-btn-${cid}`);
+  const origHTML = btn ? btn.innerHTML : '';
   let resumeText = ((resumeTextCache[cid] || '') + '\n' + (pasteArea?.value || '')).trim();
   const candidate = AppState.candidates.find(c => c.id === cid);
+
+  // Candidates imported via CSV/Excel carry a resume link but no uploaded text.
+  // Fetch + extract the linked doc server-side (public Google Docs/Drive) first.
+  if ((!resumeText || isGarbageText(resumeText)) && candidate?.resumeLink) {
+    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="ra-spinner"></span> Fetching…`; }
+    try {
+      const res = await fetch('/api/fetch-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: candidate.resumeLink }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.text) {
+        resumeTextCache[cid] = data.text;
+        resumeText = data.text.trim();
+      } else if (!quiet) {
+        showPremiumToast(data.error || 'Could not fetch the linked resume.', 'error');
+      }
+    } catch {
+      if (!quiet) showPremiumToast('Could not fetch the linked resume.', 'error');
+    }
+  }
+
+  // Backend candidates carry no local resume text (it lives server-side). Pull the
+  // real parsed text instead of fabricating one, so the score reflects the actual
+  // resume rather than synthetic filler.
+  if ((!resumeText || isGarbageText(resumeText)) && candidate && candidate._backend && getDataSource() === 'api') {
+    try {
+      const serverText = await apiGetResumeText(cid);
+      if (serverText && !isGarbageText(serverText)) {
+        resumeTextCache[cid] = serverText;
+        resumeText = serverText.trim();
+      }
+    } catch (e) {
+      console.warn('resume-text fetch failed', e);
+    }
+  }
+
   if (!resumeText || isGarbageText(resumeText)) {
-    if (!quiet) showPremiumToast('Upload a resume or paste resume text first.', 'error');
+    if (!quiet) showPremiumToast('Upload a resume, paste text, or add a valid public resume link.', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
     return false;
   }
 
-  const origHTML = btn ? btn.innerHTML : '';
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = `<span class="ra-spinner"></span> Analysing…`;
@@ -735,7 +747,53 @@ ${resumeText.slice(0, 5000)}`;
   if (cand) {
     cand.score = `${result.matchScore}%`;
     cand.resumeAnalysis = result;
+    cand.resumeText = resumeText; // persist so "Reanalyse" works after reloads
     saveStateToLocalStorage();
+
+    // Persist server-side so the score/report survive a device or browser change
+    // and reach the rest of the pipeline — localStorage alone is per-browser.
+    // Only resume-stage fields, so this never triggers interview-session sync.
+    if (cand._backend && getDataSource() === 'api') {
+      apiUpdateApplicant(cid, {
+        match_score: result.matchScore,
+        resume_analysis_report: JSON.stringify(result),
+        resume_text: resumeText,
+        resume_analysed: true,
+        resume_shortlisted: result.recommendation === 'Advance',
+      }).catch((err) => {
+        console.warn('Resume analysis saved locally but backend sync failed:', err);
+        if (!quiet) showPremiumToast('Saved locally — backend sync failed. Reanalyse to retry.', 'info');
+      });
+    } else if (getDataSource() === 'api' && !cand._backend) {
+      // Register the candidate on the backend so the analysis persists — but keep
+      // its on-screen "CAN-" id STABLE. Mutating it mid-flow broke the row's click
+      // handlers (they closure over the old id) and forced a manual refresh. Tag
+      // jobId + backendId so the next hydrate adopts the backend copy cleanly
+      // instead of duplicating. Backend requires an email to register.
+      if (!cand.email) {
+        if (!quiet) showPremiumToast('Analysis saved locally — add an email to sync this candidate to the backend.', 'info');
+      } else {
+        const registered = cand.backendId
+          ? Promise.resolve(cand.backendId)
+          : apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone }).then((created) => {
+              if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
+              cand.backendId = created.id;
+              cand.jobId = job.id;
+              saveStateToLocalStorage();
+              return created.id;
+            });
+        registered.then((backendId) => apiUpdateApplicant(backendId, {
+          match_score: result.matchScore,
+          resume_analysis_report: JSON.stringify(result),
+          resume_text: resumeText,
+          resume_analysed: true,
+          resume_shortlisted: result.recommendation === 'Advance',
+        })).catch((err) => {
+          console.warn('Could not sync candidate to backend:', err);
+          if (!quiet) showPremiumToast(`Analysis saved locally — couldn't sync: ${err.message || err}`, 'info');
+        });
+      }
+    }
   }
   renderAnalysisResult(cid, result);
   if (!quiet) showPremiumToast(result.engine === 'local' ? 'Resume analysed (local engine).' : 'Deep resume analysis complete.', 'success');
@@ -804,14 +862,16 @@ function renderAnalysisResult(cid, result) {
 // (a 429 silently falls back to the lower-quality local engine), so we cap it.
 const RESUME_ANALYSIS_CONCURRENCY = 4;
 
-async function runBulkResumeAnalysis(candidateIds, job) {
-  const pending = candidateIds.filter(id => !resumeAnalysisCache[id]);
+async function runBulkResumeAnalysis(candidateIds, job, opts = {}) {
+  const force = opts.force === true;
+  // Normal bulk skips already-analysed; reanalyse (force) re-runs them against the new params.
+  const pending = force ? candidateIds.slice() : candidateIds.filter(id => !resumeAnalysisCache[id]);
   if (pending.length === 0) {
     showPremiumToast('All candidates already analysed.', 'info');
     return;
   }
   const total = pending.length;
-  showPremiumToast(`Analysing ${total} candidate${total > 1 ? 's' : ''} (${Math.min(RESUME_ANALYSIS_CONCURRENCY, total)} at a time)…`, 'info');
+  showPremiumToast(`${force ? 'Reanalysing' : 'Analysing'} ${total} candidate${total > 1 ? 's' : ''} (${Math.min(RESUME_ANALYSIS_CONCURRENCY, total)} at a time)…`, 'info');
 
   // Bounded-concurrency worker pool: each worker pulls the next candidate off a
   // shared cursor, so at most RESUME_ANALYSIS_CONCURRENCY calls are ever in
@@ -825,7 +885,7 @@ async function runBulkResumeAnalysis(candidateIds, job) {
       const cid = pending[cursor];
       cursor += 1;
       try {
-        const ok = await runResumeAnalysis(cid, job, { quiet: true });
+        const ok = await runResumeAnalysis(cid, job, { quiet: true, force });
         if (ok === true) done += 1; else failed += 1;
       } catch {
         failed += 1;
@@ -836,10 +896,11 @@ async function runBulkResumeAnalysis(candidateIds, job) {
   const workerCount = Math.min(RESUME_ANALYSIS_CONCURRENCY, pending.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
+  const verb = force ? 'Reanalysis' : 'Bulk analysis';
   showPremiumToast(
     failed
-      ? `Bulk analysis complete: ${done}/${total} succeeded, ${failed} failed.`
-      : `Bulk analysis complete: all ${total} succeeded.`,
+      ? `${verb} complete: ${done}/${total} succeeded, ${failed} failed.`
+      : `${verb} complete: all ${total} succeeded.`,
     failed ? 'info' : 'success',
   );
 }
@@ -873,6 +934,9 @@ function toggleResumeCriteriaEdit(job) {
     const resumeList = document.getElementById('list-stage-resume');
     if (resumeList) {
       const jobCandidates = AppState.candidates.filter(c => {
+        if (getDataSource() === 'api' && job._backend) {
+          return c.jobId === job.id;
+        }
         const jTitle = c.jobApplied;
         return jTitle === job.roleName || jTitle === job.cardName;
       });
@@ -951,50 +1015,309 @@ function toggleResumeCriteriaEdit(job) {
   }
 }
 
-function openScheduleModal(candidateName, mode, callback) {
+// --- CSV / Excel resume-link import (Resume Analysis) ---
+
+// Parse delimited text into a matrix of trimmed cells, respecting "quoted, fields".
+function parseDelimited(text) {
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const cells = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+        else cur += ch;
+      } else if (ch === '"') { inQ = true; }
+      else if (ch === ',') { cells.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    cells.push(cur);
+    rows.push(cells.map(c => c.trim()));
+  }
+  return rows;
+}
+
+// Map a header+rows matrix to { name, email, phone, link }, keeping only rows
+// that carry an http(s) resume link.
+function matrixToCandidates(matrix) {
+  if (!matrix.length) return [];
+  const headers = matrix[0].map(h => String(h).toLowerCase().trim());
+  const exact = (...keys) => headers.findIndex(h => keys.includes(h));
+  const contains = (...subs) => headers.findIndex(h => subs.some(s => h.includes(s)));
+  const nameIdx = exact('name', 'candidate', 'candidate name');
+  const emailIdx = exact('email', 'e-mail', 'email address');
+  const phoneIdx = exact('phone', 'mobile', 'contact');
+  let linkIdx = exact('resume link', 'resume url', 'resume', 'link', 'url', 'google doc', 'document', 'doc');
+  if (linkIdx === -1) linkIdx = contains('link', 'url', 'doc');
+
+  const out = [];
+  for (let i = 1; i < matrix.length; i++) {
+    const cols = matrix[i] || [];
+    const link = linkIdx !== -1 ? String(cols[linkIdx] || '').trim() : '';
+    if (!/^https?:\/\//i.test(link)) continue;
+    out.push({
+      name: nameIdx !== -1 ? String(cols[nameIdx] || '').trim() : '',
+      email: emailIdx !== -1 ? String(cols[emailIdx] || '').trim() : '',
+      phone: phoneIdx !== -1 ? String(cols[phoneIdx] || '').trim() : '',
+      link,
+    });
+  }
+  return out;
+}
+
+async function handleResumeImportFile(file, job) {
+  let matrix = [];
+  const fname = (file.name || '').toLowerCase();
+  try {
+    if (fname.endsWith('.xlsx') || fname.endsWith('.xls')) {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' })
+        .map(r => r.map(c => String(c)));
+    } else {
+      matrix = parseDelimited(await file.text());
+    }
+  } catch {
+    showPremiumToast('Could not read the file. Use a .csv or .xlsx with a resume link column.', 'error');
+    return;
+  }
+
+  const rows = matrixToCandidates(matrix);
+  if (!rows.length) {
+    showPremiumToast('No rows with a resume link found. Add a "Resume Link" column of public Google-Doc/Drive URLs.', 'error');
+    return;
+  }
+
+  let ok = 0;
+  for (const r of rows) {
+    try {
+      const cid = await addCandidateToAppState(r.name || r.email || 'Imported Candidate', r.email, r.phone, job);
+      const cand = AppState.candidates.find(c => c.id === cid);
+      if (cand) { cand.status = 'Resume'; cand.resumeLink = r.link; }
+      ok++;
+    } catch (e) { /* skip rows that fail to persist */ }
+  }
+  saveStateToLocalStorage();
+  renderJobDetailPanes(job);
+  if (!ok) { showPremiumToast('Could not import candidates (backend error).', 'error'); return; }
+  showPremiumToast(`Imported ${ok} candidate${ok > 1 ? 's' : ''}${ok < rows.length ? ` · ${rows.length - ok} failed` : ''}. Click "Analyse All" to fetch & score their resumes.`, 'success');
+}
+
+function downloadResumeImportTemplate() {
+  const csv = 'Name,Email,Phone,Resume Link\nJohn Doe,john@example.com,+15550192834,https://docs.google.com/document/d/EXAMPLE_ID/edit\nJane Smith,jane@example.com,,https://drive.google.com/file/d/EXAMPLE_ID/view';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'IntervieHire_resume_links_template.csv';
+  a.style.visibility = 'hidden';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const SCHEDULE_TIMEZONES = [
+  'Asia/Kolkata (UTC+05:30)',
+  'Asia/Dubai (UTC+04:00)',
+  'Asia/Singapore (UTC+08:00)',
+  'Asia/Tokyo (UTC+09:00)',
+  'Europe/London (UTC+00:00)',
+  'Europe/Berlin (UTC+01:00)',
+  'America/New_York (UTC-05:00)',
+  'America/Chicago (UTC-06:00)',
+  'America/Los_Angeles (UTC-08:00)',
+  'Australia/Sydney (UTC+11:00)',
+];
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toLocalInputValue(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+function formatSlot(dtLocal) {
+  if (!dtLocal) return '';
+  const d = new Date(dtLocal);
+  if (isNaN(d.getTime())) return dtLocal;
+  return d.toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+// opts: { mode: 'schedule' | 'reschedule', name, email, slotTime, count }
+// callback receives { start, end, timezone, slot } (slot is a friendly formatted start).
+// Compact custom date+time picker: a month calendar (click a day) + a time input.
+// Returns { el, getValue } where getValue() -> Date. Used in the schedule modal.
+function createDateTimePicker(initial) {
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  const sel = new Date(initial.getTime());
+  const view = new Date(initial.getFullYear(), initial.getMonth(), 1);
+
+  const el = document.createElement('div');
+  el.className = 'sdt';
+  const field = document.createElement('button');
+  field.type = 'button';
+  field.className = 'sdt-field';
+  const pop = document.createElement('div');
+  pop.className = 'sdt-pop';
+  pop.hidden = true;
+  el.appendChild(field);
+  el.appendChild(pop);
+
+  const fmtField = () => {
+    field.textContent = sel.toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+  const renderCal = () => {
+    const y = view.getFullYear(), m = view.getMonth();
+    const firstDow = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < firstDow; i++) cells += '<span class="sdt-day empty"></span>';
+    for (let d = 1; d <= days; d++) {
+      const on = sel.getFullYear() === y && sel.getMonth() === m && sel.getDate() === d;
+      cells += `<button type="button" class="sdt-day${on ? ' sel' : ''}" data-d="${d}">${d}</button>`;
+    }
+    pop.innerHTML = `
+      <div class="sdt-head">
+        <button type="button" class="sdt-nav" data-nav="-1" aria-label="Previous month">‹</button>
+        <span class="sdt-title">${MONTHS[m]} ${y}</span>
+        <button type="button" class="sdt-nav" data-nav="1" aria-label="Next month">›</button>
+      </div>
+      <div class="sdt-dow">${DOW.map(d => `<span>${d}</span>`).join('')}</div>
+      <div class="sdt-grid">${cells}</div>
+      <div class="sdt-time-row">
+        <label>Time</label>
+        <input type="time" class="sdt-time" value="${pad2(sel.getHours())}:${pad2(sel.getMinutes())}" />
+      </div>`;
+  };
+
+  field.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !pop.hidden;
+    el.closest('.schedule-modal')?.querySelectorAll('.sdt-pop').forEach(p => { p.hidden = true; });
+    if (!open) { renderCal(); pop.hidden = false; }
+  });
+  pop.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const nav = e.target.closest('.sdt-nav');
+    if (nav) { view.setMonth(view.getMonth() + Number(nav.dataset.nav)); renderCal(); return; }
+    const day = e.target.closest('.sdt-day');
+    if (day && day.dataset.d) {
+      sel.setFullYear(view.getFullYear(), view.getMonth(), Number(day.dataset.d));
+      fmtField(); renderCal();
+    }
+  });
+  pop.addEventListener('change', (e) => {
+    if (e.target.classList.contains('sdt-time')) {
+      const [h, mi] = e.target.value.split(':').map(Number);
+      sel.setHours(h || 0, mi || 0, 0, 0);
+      fmtField();
+    }
+  });
+
+  fmtField();
+  return { el, getValue: () => new Date(sel.getTime()) };
+}
+
+function openScheduleModal(opts, callback) {
+  if (typeof opts === 'string') opts = { name: opts, mode: arguments[1] }, callback = arguments[2];
+  const { mode = 'schedule', name = 'Candidate', email = '', slotTime = '', count = 1 } = opts || {};
+  const isBulk = count > 1;
+  const title = mode === 'reschedule' ? 'Reschedule Interview' : "Schedule Candidate's Window";
+
   const existing = document.getElementById('schedule-modal-overlay');
   if (existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.id = 'schedule-modal-overlay';
   overlay.className = 'schedule-modal-overlay';
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  const dateStr = tomorrow.toISOString().split('T')[0];
+
+  const start = new Date(); start.setDate(start.getDate() + 1); start.setHours(10, 0, 0, 0);
+  const end = new Date(start.getTime() + 30 * 60000);
+
+  const ro = (label, value) => `<div class="sched-readonly-row"><span class="sched-ro-label">${label}</span><span class="sched-ro-value">${value}</span></div>`;
+  const contextRows = isBulk
+    ? ro('Candidates:', `${count} selected`)
+    : ro('Candidate Name:', escapeHTML(name)) +
+      (email ? ro('Candidate Email:', escapeHTML(email)) : '') +
+      ro('Candidate Slot Time:', slotTime ? escapeHTML(slotTime) : '—');
+
   overlay.innerHTML = `
     <div class="schedule-modal">
-      <h3>${mode === 'reschedule' ? 'Reschedule' : 'Schedule'} Interview — ${candidateName}</h3>
+      <button class="sched-close" id="sched-cancel" aria-label="Close">✕</button>
+      <h3>${title}</h3>
+      ${contextRows}
       <div class="schedule-form-group">
-        <label>Date</label>
-        <input type="date" id="sched-date" value="${dateStr}" />
-      </div>
-      <div class="schedule-form-group">
-        <label>Time</label>
-        <input type="time" id="sched-time" value="10:00" />
-      </div>
-      <div class="schedule-form-group">
-        <label>Duration</label>
-        <select id="sched-duration" style="padding:8px 12px;background:rgba(0,0,0,0.2);border:1px solid var(--glass-border);border-radius:8px;color:var(--color-text-primary);font-size:0.82rem;outline:none;">
-          <option value="15">15 minutes</option>
-          <option value="30" selected>30 minutes</option>
-          <option value="45">45 minutes</option>
-          <option value="60">60 minutes</option>
+        <label>Time Zone</label>
+        <select id="sched-tz" class="sched-tz-select">
+          ${SCHEDULE_TIMEZONES.map((tz, i) => `<option value="${escapeHTML(tz)}" ${i === 0 ? 'selected' : ''}>${escapeHTML(tz)}</option>`).join('')}
         </select>
       </div>
-      <div class="schedule-modal-actions">
-        <button class="btn-schedule-cancel" id="sched-cancel">Cancel</button>
-        <button class="btn-schedule-confirm" id="sched-confirm">Confirm</button>
+      <div class="schedule-form-group">
+        <label>Enter Date &amp; Time</label>
+        <div class="sched-range-row">
+          <div id="sched-start-mount" class="sdt-mount"></div>
+          <span class="sched-range-sep">to</span>
+          <div id="sched-end-mount" class="sdt-mount"></div>
+        </div>
       </div>
+      <button class="btn-schedule-continue" id="sched-confirm">Continue</button>
     </div>`;
   document.body.appendChild(overlay);
+
+  const startPicker = createDateTimePicker(start);
+  const endPicker = createDateTimePicker(end);
+  overlay.querySelector('#sched-start-mount').appendChild(startPicker.el);
+  overlay.querySelector('#sched-end-mount').appendChild(endPicker.el);
+  const modalEl = overlay.querySelector('.schedule-modal');
+  modalEl.addEventListener('click', (e) => {
+    if (!e.target.closest('.sdt')) modalEl.querySelectorAll('.sdt-pop').forEach(p => { p.hidden = true; });
+  });
+
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.getElementById('sched-cancel').addEventListener('click', () => overlay.remove());
   document.getElementById('sched-confirm').addEventListener('click', () => {
-    const date = document.getElementById('sched-date').value;
-    const time = document.getElementById('sched-time').value;
+    const startDate = startPicker.getValue();
+    const endDate = endPicker.getValue();
+    const timezone = document.getElementById('sched-tz').value;
+    if (endDate < startDate) { showPremiumToast('End time must be after the start time.', 'error'); return; }
+    const startV = toLocalInputValue(startDate);
+    const endV = toLocalInputValue(endDate);
     overlay.remove();
-    if (callback) callback(date, time);
-    showPremiumToast(`Interview ${mode === 'reschedule' ? 'rescheduled' : 'scheduled'} for ${candidateName} on ${date} at ${time}.`, 'success');
+    if (callback) callback({ start: startV, end: endV, timezone, slot: formatSlot(startV) });
     soundEngine.playChime([523.25, 659.25], 0.15, 0.08);
   });
+}
+
+const SFD_ICONS = {
+  // Interview status
+  'Completed': '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  'Incomplete': '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+  'Evaluating': '<line x1="12" x2="12" y1="2" y2="6"/><line x1="12" x2="12" y1="18" y2="22"/><line x1="4.93" x2="7.76" y1="4.93" y2="7.76"/><line x1="16.24" x2="19.07" y1="16.24" y2="19.07"/><line x1="2" x2="6" y1="12" y2="12"/><line x1="18" x2="22" y1="12" y2="12"/><line x1="4.93" x2="7.76" y1="19.07" y2="16.24"/><line x1="16.24" x2="19.07" y1="7.76" y2="4.93"/>',
+  'Attempting': '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+  'Not Started': '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  'Slot Missed': '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  // Cheat probability
+  'High': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
+  'Medium': '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+  'Low': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  // Recruiter screening
+  'Good fit': '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  'Moderate fit': '<circle cx="12" cy="12" r="10"/><line x1="8" x2="16" y1="12" y2="12"/>',
+  'Poor fit': '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  // Actions
+  'Shortlisted': '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  'Rejected': '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  'Waitlisted': '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  'Panel Shortlisted': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>',
+  'Panel Rejected': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" x2="22" y1="8" y2="13"/><line x1="22" x2="17" y1="8" y2="13"/>',
+  'Panel Waitlisted': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="18" cy="12" r="3"/><path d="M18 10.5v1.5l1 1"/>',
+  'Pending Action': '<circle cx="12" cy="12" r="10"/><path d="M7 12h.01"/><path d="M12 12h.01"/><path d="M17 12h.01"/>',
+};
+
+function sfdIcon(value) {
+  const paths = SFD_ICONS[value];
+  return paths ? `<svg class="sfd-item-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>` : '';
 }
 
 function buildFilterDropdown(chip, type, candidates, stageKey) {
@@ -1014,7 +1337,7 @@ function buildFilterDropdown(chip, type, candidates, stageKey) {
     statuses.forEach(s => { counts[s] = candidates.filter(c => c.interviewStatus === s).length; });
     dd.innerHTML = `
       <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Interview Status" /></div>
-      <div class="sfd-items">${statuses.map(s => `<label class="sfd-item"><input type="checkbox" value="${s}" ${filters.interviewStatus.includes(s) ? 'checked' : ''} /><span class="sfd-item-label">${s}</span><span class="sfd-item-count">${counts[s]}</span></label>`).join('')}</div>
+      <div class="sfd-items">${statuses.map(s => `<label class="sfd-item"><input type="checkbox" value="${s}" ${filters.interviewStatus.includes(s) ? 'checked' : ''} />${sfdIcon(s)}<span class="sfd-item-label">${s}</span><span class="sfd-item-count">${counts[s]}</span></label>`).join('')}</div>
       <div class="sfd-footer"><button class="sfd-clear-btn">Clear filters</button></div>`;
     dd.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
       filters.interviewStatus = [...dd.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
@@ -1028,7 +1351,7 @@ function buildFilterDropdown(chip, type, candidates, stageKey) {
     levels.forEach(l => { counts[l] = candidates.filter(c => c.cheatProbability === l).length; });
     dd.innerHTML = `
       <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Cheat Probability" /></div>
-      <div class="sfd-items">${levels.map(l => `<label class="sfd-item"><input type="checkbox" value="${l}" ${filters.cheatProb.includes(l) ? 'checked' : ''} /><span class="sfd-item-label">${l}</span><span class="sfd-item-count">${counts[l]}</span></label>`).join('')}</div>
+      <div class="sfd-items">${levels.map(l => `<label class="sfd-item"><input type="checkbox" value="${l}" ${filters.cheatProb.includes(l) ? 'checked' : ''} />${sfdIcon(l)}<span class="sfd-item-label">${l}</span><span class="sfd-item-count">${counts[l]}</span></label>`).join('')}</div>
       <div class="sfd-footer"><button class="sfd-clear-btn">Clear filters</button></div>`;
     dd.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
       filters.cheatProb = [...dd.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
@@ -1041,7 +1364,7 @@ function buildFilterDropdown(chip, type, candidates, stageKey) {
     vals.forEach(v => { counts[v] = candidates.filter(c => c.recruiterScreening === v).length; });
     dd.innerHTML = `
       <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Recruiter Screening" /></div>
-      <div class="sfd-items">${vals.map(v => `<label class="sfd-item"><input type="checkbox" value="${v}" ${filters.recruiterScreening.includes(v) ? 'checked' : ''} /><span class="sfd-item-label">${v}</span><span class="sfd-item-count">${counts[v]}</span></label>`).join('')}</div>
+      <div class="sfd-items">${vals.map(v => `<label class="sfd-item"><input type="checkbox" value="${v}" ${filters.recruiterScreening.includes(v) ? 'checked' : ''} />${sfdIcon(v)}<span class="sfd-item-label">${v}</span><span class="sfd-item-count">${counts[v]}</span></label>`).join('')}</div>
       <div class="sfd-footer"><button class="sfd-clear-btn">Clear filters</button></div>`;
     dd.querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
       filters.recruiterScreening = [...dd.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
@@ -1070,7 +1393,7 @@ function buildFilterDropdown(chip, type, candidates, stageKey) {
     const acts = ['Shortlisted', 'Rejected', 'Waitlisted', 'Panel Shortlisted', 'Panel Rejected', 'Panel Waitlisted', 'Pending Action'];
     dd.innerHTML = `
       <div class="sfd-search"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Actions" /></div>
-      <div class="sfd-items">${acts.map(a => `<label class="sfd-item"><input type="checkbox" value="${a}" /><span class="sfd-item-label">${a}</span><span class="sfd-item-count">0</span></label>`).join('')}</div>`;
+      <div class="sfd-items">${acts.map(a => `<label class="sfd-item"><input type="checkbox" value="${a}" />${sfdIcon(a)}<span class="sfd-item-label">${a}</span><span class="sfd-item-count">0</span></label>`).join('')}</div>`;
   }
 
   const rect = chip.getBoundingClientRect();
@@ -1103,4 +1426,4 @@ function hasActiveFilters(stageKey) {
 }
 
 
-export { applyStageFilters, bindResumeAnalysisEvents, buildFilterDropdown, cacheResumeTextAndIdentity, extractExperienceYearsFromText, extractNameFromResumeText, generateAutoResumeAnalysis, generateSyntheticResume, handleResumeFile, hasActiveFilters, isGarbageText, openScheduleModal, refreshResumeCandidateRowIdentity, renderAnalysisResult, renderResumeStagePaneForJob, reportChatCache, resumeAnalysisCache, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis, runResumeAnalysis, toggleResumeCriteriaEdit };
+export { applyStageFilters, bindResumeAnalysisEvents, buildFilterDropdown, cacheResumeTextAndIdentity, extractExperienceYearsFromText, extractNameFromResumeText, handleResumeFile, hasActiveFilters, isGarbageText, openScheduleModal, refreshResumeCandidateRowIdentity, renderAnalysisResult, renderResumeStagePaneForJob, reportChatCache, resumeAnalysisCache, resumeIdentityCache, resumeTextCache, runBulkResumeAnalysis, runResumeAnalysis, toggleResumeCriteriaEdit };

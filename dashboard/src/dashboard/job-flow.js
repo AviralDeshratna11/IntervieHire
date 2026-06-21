@@ -2,6 +2,7 @@ import { document, setTimeout } from './runtime.js';
 import { escapeHTML } from './escape.js';
 import { EXPERIENCE_BANDS, DIFFICULTY_LEVELS } from './constants.js';
 import { saveStateToLocalStorage } from './ai-api.js';
+import { scheduleJobSave } from './api.js';
 import { navigateToJobDetail } from './job-detail.js';
 import { recalculateJobPipelines } from './kanban-swarm.js';
 import { navigateToTab, openDrawer } from './navigation.js';
@@ -9,7 +10,10 @@ import { renderJobCards } from './render-views.js';
 import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
+import { getDataSource } from './api.js';
 import { ensureFunctionalBlueprint, computeCalibration } from './blueprint-engine.js';
+import { pushUrl } from './url-sync.js';
+
 
 // ==========================================
 // JOB FLOW PIPELINE VIEW
@@ -183,7 +187,12 @@ function migrateCandidatesOfJob(job) {
   const cfg = job.pipelineConfig;
   if (!cfg) return;
 
-  const jobCandidates = AppState.candidates.filter(c => c.jobApplied === job.roleName || c.jobApplied === job.cardName);
+  const jobCandidates = AppState.candidates.filter(c => {
+    if (getDataSource() === 'api' && job._backend) {
+      return c.jobId === job.id;
+    }
+    return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+  });
 
   jobCandidates.forEach(candidate => {
     let currentStatus = candidate.status;
@@ -227,6 +236,7 @@ function openJobFlowView(jobId, showAddCandidates = false) {
 
   AppState.activeTab = 'job-flow';
   AppState.activeJobId = jobId;
+  pushUrl(`/dashboard/jobs/${jobId}/flow`);
 
   // Sidebar: keep Jobs highlighted as parent
   document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
@@ -420,7 +430,9 @@ function renderJobFlowConfig(job, stageKey) {
 
 function getVerboseJobDescription(job) {
   const role = job.roleName || 'This role';
-  const company = job.companyName || 'Akross';
+  // The company is the org that posted the JD — job.companyName (org from the
+  // backend), else the signed-in recruiter's org. Never the platform name.
+  const company = job.companyName || globalThis.IH_ORG_NAME || 'the company';
   const normalizedRole = role.toLowerCase();
   const consultingName = company.toLowerCase().includes('consulting') ? company : `${company} Consulting`;
 
@@ -494,7 +506,7 @@ function getVerboseJobDescription(job) {
 
 function renderVerboseJobDescription(job) {
   const content = getVerboseJobDescription(job);
-  const company = escapeHTML(job.companyName || 'Akross');
+  const company = escapeHTML(job.companyName || globalThis.IH_ORG_NAME || 'the company');
   const location = escapeHTML(job.location || 'Delhi, India');
   const role = escapeHTML(job.cardName || job.roleName || 'Untitled Role');
   const roleName = escapeHTML(job.roleName || 'Untitled Role');
@@ -861,6 +873,7 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     job.resumeCriteria = next;
     panel.dataset.raEditing = 'false';
     saveStateToLocalStorage();
+    scheduleJobSave(job);
     showPremiumToast('Resume analysis rules saved.', 'success');
     renderResumeAnalysisFlowConfig(job, panel);
     renderJobFlowPipeline(job);
@@ -1011,9 +1024,12 @@ function renderFunnelStages(job) {
 
   const total = Math.max(job.pipeline.total, 1);
 
-  const jobCandidates = AppState.candidates.filter(
-    c => c.jobApplied === job.roleName || c.jobApplied === job.cardName
-  );
+  const jobCandidates = AppState.candidates.filter(c => {
+    if (getDataSource() === 'api' && job._backend) {
+      return c.jobId === job.id;
+    }
+    return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+  });
 
   const completedCount = jobCandidates.filter(c => c.interviewStatus === 'Completed').length;
   const qualifiedCount = jobCandidates.filter(c => c.status === 'Hired').length;

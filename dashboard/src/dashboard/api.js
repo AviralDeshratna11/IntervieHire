@@ -8,13 +8,13 @@
 // see memory: prefer-vansh-version).
 
 import { createTopic, createQuestionBlueprint, toFunctionalParameters, toScreeningQuestions } from './blueprint-engine.js';
+import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed } from '../auth-client.js';
+
+// Auth + HTTP primitives live in ../auth-client.js (dependency-free so the lean
+// /login + /signup pages can reuse them). Re-export for existing callers here.
+export { apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed };
 
 const LS_SOURCE = 'IntervieHire_data_source';
-const LS_TOKEN = 'IntervieHire_auth_token';
-
-// Base URL: env override (NEXT_PUBLIC_API_URL) → default local FastAPI.
-const API_BASE = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_URL)
-  || 'http://localhost:8000/api';
 
 // The candidate interview room (ai_components/apps/web). apps/web hardcodes
 // `next dev -p 3000` which collides with the dashboard, so it is run on 3001.
@@ -22,45 +22,13 @@ export const ENGINE_WEB_URL = (typeof process !== 'undefined' && process.env && 
   || 'http://localhost:3001';
 
 export function getDataSource() {
-  try { return localStorage.getItem(LS_SOURCE) === 'api' ? 'api' : 'local'; } catch { return 'local'; }
+  // Default to 'api' (live backend); only stay local if explicitly opted in.
+  try { return localStorage.getItem(LS_SOURCE) === 'local' ? 'local' : 'api'; } catch { return 'api'; }
 }
 export function setDataSource(mode) {
   try { localStorage.setItem(LS_SOURCE, mode === 'api' ? 'api' : 'local'); } catch {}
 }
 export const isApiMode = () => getDataSource() === 'api';
-
-// Auth is an httponly `token` cookie set by the backend (samesite=lax; reaches
-// :8000 because localhost ports are same-site). JS can't read it, so we only
-// track a local "signed in" flag for UI — the browser carries the cookie via
-// credentials:'include'.
-function setAuthed(v) { try { v ? localStorage.setItem(LS_TOKEN, '1') : localStorage.removeItem(LS_TOKEN); } catch {} }
-
-async function request(path, { method = 'GET', body } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  let res;
-  try {
-    res = await fetch(`${API_BASE}${path}`, { method, headers, credentials: 'include', body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
-  } catch (err) {
-    throw new Error(`Network error reaching backend (${API_BASE}). Is FastAPI running on :8000? ${err.message}`);
-  }
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) {
-    const msg = (data && (data.detail || data.error || data.message)) || `${res.status} ${res.statusText}`;
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
-  }
-  return data;
-}
-
-// ── Auth ─────────────────────────────────────────────────────────────────
-export async function apiLogin(email, password) {
-  const data = await request('/auth/login', { method: 'POST', body: { email, password } });
-  setAuthed(true);
-  return { user: data?.user || null, onboardingRequired: !!data?.onboarding_required };
-}
-export async function apiLogout() { try { await request('/auth/logout', { method: 'POST' }); } catch {} setAuthed(false); }
-export const isAuthed = () => { try { return localStorage.getItem(LS_TOKEN) === '1'; } catch { return false; } };
 
 // ── Jobs ─────────────────────────────────────────────────────────────────
 export async function apiFetchJobs() {
@@ -71,11 +39,39 @@ export async function apiFetchJobs() {
 export async function apiFetchJob(id) {
   return mapJobOutToJob(await request(`/jobs/${id}`));
 }
+// Create a job on the backend (api mode) so it persists across refetches.
+// Returns the mapped job with its real backend id + organisation_name.
+export async function apiCreateJob(job) {
+  const body = {
+    title: job.cardName || job.roleName || 'Untitled Job',
+    role_name: job.roleName || job.cardName || 'Untitled Role',
+    experience_band: job.experienceBand || null,
+    custom_job_id: (job.customJobId && job.customJobId !== '-') ? job.customJobId : null,
+    status: job.status || 'draft',
+    resume_analysis_enabled: job.pipelineConfig?.resumeAnalysis?.enabled ?? true,
+    recruiter_screening_enabled: job.pipelineConfig?.recruiterScreening?.enabled ?? true,
+    functional_interview_enabled: job.pipelineConfig?.functionalInterview?.enabled ?? true,
+    description: job.description || null,
+  };
+  return mapJobOutToJob(await request('/jobs', { method: 'POST', body }));
+}
 // Persist the authored blueprint — the exact JobParametersIn shape the backend
 // + ai_sync.py consume (functional_parameters carries questionsDetailed).
 export async function apiPatchJobParameters(id, job) {
   const body = mapJobToParametersPayload(job);
   return request(`/jobs/${id}/parameters`, { method: 'PATCH', body });
+}
+
+// Debounced backend autosave for job parameters (scoring config, criteria, flow,
+// questions). Any feature that mutates a job calls this right after
+// saveStateToLocalStorage(); no-op outside API mode or for local-only jobs.
+const _jobSaveTimers = {};
+export function scheduleJobSave(job) {
+  if (getDataSource() !== 'api' || !job || !job._backend || !job.id) return;
+  clearTimeout(_jobSaveTimers[job.id]);
+  _jobSaveTimers[job.id] = setTimeout(() => {
+    apiPatchJobParameters(job.id, job).catch((e) => console.warn('Job sync failed:', e));
+  }, 800);
 }
 export async function apiFetchApplicants(jobId, tab = 'functional') {
   const data = await request(`/jobs/${jobId}/responses?tab=${encodeURIComponent(tab)}`);
@@ -95,6 +91,91 @@ export async function apiCreateTestSession(jobId) {
   return data?.session_id || null;
 }
 
+// Persist a candidate to the backend so it has a real UUID (and can be scheduled
+// / interviewed). Used when a candidate was added in the UI but only carries a
+// local "CAN-…" code. Returns the mapped candidate with its backend UUID.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A candidate added in the UI may carry only a local "CAN-…" code (not yet on the
+// backend). Some actions need a real backend UUID — create the applicant on demand
+// and adopt its UUID. Mutates c2 (id + _backend). Returns the backend id.
+export async function ensureBackendApplicantId(c2, jobId) {
+  if (UUID_RE.test(String(c2.id || ''))) return c2.id;
+  if (c2.backendId && UUID_RE.test(String(c2.backendId))) return c2.backendId; // already registered (e.g. by resume analysis)
+  if (!c2.email) throw new Error(`${c2.name || 'Candidate'} has no email — add one before syncing to the backend.`);
+  const created = await apiAddApplicant(jobId, { name: c2.name, email: c2.email, phone: c2.phone });
+  if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
+  c2.backendId = created.id;
+  c2.id = created.id;       // adopt the real backend UUID for all future actions
+  c2._backend = true;
+  return created.id;
+}
+
+export async function apiAddApplicant(jobId, { name, email, phone } = {}) {
+  const data = await request(`/jobs/${jobId}/applicants`, {
+    method: 'POST',
+    body: {
+      name: name || 'Candidate',
+      email,
+      phone: phone || null,
+    },
+  });
+  return mapApplicantOutToCandidate(data);
+}
+
+// Upload one or more resume files to the backend, which PARSES each server-side
+// (name / email / phone scraped from the resume text) and creates/updates the
+// applicant — so scheduling + calendar invites use the candidate's real email.
+// `source` controls the pipeline entry (e.g. 'scheduled' or 'bulk_upload').
+// Returns the mapped candidates (with real backend UUIDs + scraped contact info).
+export async function apiUploadResumes(jobId, files, source) {
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f, f.name);
+  let url = `${API_BASE}/jobs/${jobId}/applicants/upload-resumes`;
+  if (source) url += `?source=${encodeURIComponent(source)}`;
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', credentials: 'include', body: fd, cache: 'no-store' });
+  } catch (err) {
+    throw new Error(`Network error reaching backend (${API_BASE}). ${err.message}`);
+  }
+  if (!res.ok) {
+    let detail = `Resume upload failed (${res.status})`;
+    try { const e = await res.json(); detail = e.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  const data = await res.json();
+  const list = Array.isArray(data) ? data : (data?.applicants || data?.data || []);
+  return list.map(mapApplicantOutToCandidate);
+}
+
+export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'screening') {
+  const data = await request(`/jobs/applicants/${applicantId}/schedule`, {
+    method: 'POST',
+    body: {
+      scheduled_at: scheduledAt,
+      stage: stage,
+    },
+  });
+  return mapApplicantOutToCandidate(data);
+}
+
+// Persist a partial applicant update (resume score/report, shortlist flag, etc.)
+// to the backend. `patch` keys are backend snake_case (ApplicantUpdateIn). The
+// route ignores unset fields, so send only what changed. Returns the mapped row.
+export async function apiUpdateApplicant(applicantId, patch) {
+  const data = await request(`/jobs/applicants/${applicantId}`, { method: 'PATCH', body: patch });
+  return mapApplicantOutToCandidate(data);
+}
+
+// Fetch the real parsed resume text the backend has on file for this applicant.
+// Returns '' when the backend has nothing stored, so callers can fall back
+// cleanly instead of scoring fabricated text.
+export async function apiGetResumeText(applicantId) {
+  const data = await request(`/jobs/applicants/${applicantId}/resume-text`);
+  return (data && data.text) || '';
+}
+
 // ── Mappers: backend (snake_case) ⇄ dashboard (camelCase) ──────────────────
 const arr = (v) => (Array.isArray(v) ? v : []);
 
@@ -104,6 +185,7 @@ function mapJobOutToJob(j = {}) {
     id: j.id,
     roleName: j.role_name || j.title || '',
     cardName: j.card_name || j.title || j.role_name || '',
+    companyName: j.organisation_name || '',
     customJobId: j.custom_job_id || '-',
     status: j.status || 'published',
     experienceBand: j.experience_band || '',
@@ -116,6 +198,7 @@ function mapJobOutToJob(j = {}) {
       goodToHave: arr(rp.good_to_have || rp.goodToHave),
       goodToHaveMinMatch: rp.good_to_have_min_match ?? 1,
     },
+    scoringConfig: rp.scoring_config || undefined,
     screeningParams: mapScreeningParamsIn(j.screening_parameters),
     screeningBlueprint: { questions: arr(j.screening_questions).map((q) => createQuestionBlueprint({ prompt: typeof q === 'string' ? q : q.text, questionType: 'hr_screening', difficulty: 'Easy' })) },
     functionalParameters: mapFunctionalIn(j.functional_parameters),
@@ -181,8 +264,26 @@ function mapJobToParametersPayload(job) {
   return {
     screening_questions: toScreeningQuestions(sb),
     functional_parameters: toFunctionalParameters(fp),
-    resume_parameters: { must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave) },
+    // scoring_config rides inside resume_parameters (a freeform JSON column) so the
+    // recruiter's weights/criteria persist without a schema change.
+    resume_parameters: {
+      must_have: arr(rc.mustHave), red_flags: arr(rc.redFlags), good_to_have: arr(rc.goodToHave),
+      ...(job.scoringConfig ? { scoring_config: job.scoringConfig } : {}),
+    },
   };
+}
+
+// Normalise a backend interview status (snake_case) to the dashboard enum so the
+// status chips never mislabel — unknown/absent reads as null (→ "Not Started").
+function mapInterviewStatus(s) {
+  if (!s) return null;
+  const k = String(s).toLowerCase().replace(/\s+/g, '_');
+  const map = {
+    completed: 'Completed', incomplete: 'Incomplete', evaluating: 'Evaluating',
+    attempting: 'Attempting', in_progress: 'Attempting', not_started: 'Not Started',
+    scheduled: 'Not Started', pending: 'Not Started', slot_missed: 'Slot Missed', missed: 'Slot Missed',
+  };
+  return map[k] || (k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' '));
 }
 
 function mapApplicantOutToCandidate(a = {}) {
@@ -191,12 +292,24 @@ function mapApplicantOutToCandidate(a = {}) {
     name: a.name || '',
     email: a.email || '',
     jobApplied: a.job_role_title || a.role_name || '',
-    status: a.functional_status === 'completed' ? 'Functional' : (a.screening_status === 'completed' ? 'Screening' : 'Resume'),
+    // decision (the recruiter's explicit call) wins over derived stage so Hired/Rejected
+    // and a pre-schedule shortlist survive a refetch. 'shortlisted' shows as Screening
+    // (advanced past resume); exact Screening-vs-Functional persists once scheduled.
+    status: a.decision === 'hired' ? 'Hired'
+      : a.decision === 'rejected' ? 'Rejected'
+      : a.functional_status === 'completed' ? 'Functional'
+      : a.screening_status === 'completed' ? 'Screening'
+      : a.decision === 'shortlisted' ? 'Screening'
+      : 'Resume',
     source: a.source || 'ATS',
-    interviewStatus: a.functional_status === 'completed' ? 'Completed' : (a.functional_status || null),
+    interviewStatus: mapInterviewStatus(a.functional_status),
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
+    decision: a.decision ?? null,
+    // Rehydrate the stored analysis so a re-opened report shows the saved result
+    // instead of re-scoring from scratch.
+    ...(() => { try { const p = a.resume_analysis_report ? JSON.parse(a.resume_analysis_report) : null; return p ? { resumeAnalysis: p } : {}; } catch { return {}; } })(),
     _backend: true,
   };
 }

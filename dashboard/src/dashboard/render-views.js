@@ -9,6 +9,7 @@ import { openCandidateReport } from './report.js';
 import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
+import { getDataSource } from './api.js';
 
 // ==========================================
 // RENDERING & INTERACTIVE VIEWS
@@ -53,7 +54,7 @@ function renderJobCards() {
     card.className = 'job-card';
     
     // Build safe defaults for all fields
-    const createdBy = job.createdBy || 'Devasri';
+    const createdBy = job.createdBy || globalThis.IH_USER_NAME || 'You';
     const experienceBand = job.experienceBand || 'Upto 2 Years';
     const created = job.created || 'Recently';
     const pipeline = job.pipeline || { total: 0, resume: 0, screening: 0, functional: 0 };
@@ -670,7 +671,12 @@ function applyDateRangeGlobally() {
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (activeJob) {
     const jobCandidates = filterCandidatesByDateRange(
-      AppState.candidates.filter(c => c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName)
+      AppState.candidates.filter(c => {
+        if (getDataSource() === 'api' && activeJob._backend) {
+          return c.jobId === activeJob.id;
+        }
+        return c.jobApplied === activeJob.roleName || c.jobApplied === activeJob.cardName;
+      })
     );
     drawFunnelSVG(activeJob, jobCandidates);
     drawScoreDistributionSVG(activeJob, jobCandidates);
