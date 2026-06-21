@@ -42,7 +42,7 @@ services:
       # Candidate interview room — the emailed calendar invite links to the
       # site's /interview panel (must be where the candidate room is served).
       - key: INTERVIEW_ROOM_URL
-        value: https://interview.interviehire.com
+        value: https://interviehire.com
       # Email for calendar invites (Gmail SMTP is free via an App Password).
       - key: SMTP_HOST
         value: smtp.gmail.com
