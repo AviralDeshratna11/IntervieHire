@@ -102,6 +102,9 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in str(settings.FRONTEND_URL).split(",") if o.strip()] + [
+        "https://interviehire.com",
+        "https://app.interviehire.com",
+        "https://interview.interviehire.com",
         "http://127.0.0.1:3000",
         "http://localhost:3000",
         "http://127.0.0.1:3001",
