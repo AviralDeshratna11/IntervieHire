@@ -9,6 +9,7 @@
 
 import { createTopic, createQuestionBlueprint, toFunctionalParameters, toScreeningQuestions } from './blueprint-engine.js';
 import { request, API_BASE, apiLogin, apiSignup, apiMe, apiLogout, isAuthed, clearAuthed } from '../auth-client.js';
+import { defaultInterviewSettings } from './state.js';
 
 // Auth + HTTP primitives live in ../auth-client.js (dependency-free so the lean
 // /login + /signup pages can reuse them). Re-export for existing callers here.
@@ -60,6 +61,15 @@ export async function apiCreateJob(job) {
 export async function apiPatchJobParameters(id, job) {
   const body = mapJobToParametersPayload(job);
   return request(`/jobs/${id}/parameters`, { method: 'PATCH', body });
+}
+// Delete a job on the backend so it stays gone after a refetch. The backend
+// cascades its applicants + collaborators (see jobs.py delete_job).
+export async function apiDeleteJob(id) {
+  return request(`/jobs/${id}`, { method: 'DELETE' });
+}
+// Persist a job's status (archive / unarchive / publish) so it survives a refetch.
+export async function apiUpdateJobStatus(id, status) {
+  return request(`/jobs/${id}/settings`, { method: 'PATCH', body: { status } });
 }
 
 // Debounced backend autosave for job parameters (scoring config, criteria, flow,
@@ -208,6 +218,7 @@ function mapJobOutToJob(j = {}) {
       recruiterScreening: { enabled: !!j.recruiter_screening_enabled },
       functionalInterview: { enabled: !!j.functional_interview_enabled },
     },
+    interviewSettings: j.interview_settings ? { ...defaultInterviewSettings(), ...j.interview_settings } : undefined,
     pipeline: j.pipeline || { total: 0, resume: 0, screening: 0, functional: 0 },
     _backend: true,
   };
@@ -219,8 +230,22 @@ function mapScreeningParamsIn(sp) {
   if (!sp || typeof sp !== 'object') return [];
   return Object.entries(sp).map(([category, params]) => ({
     category: category.charAt(0).toUpperCase() + category.slice(1),
-    params: arr(params).map((p) => ({ name: p.parameter || p.name || '', required: !!p.required, flexibility: '', preferredResponse: p.preferred_response || p.preferredResponse || '' })),
+    params: arr(params).map((p) => ({ name: p.parameter || p.name || '', required: !!p.required, flexibility: p.flexibility || '', preferredResponse: p.preferred_response || p.preferredResponse || '' })),
   }));
+}
+
+// Inverse of mapScreeningParamsIn: dashboard [{category, params:[{name,required,
+// flexibility,preferredResponse}]}] → backend {category:[{parameter,required,
+// flexibility,preferred_response}]}. Lowercase keys so the round-trip is stable.
+function mapScreeningParamsOut(params) {
+  const out = {};
+  arr(params).forEach((cat) => {
+    const key = String(cat.category || '').trim().toLowerCase() || 'custom';
+    out[key] = arr(cat.params)
+      .map((p) => ({ parameter: p.name || '', required: !!p.required, flexibility: p.flexibility || '', preferred_response: p.preferredResponse || '' }))
+      .filter((p) => p.parameter);
+  });
+  return out;
 }
 
 // Backend functional_parameters.topics[] → dashboard functionalParameters via the
@@ -264,6 +289,8 @@ function mapJobToParametersPayload(job) {
   return {
     screening_questions: toScreeningQuestions(sb),
     functional_parameters: toFunctionalParameters(fp),
+    screening_parameters: mapScreeningParamsOut(job.screeningParams),
+    ...(job.interviewSettings ? { interview_settings: job.interviewSettings } : {}),
     // scoring_config rides inside resume_parameters (a freeform JSON column) so the
     // recruiter's weights/criteria persist without a schema change.
     resume_parameters: {

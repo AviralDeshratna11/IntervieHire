@@ -139,8 +139,9 @@ class JobDetailOut(BaseModel):
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
     screening_questions: Optional[List[str]] = None
+    interview_settings: Optional[dict] = None
     tags: Optional[List[str]] = None
- 
+
     class Config:
         from_attributes = True
  
@@ -180,6 +181,7 @@ class JobParametersIn(BaseModel):
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
     screening_questions: Optional[List[str]] = None
+    interview_settings: Optional[dict] = None
 
 
 # ─── APPLICANTS / RESPONSES ──────────────────────────────────────────────────

@@ -189,6 +189,14 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
         elif applicant.screening_status is not None:
             scheduled_at = applicant.screening_scheduled_at
 
+        # Per-job interview settings (camelCase JSON) → engine session for enforcement.
+        interview_settings = {}
+        if job.interview_settings:
+            try:
+                interview_settings = json.loads(job.interview_settings)
+            except Exception:
+                interview_settings = {}
+
         if not session:
             session = InterviewSession(
                 id=session_id,
@@ -198,7 +206,8 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
                 status=SessionStatus.SCHEDULED,
                 avatarProvider="ue5_pixel_streaming",
                 transcript=[],
-                scheduledAt=scheduled_at
+                scheduledAt=scheduled_at,
+                settings=interview_settings
             )
             db.add(session)
             db.commit()
@@ -214,6 +223,7 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             session.websocketId = None
             session.ueSocketId = None
             session.scheduledAt = scheduled_at
+            session.settings = interview_settings
             db.commit()
             db.refresh(session)
 

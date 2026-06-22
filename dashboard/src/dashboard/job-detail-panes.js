@@ -11,6 +11,7 @@ import { renderBlueprintStudio } from './blueprint-studio.js';
 import { renderTestInterviewPane } from './test-interview.js';
 import { filterCandidatesByDateRange, renderAnalyticsTable, renderJobCards, updateSummaryMetrics } from './render-views.js';
 import { openReportDrawerForCandidate } from './report.js';
+import { openCandidateReportPage } from './report-page.js';
 import { applyStageFilters, buildFilterDropdown, hasActiveFilters, openScheduleModal, renderResumeStagePaneForJob, toggleResumeCriteriaEdit } from './resume-analysis.js';
 import { renderScoringEditor } from './scoring-config.js';
 import { soundEngine } from './sound.js';
@@ -248,7 +249,7 @@ function renderJobDetailPanes(job) {
                     <td>
                       <div class="table-candidate-cell">
                         <span class="cand-name-link">${escapeHTML(c.name)} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
-                        <button class="btn-remarks">Remarks</button>
+                        <button class="btn-remarks" data-cand-id="${c.id}">Remarks</button>
                         <span class="cand-email-sub">${escapeHTML(c.email)}</span>
                       </div>
                     </td>
@@ -355,7 +356,7 @@ function renderJobDetailPanes(job) {
                     <td>
                       <div class="table-candidate-cell">
                         <span class="cand-name-link">${escapeHTML(c.name)} <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
-                        <button class="btn-remarks">Remarks</button>
+                        <button class="btn-remarks" data-cand-id="${c.id}">Remarks</button>
                         <span class="cand-email-sub">${escapeHTML(c.email)}</span>
                       </div>
                     </td>
@@ -445,6 +446,13 @@ function renderJobDetailPanes(job) {
         e.preventDefault();
         const candId = link.getAttribute('data-cand-id');
         openReportDrawerForCandidate(candId);
+      });
+    });
+
+    pane.querySelectorAll('.btn-remarks').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const candId = btn.getAttribute('data-cand-id') || btn.closest('tr')?.dataset.candidateId;
+        if (candId) openCandidateReportPage(candId, 'remarks');
       });
     });
 

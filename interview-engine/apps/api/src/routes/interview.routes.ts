@@ -233,13 +233,31 @@ export async function interviewRoutes(app: FastifyInstance) {
   });
 
   app.get('/sessions/:id', async (req:any) => prisma.interviewSession.findUnique({where:{id:req.params.id}, include:{company:true,candidate:true,jobRole:{include:{questions:true}},proctoringLogs:true}}));
-  app.post('/sessions/:id/start', async (req:any) => {
+  app.post('/sessions/:id/start', async (req:any, reply:any) => {
     const session = await prisma.interviewSession.findUniqueOrThrow({
       where: { id: req.params.id },
-      include: { jobRole: { include: { questions: { where: { isActive: true }, orderBy: { createdAt: 'asc' } } } } },
+      include: { candidate: true, jobRole: { include: { questions: { where: { isActive: true }, orderBy: { createdAt: 'asc' } } } } },
     });
+    // Per-job interview settings synced from the recruiter dashboard. A missing
+    // value is treated as permissive so existing sessions keep working.
+    const s: any = session.settings || {};
+    if (s.interviewEnabled === false) {
+      return reply.code(403).send({ error: 'This interview is currently disabled.', code: 'INTERVIEW_DISABLED' });
+    }
+    if (s.allowReattempt === false && (session.status === 'COMPLETED' || session.status === 'EVALUATED')) {
+      return reply.code(403).send({ error: 'This interview has already been completed.', code: 'NO_REATTEMPT' });
+    }
+    if (s.allowLate === false && session.scheduledAt && Date.now() > new Date(session.scheduledAt).getTime()) {
+      return reply.code(403).send({ error: 'The scheduled interview window has passed.', code: 'LATE_ATTEMPT' });
+    }
+    if (s.requireCv === true && !session.candidate?.resumeText) {
+      return reply.code(400).send({ error: 'A CV/resume is required before starting this interview.', code: 'CV_REQUIRED' });
+    }
     const firstQuestion = session.jobRole.questions[0]?.text ?? 'Tell me about your software engineering background.';
-    const transcript = Array.isArray(session.transcript) ? session.transcript as any[] : [];
+    // continueFromMiddle: default on (resume). An explicit false starts fresh,
+    // ignoring any prior transcript so a refresh restarts the interview.
+    const resume = s.continueFromMiddle !== false;
+    const transcript = (resume && Array.isArray(session.transcript)) ? session.transcript as any[] : [];
     const hasAiQuestion = transcript.some((entry) => entry?.speaker === 'ai');
     const updatedTranscript = hasAiQuestion
       ? transcript

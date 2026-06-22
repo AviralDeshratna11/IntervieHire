@@ -88,7 +88,8 @@ def _build_job_out(job: Job, db: Session) -> dict:
         "resume_parameters": json.loads(job.resume_parameters) if job.resume_parameters else None,
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
-        "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None
+        "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
+        "interview_settings": json.loads(job.interview_settings) if job.interview_settings else None
     }
 
 
@@ -1281,6 +1282,7 @@ def _build_job_detail_out(job: Job) -> dict:
         "screening_parameters": json.loads(job.screening_parameters) if job.screening_parameters else None,
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
         "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
+        "interview_settings": json.loads(job.interview_settings) if job.interview_settings else None,
         "tags": tags
     }
 
@@ -1352,6 +1354,8 @@ def update_job_parameters(
         job.functional_parameters = json.dumps(data.functional_parameters)
     if data.screening_questions is not None:
         job.screening_questions = json.dumps(data.screening_questions)
+    if data.interview_settings is not None:
+        job.interview_settings = json.dumps(data.interview_settings)
     db.commit()
     db.refresh(job)
     return _build_job_detail_out(job)

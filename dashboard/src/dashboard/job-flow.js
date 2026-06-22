@@ -1,7 +1,7 @@
 import { document, setTimeout } from './runtime.js';
 import { escapeHTML } from './escape.js';
 import { EXPERIENCE_BANDS, DIFFICULTY_LEVELS } from './constants.js';
-import { saveStateToLocalStorage } from './ai-api.js';
+import { saveStateToLocalStorage, generateResumeCriteriaSuggestions } from './ai-api.js';
 import { scheduleJobSave } from './api.js';
 import { navigateToJobDetail } from './job-detail.js';
 import { recalculateJobPipelines } from './kanban-swarm.js';
@@ -18,6 +18,29 @@ import { pushUrl } from './url-sync.js';
 // ==========================================
 // JOB FLOW PIPELINE VIEW
 // ==========================================
+
+// Tracks the job whose post-creation "Add Candidates" banner should stay shown,
+// so the React route echo (navigateToPath → flagless openJobFlowView) can't wipe it.
+let pendingAddCandidates = null;
+
+// Transient resume-criteria suggestion pop-up (one group at a time).
+let raSuggest = { group: null, loading: false, items: null };
+const RA_SUGGEST_FALLBACK = {
+  mustHave: ['Relevant domain experience', 'Proven track record in the core skill', 'Ownership of end-to-end delivery', 'Strong written and verbal communication'],
+  redFlags: ['Frequent unexplained job hopping', 'No hands-on experience in the core area', 'Unexplained employment gaps'],
+  goodToHave: ['Relevant professional certification', 'Experience at a comparable company', 'Exposure to adjacent tools or domains'],
+};
+function raSuggestPanel(groupKey, tone) {
+  if (raSuggest.loading && raSuggest.group === groupKey) {
+    return `<div class="ra-suggest-panel"><div class="ra-suggest-loading">Finding suggestions…</div></div>`;
+  }
+  const items = (raSuggest.group === groupKey && raSuggest.items) ? raSuggest.items : [];
+  if (!items.length) return '';
+  return `<div class="ra-suggest-panel">
+    <div class="ra-suggest-head"><span>Suggestions — click to add</span><button class="ra-suggest-dismiss" type="button" data-group="${groupKey}" title="Dismiss">×</button></div>
+    ${items.map((t, i) => `<button class="ra-suggest-chip ${tone}" type="button" data-group="${groupKey}" data-idx="${i}">+ ${escapeHTML(t)}</button>`).join('')}
+  </div>`;
+}
 
 // Dynamic header manager for Job Flow and Sourcing
 function toggleHeaderElementsForJobFlow(showJobFlowHeader, job = null) {
@@ -224,6 +247,9 @@ function openJobFlowView(jobId, showAddCandidates = false) {
   const job = AppState.jobs.find(j => j.id === jobId);
   if (!job) return;
 
+  // Opening a different job's flow drops any pending banner intent from the last one.
+  if (pendingAddCandidates && pendingAddCandidates !== jobId) pendingAddCandidates = null;
+
   // Initialize pipeline config if not present
   if (!job.pipelineConfig) {
     job.pipelineConfig = {
@@ -270,11 +296,16 @@ function openJobFlowView(jobId, showAddCandidates = false) {
   renderJobFlowPipeline(job);
   renderJobFlowConfig(job, 'careerPage');
 
-  // Add Candidates banner after fresh AI-generated job creation
+  // Add Candidates banner after fresh AI-generated job creation. The intent
+  // survives the React route echo (flagless re-entry) so it stays until the
+  // recruiter acts on it, instead of flashing for ~1s and vanishing.
+  if (showAddCandidates) pendingAddCandidates = jobId;
+  const wantBanner = showAddCandidates || pendingAddCandidates === jobId;
+
   const existingBanner = document.getElementById('jf-add-candidates-banner');
   if (existingBanner) existingBanner.remove();
 
-  if (showAddCandidates) {
+  if (wantBanner) {
     const banner = document.createElement('div');
     banner.id = 'jf-add-candidates-banner';
     banner.className = 'jf-candidates-banner card-glass';
@@ -298,13 +329,16 @@ function openJobFlowView(jobId, showAddCandidates = false) {
     flowView.insertBefore(banner, flowView.firstChild);
 
     document.getElementById('jf-btn-review-flow')?.addEventListener('click', () => {
+      pendingAddCandidates = null;
       banner.classList.add('jf-banner-dismissing');
       setTimeout(() => banner.remove(), 300);
     });
     document.getElementById('jf-btn-publish-job')?.addEventListener('click', () => {
+      pendingAddCandidates = null;
       openPublishJobModal(jobId);
     });
     document.getElementById('jf-btn-add-candidates').addEventListener('click', () => {
+      pendingAddCandidates = null;
       banner.remove();
       navigateToSourcing(jobId);
     });
@@ -755,7 +789,15 @@ function renderResumeAnalysisFlowConfig(job, panel) {
         <span class="ra-criteria-text">${item}</span>
       </div>
     `).join('');
-    return html + (isEditing ? `<button class="btn-ra-add-criteria" type="button" data-group="${groupKey}" data-tone="${tone}">+ Add Criterion</button>` : '');
+    if (!isEditing) return html;
+    const busy = raSuggest.loading && raSuggest.group === groupKey;
+    return html
+      + `<div class="ra-edit-actions">`
+      + `<button class="btn-ra-add-criteria" type="button" data-group="${groupKey}" data-tone="${tone}">+ Add Criterion</button>`
+      + `<button class="btn-ra-suggest" type="button" data-group="${groupKey}" data-tone="${tone}" ${busy ? 'disabled' : ''}>`
+      + `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> ${busy ? 'Suggesting…' : 'Suggest'}</button>`
+      + `</div>`
+      + (raSuggest.group === groupKey ? raSuggestPanel(groupKey, tone) : '');
   };
 
   panel.innerHTML = `
@@ -851,8 +893,55 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     });
   });
 
+  const syncResumeFromDom = () => {
+    const next = { ...criteria, mustHave: [], redFlags: [], goodToHave: [] };
+    panel.querySelectorAll('.ra-criteria-group.must-have .ra-criteria-edit-input').forEach(i => { if (i.value.trim()) next.mustHave.push(i.value.trim()); });
+    panel.querySelectorAll('.ra-criteria-group.red-flags .ra-criteria-edit-input').forEach(i => { if (i.value.trim()) next.redFlags.push(i.value.trim()); });
+    panel.querySelectorAll('.ra-criteria-group.good-to-have .ra-criteria-edit-input').forEach(i => { if (i.value.trim()) next.goodToHave.push(i.value.trim()); });
+    const min = parseInt(panel.querySelector('.ra-min-match-input')?.value, 10);
+    if (Number.isFinite(min)) next.goodToHaveMinMatch = min;
+    job.resumeCriteria = next;
+  };
+
+  panel.querySelectorAll('.btn-ra-suggest').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (raSuggest.loading) return;
+      const group = btn.dataset.group;
+      syncResumeFromDom();
+      raSuggest = { group, loading: true, items: null };
+      renderResumeAnalysisFlowConfig(job, panel);
+      let items;
+      try { items = (await generateResumeCriteriaSuggestions(job))[group] || []; }
+      catch { items = RA_SUGGEST_FALLBACK[group] || []; }
+      const have = new Set((job.resumeCriteria?.[group] || []).map(x => String(x).trim().toLowerCase()));
+      items = items.map(x => String(x).trim()).filter(x => x && !have.has(x.toLowerCase()));
+      raSuggest = { group, loading: false, items };
+      renderResumeAnalysisFlowConfig(job, panel);
+      if (!items.length) showPremiumToast('No new suggestions for this group.', 'info');
+    });
+  });
+
+  panel.querySelectorAll('.ra-suggest-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.dataset.group;
+      const idx = Number(btn.dataset.idx);
+      const item = raSuggest.items?.[idx];
+      if (!item) return;
+      syncResumeFromDom();
+      if (!Array.isArray(job.resumeCriteria[group])) job.resumeCriteria[group] = [];
+      job.resumeCriteria[group].push(item);
+      raSuggest.items = raSuggest.items.filter((_, i) => i !== idx);
+      renderResumeAnalysisFlowConfig(job, panel);
+    });
+  });
+
+  panel.querySelectorAll('.ra-suggest-dismiss').forEach(btn => {
+    btn.addEventListener('click', () => { raSuggest = { group: null, loading: false, items: null }; renderResumeAnalysisFlowConfig(job, panel); });
+  });
+
   document.getElementById('jf-btn-edit-resume')?.addEventListener('click', () => {
     if (!isEditing) {
+      raSuggest = { group: null, loading: false, items: null };
       panel.dataset.raEditing = 'true';
       renderResumeAnalysisFlowConfig(job, panel);
       return;
@@ -871,6 +960,7 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     const min = parseInt(panel.querySelector('.ra-min-match-input')?.value, 10);
     next.goodToHaveMinMatch = Math.min(Math.max(Number.isFinite(min) ? min : 1, 1), Math.max(next.goodToHave.length, 1));
     job.resumeCriteria = next;
+    raSuggest = { group: null, loading: false, items: null };
     panel.dataset.raEditing = 'false';
     saveStateToLocalStorage();
     scheduleJobSave(job);
@@ -881,7 +971,8 @@ function renderResumeAnalysisFlowConfig(job, panel) {
 }
 
 function renderScreeningConfig(job, panel) {
-  const params = job.screeningParams || [];
+  const params = (job.screeningParams && job.screeningParams.length) ? job.screeningParams : [{ category: 'Custom Parameters', params: [] }];
+  job.screeningParams = params;
   const totalParams = params.reduce((a, c) => a + c.params.length, 0);
 
   panel.innerHTML = `
@@ -902,14 +993,15 @@ function renderScreeningConfig(job, panel) {
       <button class="jf-tab">Settings</button>
     </div>
 
-    ${params.map(cat => `
+    ${params.map((cat, ci) => `
       <div class="jf-param-category">
         <h4 class="jf-param-category-title">
           ${cat.category === 'Experience' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>' :
             cat.category === 'Location' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' :
             cat.category === 'Compensation' ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' :
             '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'}
-          ${cat.category}
+          <input class="jf-cat-title-input" value="${escapeHTML(cat.category)}" placeholder="Category name" />
+          <button class="jf-cat-del" data-cat-idx="${ci}" title="Remove category">×</button>
         </h4>
         <div class="jf-param-table-header">
           <span class="jf-ph-drag"></span>
@@ -918,58 +1010,82 @@ function renderScreeningConfig(job, panel) {
           <span class="jf-ph-flex">Flexibility</span>
           <span class="jf-ph-resp">Preferred Response</span>
         </div>
-        ${cat.params.map(p => `
-          <div class="jf-param-row">
-            <span class="jf-pr-drag"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
-            <span class="jf-pr-req"><input type="checkbox" ${p.required ? 'checked' : ''} /></span>
-            <span class="jf-pr-param">${p.name}</span>
-            <span class="jf-pr-flex"><select class="jf-select-sm"><option>Select</option><option>Must Match</option><option>Flexible</option><option>Nice to Have</option></select></span>
-            <span class="jf-pr-resp"><input type="text" class="jf-input-sm" value="${p.preferredResponse}" placeholder="Enter preferred response..." /></span>
+        ${cat.params.map((p, pi) => `
+          <div class="jf-param-row" data-cat-idx="${ci}" data-param-idx="${pi}">
+            <button class="jf-pr-del" data-cat-idx="${ci}" data-param-idx="${pi}" title="Remove parameter"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            <span class="jf-pr-req"><input type="checkbox" class="jf-pr-req-input" ${p.required ? 'checked' : ''} /></span>
+            <span class="jf-pr-param"><input type="text" class="jf-input-sm jf-pr-name-input" value="${escapeHTML(p.name)}" placeholder="Parameter name..." /></span>
+            <span class="jf-pr-flex"><select class="jf-select-sm jf-pr-flex-input">${['Select', 'Must Match', 'Flexible', 'Nice to Have'].map(o => `<option ${p.flexibility === o ? 'selected' : ''}>${o}</option>`).join('')}</select></span>
+            <span class="jf-pr-resp"><input type="text" class="jf-input-sm jf-pr-resp-input" value="${escapeHTML(p.preferredResponse)}" placeholder="Enter preferred response..." /></span>
           </div>
         `).join('')}
+        <button class="jf-add-param" data-cat-idx="${ci}">+ Add Parameter</button>
       </div>
     `).join('')}
 
-    <button class="btn-jf-primary" id="btn-screening-save" style="margin-top: 20px; width: 100%;">
-      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      Save Parameters
-    </button>
+    <div class="jf-screening-actions">
+      <button class="jf-add-category" id="btn-add-category">+ Add Category</button>
+      <button class="btn-jf-primary" id="btn-screening-save" style="flex:1;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Parameters
+      </button>
+    </div>
   `;
 
-  panel.querySelectorAll('.jf-param-row').forEach(row => {
-    const reqCheckbox = row.querySelector('.jf-pr-req input');
-    const flexSelect = row.querySelector('.jf-pr-flex select');
-    const respInput = row.querySelector('.jf-pr-resp input');
-    const paramName = row.querySelector('.jf-pr-param')?.textContent.trim();
-
-    if (flexSelect) {
-      const param = params.flatMap(c => c.params).find(p => p.name === paramName);
-      if (param?.flexibility) flexSelect.value = param.flexibility;
-    }
-
-    [reqCheckbox, flexSelect, respInput].forEach(el => {
-      if (el) el.addEventListener('change', () => { el.closest('.jf-param-row').classList.add('jf-row-dirty'); });
+  // Pull current edits out of the DOM (by index) so add/delete/save never lose them.
+  const syncFromDom = () => {
+    panel.querySelectorAll('.jf-param-category').forEach((catEl, ci) => {
+      const cat = params[ci];
+      if (!cat) return;
+      const title = catEl.querySelector('.jf-cat-title-input');
+      if (title) cat.category = title.value;
+      catEl.querySelectorAll('.jf-param-row').forEach((row, pi) => {
+        const p = cat.params[pi];
+        if (!p) return;
+        p.name = row.querySelector('.jf-pr-name-input')?.value ?? p.name;
+        p.required = row.querySelector('.jf-pr-req-input')?.checked ?? p.required;
+        p.flexibility = row.querySelector('.jf-pr-flex-input')?.value ?? p.flexibility;
+        p.preferredResponse = row.querySelector('.jf-pr-resp-input')?.value ?? p.preferredResponse;
+      });
     });
+  };
+  const emptyParam = () => ({ name: '', required: false, flexibility: 'Select', preferredResponse: '' });
+
+  panel.querySelectorAll('.jf-add-param').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      syncFromDom();
+      const ci = Number(btn.dataset.catIdx);
+      if (params[ci]) { params[ci].params.push(emptyParam()); renderScreeningConfig(job, panel); }
+    });
+  });
+  panel.querySelectorAll('.jf-pr-del').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      syncFromDom();
+      const ci = Number(btn.dataset.catIdx);
+      const pi = Number(btn.dataset.paramIdx);
+      if (params[ci]) { params[ci].params.splice(pi, 1); renderScreeningConfig(job, panel); }
+    });
+  });
+  panel.querySelectorAll('.jf-cat-del').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      syncFromDom();
+      params.splice(Number(btn.dataset.catIdx), 1);
+      if (!params.length) params.push({ category: 'Custom Parameters', params: [] });
+      renderScreeningConfig(job, panel);
+    });
+  });
+  document.getElementById('btn-add-category')?.addEventListener('click', () => {
+    syncFromDom();
+    params.push({ category: 'Custom Parameters', params: [emptyParam()] });
+    renderScreeningConfig(job, panel);
   });
 
   document.getElementById('btn-screening-save')?.addEventListener('click', () => {
-    panel.querySelectorAll('.jf-param-category').forEach(catEl => {
-      const catTitle = catEl.querySelector('.jf-param-category-title')?.textContent.trim();
-      const cat = params.find(c => c.category === catTitle);
-      if (!cat) return;
-      catEl.querySelectorAll('.jf-param-row').forEach(row => {
-        const name = row.querySelector('.jf-pr-param')?.textContent.trim();
-        const param = cat.params.find(p => p.name === name);
-        if (!param) return;
-        param.required = row.querySelector('.jf-pr-req input')?.checked ?? param.required;
-        param.flexibility = row.querySelector('.jf-pr-flex select')?.value || 'Select';
-        param.preferredResponse = row.querySelector('.jf-pr-resp input')?.value || '';
-      });
-    });
-    job.screeningParams = params;
+    syncFromDom();
+    job.screeningParams = params.filter((c) => c.params.length);
     saveStateToLocalStorage();
+    scheduleJobSave(job);
     showPremiumToast('Screening parameters saved.', 'success');
-    panel.querySelectorAll('.jf-row-dirty').forEach(r => r.classList.remove('jf-row-dirty'));
   });
 }
 

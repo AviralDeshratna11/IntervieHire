@@ -739,7 +739,7 @@ async function askInsight(candidate, job, analysis, question, feed) {
 
 // ---------- Main entry ----------
 
-async function openCandidateReportPage(candidateId) {
+async function openCandidateReportPage(candidateId, initialTab = 'overview') {
   const candidate = findCandidate(candidateId);
   if (!candidate) return;
   const job = findJobForCandidate(candidate);
@@ -890,6 +890,9 @@ function bindReportPage(candidate, job, analysis, root) {
     tab.addEventListener('click', () => switchTab(tab.dataset.rpTab));
   });
   root.querySelector('#rp-remarks-btn')?.addEventListener('click', () => switchTab('remarks'));
+
+  // Open directly on a requested tab (e.g. Remarks from the candidate table).
+  if (initialTab && initialTab !== 'overview') switchTab(initialTab);
 
   // Topbar actions
   root.querySelector('#rp-decision')?.addEventListener('change', async (e) => {
