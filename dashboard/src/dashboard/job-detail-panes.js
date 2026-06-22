@@ -18,7 +18,7 @@ import { soundEngine } from './sound.js';
 import { showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
 import { activeCandidateSubTabs } from './vetting-data.js';
-import { getDataSource, isApiMode, apiScheduleCandidate, apiUpdateApplicant, ensureBackendApplicantId, apiUploadResumes } from './api.js';
+import { getDataSource, isApiMode, apiScheduleCandidate, apiUpdateApplicant, apiMoveApplicantStage, ensureBackendApplicantId, apiUploadResumes } from './api.js';
 
 function renderJobDetailPanes(job) {
   const searchVal = document.getElementById('jd-candidate-search').value.trim().toLowerCase();
@@ -536,7 +536,7 @@ function renderJobDetailPanes(job) {
             <button class="bulk-dd-item" data-action="reschedule"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg> Reschedule</button>
             <button class="bulk-dd-item" data-action="export"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export</button>`;
         }
-        dd.addEventListener('click', (ev) => {
+        dd.addEventListener('click', async (ev) => {
           ev.stopPropagation();
           const item = ev.target.closest('.bulk-dd-item');
           if (!item) return;
@@ -562,29 +562,35 @@ function renderJobDetailPanes(job) {
           }
           if (action === 'advance') {
             const stages = ['Resume', 'Screening', 'Functional', 'Hired'];
+            const syncs = [];
             ids.forEach(cid => {
               const cand = AppState.candidates.find(c => c.id === cid);
               if (cand) {
                 const idx = stages.indexOf(cand.status);
                 if (idx < stages.length - 1) {
                   const next = stages[idx + 1];
+                  const keep = { jobApplied: cand.jobApplied, jobId: cand.jobId, registeredOn: cand.registeredOn };
                   cand.status = next;
                   if ((next === 'Screening' || next === 'Functional') && cand.interviewStatus == null) {
                     cand.interviewStatus = 'Not Started';
                   }
-                  // Persist status change to API backend in API mode
-                  const decision = next === 'Rejected' ? 'rejected'
-                    : next === 'Hired' ? 'hired'
-                    : (next === 'Screening' || next === 'Functional') ? 'shortlisted'
-                    : null;
-                  if (decision && cand._backend && getDataSource() === 'api') {
-                    apiUpdateApplicant(cid, { decision }).catch((err) => {
-                      console.warn('Stage change sync failed:', err);
-                    });
+                  if (cand._backend && getDataSource() === 'api') {
+                    syncs.push(apiMoveApplicantStage(cand.backendId || cid, next).then((updated) => {
+                      if (updated) {
+                        Object.assign(cand, updated);
+                        if (keep.jobApplied) cand.jobApplied = keep.jobApplied;
+                        if (keep.jobId) cand.jobId = keep.jobId;
+                        if (keep.registeredOn) cand.registeredOn = keep.registeredOn;
+                      }
+                    }));
                   }
                 }
               }
             });
+            if (syncs.length) {
+              try { await Promise.all(syncs); }
+              catch (err) { console.warn('Stage change sync failed:', err); showPremiumToast('Some stage changes did not sync to the backend.', 'error'); }
+            }
             saveStateToLocalStorage();
             refreshAfterStageChange();
             showPremiumToast(`Advanced ${ids.length} candidate(s) to next stage.`, 'success');
@@ -859,16 +865,25 @@ function updateCandidateStatus(candId, newStatus) {
 
   saveStateToLocalStorage();
 
-  // Persist the decision server-side. Move-stage only: this never sets
-  // screening/functional_status, so it doesn't spin up an interview session —
-  // scheduling stays the explicit Schedule action.
-  const decision = newStatus === 'Rejected' ? 'rejected'
-    : newStatus === 'Hired' ? 'hired'
-    : (newStatus === 'Screening' || newStatus === 'Functional') ? 'shortlisted'
-    : null;
-  if (decision && candidate._backend && getDataSource() === 'api') {
-    apiUpdateApplicant(candId, { decision }).catch((err) => {
+  // Persist the real stage transition; the backend creates fresh sessions from
+  // the applicant's screening_status / functional_status changes.
+  if (candidate._backend && getDataSource() === 'api') {
+    const keep = { jobApplied: candidate.jobApplied, jobId: candidate.jobId, registeredOn: candidate.registeredOn };
+    apiMoveApplicantStage(candidate.backendId || candId, newStatus).then((updated) => {
+      if (updated) {
+        Object.assign(candidate, updated);
+        if (keep.jobApplied) candidate.jobApplied = keep.jobApplied;
+        if (keep.jobId) candidate.jobId = keep.jobId;
+        if (keep.registeredOn) candidate.registeredOn = keep.registeredOn;
+        saveStateToLocalStorage();
+        refreshAfterStageChange();
+      }
+    }).catch((err) => {
       console.warn('Stage change saved locally but backend sync failed:', err);
+      candidate.status = oldStatus;
+      saveStateToLocalStorage();
+      refreshAfterStageChange();
+      showPremiumToast(`Could not sync ${candidate.name}'s stage to the backend.`, 'error');
     });
   }
 

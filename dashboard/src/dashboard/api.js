@@ -94,6 +94,13 @@ export async function apiFetchCandidateReport(applicantId) {
   const data = await request(`/jobs/applicants/${applicantId}/functional-report`);
   return mapFullReportToCandidateReport(data);
 }
+
+export async function apiFetchUsageStats(params = {}) {
+  const qs = new URLSearchParams();
+  if (params.date_from) qs.set('date_from', params.date_from);
+  if (params.date_to) qs.set('date_to', params.date_to);
+  return request(`/usage/stats${qs.toString() ? `?${qs.toString()}` : ''}`);
+}
 // Dev launcher: create a throwaway test interview from the job's blueprint and
 // return its session id (= the test applicant id) for the candidate room.
 export async function apiCreateTestSession(jobId) {
@@ -150,6 +157,32 @@ export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'sc
 export async function apiUpdateApplicant(applicantId, patch) {
   const data = await request(`/jobs/applicants/${applicantId}`, { method: 'PATCH', body: patch });
   return mapApplicantOutToCandidate(data);
+}
+
+export function applicantStagePatch(targetStatus) {
+  const status = String(targetStatus || '').toLowerCase();
+  if (status === 'resume') {
+    return { decision: null, screening_status: null, functional_status: null };
+  }
+  if (status === 'screening') {
+    return { decision: 'shortlisted', screening_status: 'pending', functional_status: null };
+  }
+  if (status === 'functional') {
+    return { decision: 'shortlisted', functional_status: 'pending' };
+  }
+  if (status === 'hired') {
+    return { decision: 'hired' };
+  }
+  if (status === 'rejected') {
+    return { decision: 'rejected' };
+  }
+  return {};
+}
+
+export async function apiMoveApplicantStage(applicantId, targetStatus) {
+  const patch = applicantStagePatch(targetStatus);
+  if (!Object.keys(patch).length) return null;
+  return apiUpdateApplicant(applicantId, patch);
 }
 
 // Fetch the real parsed resume text the backend has on file for this applicant.
