@@ -29,9 +29,22 @@ let pendingAddCandidates = null;
 let raSuggest = { group: null, loading: false, items: null };
 const RA_SUGGEST_FALLBACK = {
   mustHave: ['Relevant domain experience', 'Proven track record in the core skill', 'Ownership of end-to-end delivery', 'Strong written and verbal communication'],
-  redFlags: ['Frequent unexplained job hopping', 'No hands-on experience in the core area', 'Unexplained employment gaps'],
+  redFlags: ['No hands-on experience in the core function this role performs'],
   goodToHave: ['Relevant professional certification', 'Experience at a comparable company', 'Exposure to adjacent tools or domains'],
 };
+// Red flags must be real deal-breakers, not a restatement of a must-have. Drop any
+// red flag that (normalized) echoes a must-have, plus blanks and intra-list dupes.
+const _normRf = (s) => String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+function dedupeRedFlags(redFlags, mustHave) {
+  const mustSet = new Set((mustHave || []).map(_normRf).filter(Boolean));
+  const seen = new Set();
+  return (redFlags || []).filter((rf) => {
+    const n = _normRf(rf);
+    if (!n || mustSet.has(n) || seen.has(n)) return false;
+    seen.add(n);
+    return true;
+  });
+}
 function raSuggestPanel(groupKey, tone) {
   if (raSuggest.loading && raSuggest.group === groupKey) {
     return `<div class="ra-suggest-panel"><div class="ra-suggest-loading">Finding suggestions…</div></div>`;
@@ -965,6 +978,7 @@ function renderResumeAnalysisFlowConfig(job, panel) {
     });
     const min = parseInt(panel.querySelector('.ra-min-match-input')?.value, 10);
     next.goodToHaveMinMatch = Math.min(Math.max(Number.isFinite(min) ? min : 1, 1), Math.max(next.goodToHave.length, 1));
+    next.redFlags = dedupeRedFlags(next.redFlags, next.mustHave);
     job.resumeCriteria = next;
     raSuggest = { group: null, loading: false, items: null };
     panel.dataset.raEditing = 'false';

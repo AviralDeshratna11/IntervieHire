@@ -196,6 +196,9 @@ class ApplicantOut(BaseModel):
     remarks: Optional[str]
     match_score: Optional[float] = None
     resume_analysis_report: Optional[str] = None
+    resume_text: Optional[str] = None
+    resume_analysed: Optional[bool] = None
+    resume_shortlisted: Optional[bool] = None
     decision: Optional[str] = None
 
     # Screening

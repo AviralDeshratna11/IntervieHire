@@ -1719,6 +1719,8 @@ def upload_resumes(
         parsed_email = parsed_info.get("email")
         parsed_phone = parsed_info.get("phone")
         resume_text = extract_text_from_file(file_path)  # store the real text for analysis
+        if resume_text and len(resume_text.strip()) < 50:
+            resume_text = None  # extraction likely failed (scanned/garbled) — don't poison analysis with junk
         
         # Look for an existing candidate in this job pipeline with a matching email or name
         existing_applicant = None

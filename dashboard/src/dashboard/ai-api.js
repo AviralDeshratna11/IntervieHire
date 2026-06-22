@@ -142,17 +142,19 @@ function loadStateFromLocalStorage() {
 // model here in one line; the proxy allowlist (route.js) must include it.
 const MODEL_BY_TASK = {
   default: 'deepseek-v4-flash',
-  resumeExtract: 'deepseek-v4-flash',  // pull facts — fast + light
-  resumeScore: 'deepseek-v4-pro',      // the judgement — the stronger model
-  resumeCritique: 'deepseek-v4-flash', // narrative + sanity pass
+  resumeDeep: 'deepseek-v4-pro', // one comprehensive resume scoring call — the stronger model
 };
 const SLOW_MODELS = new Set(['deepseek-v4-pro']); // pro tier may take longer
 
-async function callDeepSeekAPI(messages, jsonMode = false, task = 'default') {
+async function callDeepSeekAPI(messages, jsonMode = false, task = 'default', temperature) {
   const model = MODEL_BY_TASK[task] || MODEL_BY_TASK.default;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), SLOW_MODELS.has(model) ? 90000 : 35000);
-  const body = JSON.stringify({ messages, jsonMode, model });
+  // temperature is forwarded only when a caller passes one; otherwise the proxy
+  // applies its default (0.7). Resume scoring passes a low value for stability.
+  const reqBody = { messages, jsonMode, model };
+  if (typeof temperature === 'number') reqBody.temperature = temperature;
+  const body = JSON.stringify(reqBody);
   const send = () => fetch('/api/deepseek', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -160,28 +162,36 @@ async function callDeepSeekAPI(messages, jsonMode = false, task = 'default') {
     signal: controller.signal,
   });
 
+  // Up to 2 retries with exponential backoff + jitter, on rate-limit (429) and
+  // network errors — but never on our own AbortController timeout, so a genuinely
+  // hung call fails fast to the local engine instead of stacking 90s waits.
+  const MAX_RETRIES = 2;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   try {
-    let response = await send();
-    // One retry on rate-limit: under bulk concurrency a 429 otherwise silently
-    // degrades this resume to the local keyword engine (worse score, no error).
-    if (response.status === 429) {
-      await new Promise(r => setTimeout(r, 1500));
-      response = await send();
+    for (let attempt = 0; ; attempt++) {
+      let response;
+      try {
+        response = await send();
+      } catch (error) {
+        if (attempt < MAX_RETRIES && error.name !== 'AbortError') {
+          await sleep(800 * 2 ** attempt + Math.random() * 250);
+          continue;
+        }
+        throw error;
+      }
+      if (response.status === 429 && attempt < MAX_RETRIES) {
+        await sleep(800 * 2 ** attempt + Math.random() * 250);
+        continue;
+      }
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`API response error (${response.status}): ${errText}`);
+      }
+      const data = await response.json();
+      return data.choices[0].message.content;
     }
-
+  } finally {
     clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`API response error (${response.status}): ${errText}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.error('DeepSeek API call failed:', error);
-    throw error;
   }
 }
 
@@ -236,7 +246,7 @@ Return ONLY valid JSON with this exact structure:
 {
   "resumeCriteria": {
     "mustHave": ["3-5 strings: essential skills/experience the candidate MUST demonstrate"],
-    "redFlags": ["3-5 strings: disqualifying traits or gaps that should reject a candidate"],
+    "redFlags": ["0-3 strings: ONLY absolute deal-breakers that disqualify regardless of everything else. Each must be fundamentally disqualifying. NEVER restate or negate a mustHave item. Return [] if none truly apply."],
     "goodToHave": ["3-5 strings: bonus qualifications that strengthen a candidate"],
     "goodToHaveMinMatch": 1
   },
@@ -271,7 +281,8 @@ Return ONLY valid JSON with this exact structure:
   }
 }
 
-Tailor every field specifically to the role. Do not use generic placeholders.`;
+Tailor every field specifically to the role. Do not use generic placeholders.
+Red flags are rare; most roles have 0-1. Never produce a red flag that is just the inverse of a must-have.`;
 
   const questionsPrompt = `You are a senior technical interviewer. Given a job description, generate 5 high-quality interview questions.
 
@@ -343,7 +354,7 @@ Rules:
     if (!job.resumeCriteria) {
       job.resumeCriteria = {
         mustHave: ["Relevant experience in this domain", "Excellent verbal and written communication", "Core technical competency"],
-        redFlags: ["Frequent unexplained job hopping", "Lack of relevant functional background"],
+        redFlags: ["No hands-on experience in the core function this role performs"],
         goodToHave: ["Professional certifications", "Advanced degree or specialization"],
         goodToHaveMinMatch: 1,
         source: 'offline'
@@ -577,6 +588,7 @@ async function generateResumeCriteriaSuggestions(job) {
 Rules:
 - 3-5 items per group, each a short specific phrase tailored to the role.
 - Do NOT repeat or paraphrase anything already listed.
+- Red flags: at most 1-2, and ONLY true deal-breakers; never restate or negate a must-have; prefer none.
 - No preamble, no commentary.`;
   const user = `Role: ${job.roleName || job.cardName || 'the role'}${job.experienceBand ? ` (${job.experienceBand})` : ''}
 Already listed —
