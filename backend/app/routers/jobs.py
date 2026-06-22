@@ -1719,6 +1719,8 @@ def upload_resumes(
             resume_text = extract_text_from_file(file_path)
         except Exception as parse_err:
             print(f"Error extracting resume text from {file_path}: {parse_err}")
+        if resume_text and len(resume_text.strip()) < 50:
+            resume_text = None  # extraction likely failed (scanned/garbled) — don't poison analysis with junk
 
         parsed_name = parsed_info.get("name")
         parsed_email = parsed_info.get("email")

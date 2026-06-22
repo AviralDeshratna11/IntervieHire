@@ -62,6 +62,22 @@
   color: var(--color-text-faint);
   border: 1px solid rgba(148, 163, 184, 0.15);
 }
+/* Flag a row that fell back to the local keyword engine (AI was unavailable). */
+.ra-engine-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  vertical-align: middle;
+  cursor: help;
+}
 .ra-status-badge {
   display: inline-flex;
   align-items: center;

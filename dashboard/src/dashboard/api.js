@@ -335,6 +335,11 @@ function mapApplicantOutToCandidate(a = {}) {
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,
     matchScore: a.match_score ?? null,
+    // Stored resume text + analysis flags (ApplicantOut). resumeText hydrates the
+    // analysis cache so "Reanalyse" doesn't need an extra resume-text fetch.
+    resumeText: a.resume_text ?? null,
+    resumeAnalysed: a.resume_analysed ?? null,
+    resumeShortlisted: a.resume_shortlisted ?? null,
     decision: a.decision ?? null,
     // Recruiter screening result — the backend sends these (ApplicantOut), the
     // dashboard's report + Deep Analysis read them off the candidate. Without this

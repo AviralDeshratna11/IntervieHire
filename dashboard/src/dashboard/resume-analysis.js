@@ -19,6 +19,63 @@ const resumeIdentityCache = {};
 const resumeAnalysisCache = {};
 const reportChatCache = {};
 
+// Resume text forwarded to the model. Was 5000 per MoE pass; one comprehensive
+// call can take far more — DeepSeek's context is large and the proxy caps total
+// prompt at 50k chars, so 12k of resume + JD + system stays well under.
+const RESUME_TEXT_LIMIT = 12000;
+
+// One comprehensive "Lina" reasoning prompt (restored from the pre-MoE design):
+// the model reasons over facts + scoring + narrative together in a single pass so
+// it can cross-check them. Emits exactly the shape normalizeDeepResult reads.
+const LINA_SYSTEM_PROMPT = `You are Lina, an expert recruiting analyst for IntervieHire. You perform rigorous, evidence-first resume screening FOR RECRUITERS — they need to understand exactly how this candidate's real work history maps to THEIR role.
+
+THINK DEEPLY, THEN REPORT:
+- For every project in the resume, reason about what it actually proves: scale, the candidate's own contribution, and how directly it transfers to this specific role.
+- Quote or paraphrase concrete resume evidence — never generic praise.
+- Score each dimension 0-100 INDEPENDENTLY. Do NOT compute an overall score; the platform combines dimensions using the recruiter's own weights.
+- Be honest. Thin or auto-generated resumes get low dimension scores and a note in the summary. Missing evidence = low score, not benefit of the doubt.
+
+TRANSFERABILITY & RELEVANCE (the core of the job):
+- Judge every project and role by how directly it maps to THIS role's day-to-day work — not by keyword overlap with the criteria text.
+- For each MUST HAVE the candidate doesn't satisfy literally, look for adjacent/transferable evidence (a neighbouring tool, a harder version of the same skill, the same problem in another domain). If a credible bridge exists, mark the verdict "partial", name the bridge in the evidence, and lift the relevant dimension. If no honest bridge exists, mark it false.
+- Reward genuinely transferable experience. Penalise generic or unrelated filler (buzzword lists, unrelated coursework, padding) — it does not raise a score.
+- The "projects" dimension scores RELEVANCE to this role's work, not volume or polish.
+
+DIMENSIONS (score each 0-100 with 1-line evidence):
+- mustHave: coverage of the MUST HAVE list (100 = all clearly evidenced)
+- niceToHave: coverage of GOOD TO HAVE list
+- projects: how relevant the candidate's actual projects are to this role's day-to-day work
+- experience: depth/seniority vs the required experience band
+- education: degrees and certifications relevant to the role
+- custom: performance against the RECRUITER CUSTOM CRITERIA only (ignore if none listed)
+
+STRICT RULES:
+- criteriaVerdicts must contain ONE entry per must-have, good-to-have and custom criterion with met true/false/"partial" and short evidence.
+- "missing" lists ONLY criteria from the configured lists that lack evidence. Never invent skills.
+- redFlagsDetected: ONLY configured RED FLAGS that are genuinely present AND fundamentally disqualifying. The mere ABSENCE of a must-have is NEVER a red flag (the platform gates that separately) — do not restate or negate a must-have here. Prefer an empty list over a weak flag.
+- competencies: 4-6 role-specific competencies you derive from the job description, each with score and 2-4 evidence bullets.
+
+Respond ONLY with valid JSON, no markdown fences:
+{
+  "summary": "2-3 sentences with specific evidence",
+  "experienceYears": "e.g. 4 years",
+  "dimensions": {
+    "mustHave": {"score": 0, "evidence": ""}, "niceToHave": {"score": 0, "evidence": ""},
+    "projects": {"score": 0, "evidence": ""}, "experience": {"score": 0, "evidence": ""},
+    "education": {"score": 0, "evidence": ""}, "custom": {"score": 0, "evidence": ""}
+  },
+  "criteriaVerdicts": [{"criterion": "", "group": "mustHave|goodToHave|custom", "met": true, "evidence": ""}],
+  "projects": [{"name": "", "summary": "1 line", "relevance": 0, "whyItMatters": "what this proves for OUR role", "skills": [""]}],
+  "skills": {"detected": ["all other relevant skills present in the resume"], "matched": ["criteria with evidence"], "missing": ["criteria lacking evidence"]},
+  "redFlagsDetected": [],
+  "competencies": [{"name": "", "score": 0, "bullets": [""]}],
+  "strengths": ["3-5 evidence-backed strengths"],
+  "improvements": ["2-4 specific gaps"],
+  "interviewProbes": ["3-4 questions to verify weak evidence in the next round"],
+  "recommendationBullets": ["3-4 executive-summary bullets for the hiring panel"],
+  "recommendationReason": "1 sentence"
+}`;
+
 function cacheResumeTextAndIdentity(cid, text, filename = '') {
   if (!text || isGarbageText(text)) return null;
 
@@ -357,7 +414,7 @@ function buildCriteriaBlock(criteria, config) {
       lines.push(`  ${i + 1}. ${c.label} (importance ${c.weight}/10)${c.description ? ` — ${c.description}` : ''}`);
     });
   }
-  return lines.length ? `\nSCREENING CRITERIA:\n${lines.join('\n')}` : '';
+  return lines.length ? `\nSCREENING CRITERIA (interpret every criterion by MEANING — satisfied through equivalent or transferable evidence, not only exact wording):\n${lines.join('\n')}` : '';
 }
 
 function deriveLegacyScorecard(dims) {
@@ -608,65 +665,27 @@ function buildLocalDeepAnalysis(resumeText, job, config, criteria) {
   return result;
 }
 
-// DeepSeek multi-agent resume analysis: three focused passes instead of one
-// monolithic prompt — extract (facts) → score (judgement, reasoning model) →
-// critique (recruiter narrative + sanity check). Each pass does one job, so the
-// model isn't juggling parsing + scoring + writing at once. Merged into the exact
-// shape normalizeDeepResult expects, so scoring/persistence/render are unchanged.
-// Any pass that throws bubbles up; the caller degrades to the local engine.
-async function runResumeMultiAgent(resumeText, job, criteria, criteriaBlock) {
-  const resume = resumeText.slice(0, 5000);
-
-  const extract = parseAIJson(await callDeepSeekAPI([
-    { role: 'system', content: `You are a resume parser. Extract ONLY facts literally present in the resume — never score, judge, or invent skills. Respond ONLY with JSON:
-{"experienceYears":"e.g. 4 years","education":["degree/cert lines"],"projects":[{"name":"","summary":"1 line","skills":[""]}],"skillsDetected":["max 8 concrete skills present in the resume"]}` },
-    { role: 'user', content: `--- RESUME ---\n${resume}` },
-  ], true, 'resumeExtract'));
-
-  const score = parseAIJson(await callDeepSeekAPI([
-    { role: 'system', content: `You are Lina, a rigorous recruiting analyst. Using ONLY the extracted facts and resume, judge how this candidate maps to THIS role. Score each dimension 0-100 INDEPENDENTLY — do NOT compute an overall; the platform applies the recruiter's weights. Missing evidence = low score, never benefit of the doubt. Respond ONLY with JSON:
-{"dimensions":{"mustHave":{"score":0,"evidence":""},"niceToHave":{"score":0,"evidence":""},"projects":{"score":0,"evidence":""},"experience":{"score":0,"evidence":""},"education":{"score":0,"evidence":""},"custom":{"score":0,"evidence":""}},"criteriaVerdicts":[{"criterion":"","group":"mustHave|goodToHave|custom","met":true,"evidence":""}],"competencies":[{"name":"","score":0,"bullets":[""]}],"redFlagsDetected":["only red-flag items actually found"],"skills":{"matched":["criteria with evidence"],"missing":["criteria lacking evidence"]}}
-criteriaVerdicts: ONE entry per must-have, good-to-have and custom criterion. competencies: 4-6 role-specific, each with 2-4 evidence bullets.` },
-    { role: 'user', content: `JOB: ${job.cardName} (${job.roleName})
+// One comprehensive DeepSeek call: the model reasons over facts + scoring +
+// narrative together (so it can cross-check them) and returns the exact shape
+// normalizeDeepResult expects. Restored from the pre-MoE design — the 3-pass
+// extract→score→critique split lost that holistic reasoning, scored against a
+// truncated fact view, and tripled the failure surface. Throws bubble up; the
+// caller degrades to the local engine.
+async function runResumeDeepAnalysis(resumeText, job, criteria, criteriaBlock) {
+  const resume = resumeText.slice(0, RESUME_TEXT_LIMIT);
+  const userMsg = `JOB: ${job.cardName} (${job.roleName})
 Experience Required: ${job.experienceBand}
 Description: ${job.description || '(Not provided)'}${criteriaBlock}
 
---- EXTRACTED FACTS ---
-${JSON.stringify(extract)}
-
---- RESUME ---
-${resume}` },
-  ], true, 'resumeScore'));
-
-  const critique = parseAIJson(await callDeepSeekAPI([
-    { role: 'system', content: `You are a hiring-panel lead. Given the dimension scores and evidence, write the recruiter-facing narrative and call out any over-generous scoring in your wording. Respond ONLY with JSON:
-{"summary":"2-3 sentences with specific evidence","strengths":["3-5 evidence-backed"],"improvements":["2-4 specific gaps"],"interviewProbes":["3-4 questions to verify weak evidence"],"recommendationBullets":["3-4 executive-summary bullets"],"recommendationReason":"1 sentence"}` },
-    { role: 'user', content: `JOB: ${job.roleName}
---- SCORES ---
-${JSON.stringify(score)}
---- FACTS ---
-${JSON.stringify(extract)}` },
-  ], true, 'resumeCritique'));
-
-  return {
-    summary: critique.summary,
-    experienceYears: extract.experienceYears,
-    dimensions: score.dimensions,
-    criteriaVerdicts: score.criteriaVerdicts,
-    competencies: score.competencies,
-    redFlagsDetected: score.redFlagsDetected,
-    projects: extract.projects,
-    skills: {
-      detected: extract.skillsDetected,
-      matched: score.skills && score.skills.matched,
-      missing: score.skills && score.skills.missing,
-    },
-    strengths: critique.strengths,
-    improvements: critique.improvements,
-    interviewProbes: critique.interviewProbes,
-    recommendationBullets: critique.recommendationBullets,
-    recommendationReason: critique.recommendationReason,
-  };
+--- CANDIDATE RESUME ---
+${resume}`;
+  const raw = await callDeepSeekAPI(
+    [{ role: 'system', content: LINA_SYSTEM_PROMPT }, { role: 'user', content: userMsg }],
+    true,          // jsonMode
+    'resumeDeep',  // → deepseek-v4-pro (strong tier)
+    0.1,           // near-deterministic scoring; a hair of temperature avoids degenerate loops
+  );
+  return parseAIJson(raw);
 }
 
 // Resolve a candidate's resume text from the fastest source available: cached
@@ -745,7 +764,7 @@ async function runResumeAnalysis(cid, job, opts = {}) {
 
   let result;
   try {
-    result = await runResumeMultiAgent(resumeText, job, criteria, criteriaBlock);
+    result = await runResumeDeepAnalysis(resumeText, job, criteria, criteriaBlock);
     result.engine = 'deepseek';
     normalizeDeepResult(result, config, criteria);
   } catch (err) {
@@ -840,7 +859,10 @@ function renderAnalysisResult(cid, result) {
     }
   }
   if (tds[2]) {
-    tds[2].innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}%</span>`;
+    const localTag = result.engine === 'local'
+      ? `<span class="ra-engine-tag" title="Scored offline by the local keyword engine — reanalyse for a full AI score">local</span>`
+      : '';
+    tds[2].innerHTML = `<span class="ra-match-pill ${matchClass}">${result.matchScore}%</span>${localTag}`;
   }
   if (tds[3]) {
     const recCls = result.recommendation === 'Advance' ? 'high' : result.recommendation === 'Hold' ? 'medium' : 'low';
@@ -876,12 +898,12 @@ function renderAnalysisResult(cid, result) {
   }
 }
 
-// How many resumes to analyse concurrently. Each resume is now a 3-call
-// multi-agent chain, so 10 concurrent ≈ up to 30 in-flight calls — the proxy
-// (RATE_LIMIT 120/min) + a 429 retry in callDeepSeekAPI absorb that without
-// silently degrading to the local engine. ponytail: DeepSeek's account rate is
-// the real ceiling; raise both this and RATE_LIMIT together if you push higher.
-const RESUME_ANALYSIS_CONCURRENCY = 10;
+// How many resumes to analyse concurrently. Each resume is one comprehensive
+// DeepSeek call (deepseek-v4-pro), so 4 concurrent ≈ 4 in-flight — well under the
+// proxy (RATE_LIMIT 120/min), with the exponential-backoff retry in
+// callDeepSeekAPI absorbing bursts. ponytail: DeepSeek's account rate is the real
+// ceiling; raise both this and RATE_LIMIT together if you push higher.
+const RESUME_ANALYSIS_CONCURRENCY = 4;
 
 async function runBulkResumeAnalysis(candidateIds, job, opts = {}) {
   const force = opts.force === true;
