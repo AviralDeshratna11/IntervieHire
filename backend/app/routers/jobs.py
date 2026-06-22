@@ -2026,12 +2026,15 @@ def get_applicant_resume_text(
     db: Session = Depends(get_db)
 ):
     applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
-    if not applicant.resume_url or not os.path.exists(applicant.resume_url):
-        return {"text": ""}
-    
-    from app.utils.resume_parser import extract_text_from_file
-    file_text = extract_text_from_file(applicant.resume_url)
-    return {"text": file_text}
+    # Prefer the text extracted at upload time: it lives in the DB and survives the
+    # ephemeral filesystem (Render has no persistent disk, so uploads/ is wiped on
+    # every redeploy/restart). Only re-extract from the file if we never stored it.
+    if applicant.resume_text:
+        return {"text": applicant.resume_text}
+    if applicant.resume_url and os.path.exists(applicant.resume_url):
+        from app.utils.resume_parser import extract_text_from_file
+        return {"text": extract_text_from_file(applicant.resume_url)}
+    return {"text": ""}
 
 
 @router.get("/applicants/{applicant_id}/screening-report")

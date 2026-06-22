@@ -143,13 +143,15 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
         # 3. Sync Candidate
         candidate_id = str(applicant.id)
         # Extract résumé text so the engine can generate résumé-grounded questions.
-        resume_text = ""
+        # Prefer the text extracted + stored at upload time; it survives the ephemeral
+        # filesystem. Re-extract from the file only as a fallback when it still exists.
+        resume_text = applicant.resume_text or ""
         try:
-            if applicant.resume_url:
+            if not resume_text and applicant.resume_url:
                 from app.utils.resume_parser import extract_text_from_file
                 resume_text = extract_text_from_file(applicant.resume_url) or ""
         except Exception:
-            resume_text = ""
+            pass
         candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
         if not candidate:
             candidate = Candidate(
