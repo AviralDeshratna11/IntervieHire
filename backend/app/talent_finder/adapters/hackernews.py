@@ -63,12 +63,17 @@ class HackerNewsAdapter(SourceAdapter):
                 break
         return out
 
-    def _thread_comments(self, story_id: str) -> List[Dict[str, Any]]:
+    def _thread_comments(self, story_id: str, limit: int = 60) -> List[Dict[str, Any]]:
+        # Use the paginated SEARCH API (bounded hitsPerPage) instead of items/{id},
+        # which returns the ENTIRE comment tree of a popular thread (megabytes) and
+        # can OOM the worker. Returns lightweight {author, text} dicts.
         try:
-            r = requests.get(f"{HN_API}/items/{story_id}",
-                             headers={"User-Agent": "IntervieHire-TalentFinder"}, timeout=20)
+            r = requests.get(f"{HN_API}/search",
+                             params={"tags": f"comment,story_{story_id}", "hitsPerPage": limit},
+                             headers={"User-Agent": "IntervieHire-TalentFinder"}, timeout=12)
             r.raise_for_status()
-            return (r.json() or {}).get("children") or []
+            hits = (r.json() or {}).get("hits") or []
+            return [{"author": h.get("author"), "text": h.get("comment_text") or ""} for h in hits]
         except Exception:
             return []
 
@@ -121,7 +126,7 @@ class HackerNewsAdapter(SourceAdapter):
 
         out: List[Dict[str, Any]] = []
         seen_authors: set = set()
-        for sid in self._recent_threads(3):
+        for sid in self._recent_threads(2):
             for c in self._thread_comments(sid):
                 if len(out) >= cap:
                     break
