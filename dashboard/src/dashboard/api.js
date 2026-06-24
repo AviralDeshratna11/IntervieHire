@@ -19,8 +19,7 @@ const LS_SOURCE = 'IntervieHire_data_source';
 
 // The candidate interview room (ai_components/apps/web). apps/web hardcodes
 // `next dev -p 3000` which collides with the dashboard, so it is run on 3001.
-export const ENGINE_WEB_URL = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ENGINE_WEB_URL)
-  || 'http://localhost:3001';
+export const ENGINE_WEB_URL = process.env.NEXT_PUBLIC_ENGINE_WEB_URL || 'http://localhost:3001';
 
 export function getDataSource() {
   // Default to 'api' (live backend); only stay local if explicitly opted in.
