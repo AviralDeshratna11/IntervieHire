@@ -2,6 +2,7 @@ import { document, requestAnimationFrame, setTimeout } from './runtime.js';
 import { escapeHTML } from './escape.js';
 import { saveStateToLocalStorage } from './ai-api.js';
 import { renderDeepAnalysisPane } from './deep-analysis.js';
+import { renderInterviewAnalysisStage } from './interview-analysis.js';
 import { drawFunnelSVG, drawScoreDistributionSVG } from './funnel-charts.js';
 import { openJobFlowView, renderFunnelInsights, renderFunnelStages } from './job-flow.js';
 import { stopActiveCardPlayer, toggleCardPlayer } from './kanban-dnd.js';
@@ -388,6 +389,12 @@ function renderJobDetailPanes(job) {
   const analysisList = document.getElementById('list-stage-analysis');
   if (analysisList) {
     renderDeepAnalysisPane(job, analysisList);
+  }
+
+  // 4b. Interview Analysis pane — job-level listing of saved AI interview reports.
+  const interviewAnalysisList = document.getElementById('list-stage-interviewanalysis');
+  if (interviewAnalysisList) {
+    renderInterviewAnalysisStage(job, interviewAnalysisList);
   }
 
   // Bind actions

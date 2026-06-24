@@ -1454,13 +1454,82 @@ def get_test_report(
 
 # ─── RESPONSES (candidates for a job) ────────────────────────────────────────
 
+def _proctoring_flag_for_session(db: Session, session_id: str) -> Optional[str]:
+    """Derive a proctoring severity flag (critical/high/medium/None) from the
+    session's ProctoringLog rows — same buckets as the completion webhook so the
+    autonomous reconcile path produces identical cheat-probability data."""
+    from app.models.ai_integration import ProctoringLog, Severity
+    logs = db.query(ProctoringLog).filter(ProctoringLog.sessionId == session_id).all()
+    if not logs:
+        return None
+    critical = [l for l in logs if l.severity == Severity.CRITICAL]
+    high = [l for l in logs if l.severity == Severity.HIGH]
+    if len(critical) > 0:
+        return "critical"
+    if len(high) > 0:
+        return "high"
+    if any(l.severity == Severity.MEDIUM for l in logs):
+        return "medium"
+    return "low"
+
+
+def _persist_interview_report(db: Session, applicant, session, ev: dict) -> bool:
+    """Durably upsert the dashboard-owned InterviewReport row from an EVALUATED
+    session's stored evaluation, so the report survives independently of the
+    engine's session and the Interview Analysis tab has a stable store to read.
+    Idempotent: returns True only when a row was created or its summary changed."""
+    import json
+    from app.models.interview_report import InterviewReport
+    transcript_list = session.transcript or []
+    if isinstance(transcript_list, str):
+        try:
+            transcript_list = json.loads(transcript_list)
+        except Exception:
+            transcript_list = []
+    transcript_text = ""
+    video_url = None
+    if isinstance(transcript_list, list):
+        recordings = [t for t in transcript_list if isinstance(t, dict) and t.get("type") == "recording"]
+        if recordings:
+            video_url = recordings[-1].get("url")
+        for entry in transcript_list:
+            if isinstance(entry, dict):
+                speaker = entry.get("speaker") or entry.get("type") or "Participant"
+                text = entry.get("text") or ""
+                if text:
+                    transcript_text += f"{speaker}: {text}\n"
+
+    summary = ev.get("summary") or ""
+    detailed_scores = ev  # the full canonical CandidateReport (incl. .structured)
+    report = db.query(InterviewReport).filter(InterviewReport.applicant_id == applicant.id).first()
+    if not report:
+        db.add(InterviewReport(
+            applicant_id=applicant.id,
+            summary=summary,
+            transcript=transcript_text,
+            video_url=video_url,
+            detailed_scores=detailed_scores,
+        ))
+        return True
+    # Refresh stored copy if the evaluation summary changed (re-evaluation).
+    if report.summary != summary:
+        report.summary = summary
+        report.transcript = transcript_text
+        report.video_url = video_url
+        report.detailed_scores = detailed_scores
+        return True
+    return False
+
+
 def _reconcile_functional_from_sessions(db: Session, applicants: list) -> None:
     """Reflect completed AI interviews in the recruiter view: an EVALUATED
     InterviewSession (written by the interview engine into the shared DB) marks
-    the applicant completed and copies its score, so the dashboard's Deep
-    Analysis sees real results without waiting on the completion webhook."""
+    the applicant completed, copies its score, derives the proctoring/cheat flag,
+    and durably persists the InterviewReport — so the dashboard's Deep Analysis
+    and Interview Analysis tab see real, saved results fully autonomously (no
+    manual step, no dependency on the completion webhook)."""
     from app.models.ai_integration import InterviewSession, SessionStatus
-    from app.models.applicant import InterviewStatus
+    from app.models.applicant import InterviewStatus, CheatProbability
     changed = False
     for a in applicants:
         session = db.query(InterviewSession).filter(InterviewSession.id == str(a.id)).first()
@@ -1479,6 +1548,23 @@ def _reconcile_functional_from_sessions(db: Session, applicants: list) -> None:
             if session.reportUrl and a.report_url != session.reportUrl:
                 a.report_url = session.reportUrl
                 changed = True
+            # Proctoring → cheat probability (only set once, when not already known).
+            if a.proctoring_severity_flag is None:
+                flag = _proctoring_flag_for_session(db, str(a.id))
+                if flag is not None:
+                    a.proctoring_severity_flag = flag
+                    a.cheat_probability = (
+                        CheatProbability.high if flag in ("critical", "high")
+                        else CheatProbability.medium if flag == "medium"
+                        else CheatProbability.low
+                    )
+                    changed = True
+            # Durable, dashboard-owned report storage.
+            try:
+                if _persist_interview_report(db, a, session, ev):
+                    changed = True
+            except Exception:
+                pass
         elif session.status == SessionStatus.IN_PROGRESS and a.functional_status is None:
             a.functional_status = InterviewStatus.scheduled
             changed = True
@@ -1514,6 +1600,61 @@ def get_responses(
     elif tab == "functional":
         return [a for a in applicants if a.functional_status is not None]
     return applicants
+
+
+@router.get("/{job_id}/interview-analysis")
+def get_interview_analysis(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db),
+):
+    """Job-level Interview Analysis listing: every applicant whose AI interview has
+    been EVALUATED, with a compact summary read from the stored evaluation. The
+    reconcile pass first persists scores/proctoring/InterviewReport autonomously,
+    so the list reflects reports the moment the candidate finishes — no manual
+    transcript→LLM→upload step. The full report is fetched per-row on open via
+    GET /applicants/{id}/functional-report."""
+    from app.models.ai_integration import InterviewSession, SessionStatus
+
+    job = _verify_job_access(job_id, current_user, active_org_id, db)
+    applicants = [
+        a for a in db.query(Applicant).filter(Applicant.job_id == job_id).all()
+        if not _is_test_applicant(a)
+    ]
+    _reconcile_functional_from_sessions(db, applicants)
+
+    out = []
+    for a in applicants:
+        session = db.query(InterviewSession).filter(InterviewSession.id == str(a.id)).first()
+        if not session or session.status != SessionStatus.EVALUATED or not session.evaluation:
+            continue
+        ev = session.evaluation or {}
+        structured = ev.get("structured") or {}
+        breakdown = ev.get("questionBreakdown") or structured.get("questionBreakdown") or []
+        proctoring = structured.get("proctoring") or ev.get("proctoring") or {}
+        violations = proctoring.get("violations") if isinstance(proctoring, dict) else None
+        out.append({
+            "applicant_id": str(a.id),
+            "name": a.name,
+            "email": a.email,
+            "status": session.status.value,
+            "overall_score": ev.get("overallScore"),
+            "recommendation": ev.get("recommendation") or structured.get("recommendation"),
+            "summary": ev.get("summary") or structured.get("summary") or "",
+            "question_count": len(breakdown),
+            "proctoring_severity": a.proctoring_severity_flag,
+            "cheat_probability": a.cheat_probability.value if a.cheat_probability else None,
+            "violation_count": len(violations) if isinstance(violations, list) else 0,
+            "has_structured": bool(structured),
+            "report_url": session.reportUrl,
+            "evaluated_at": session.completedAt.isoformat() if session.completedAt else None,
+            "source": a.source.value if a.source else None,
+        })
+
+    # Most recently evaluated first.
+    out.sort(key=lambda r: r.get("evaluated_at") or "", reverse=True)
+    return out
 
 
 def _build_funnel(applicants: list) -> dict:

@@ -95,6 +95,35 @@ export async function apiFetchCandidateReport(applicantId) {
   return mapFullReportToCandidateReport(data);
 }
 
+// Interview Analysis tab source: compact summaries for every applicant of a job
+// whose AI interview has been EVALUATED (score, recommendation, proctoring), most
+// recent first. The backend reconciles + persists autonomously, so this reflects
+// reports as soon as candidates finish. Each row's full report opens via
+// apiFetchCandidateReport(). Returns a camelCase list (or [] when none yet).
+export async function apiFetchInterviewAnalysis(jobId) {
+  const data = await request(`/jobs/${jobId}/interview-analysis`);
+  const list = Array.isArray(data) ? data : (data?.results || data?.data || []);
+  return list.map((r = {}) => ({
+    id: r.applicant_id,
+    name: r.name || '',
+    email: r.email || '',
+    status: r.status || 'EVALUATED',
+    overallScore: r.overall_score ?? null,
+    recommendation: r.recommendation || null,
+    summary: r.summary || '',
+    questionCount: r.question_count ?? 0,
+    proctoringSeverity: r.proctoring_severity || null,
+    cheatProbability: r.cheat_probability
+      ? r.cheat_probability.charAt(0).toUpperCase() + r.cheat_probability.slice(1)
+      : null,
+    violationCount: r.violation_count ?? 0,
+    hasStructured: !!r.has_structured,
+    reportUrl: r.report_url || null,
+    evaluatedAt: r.evaluated_at || null,
+    source: r.source || null,
+  }));
+}
+
 // Deep Analysis: the "Run test interview" result for a job. Test interviews use a
 // throwaway candidate that is (by design) kept out of the roster, funnel and
 // analytics, so this fetches just its evaluation. Returns the report or null
