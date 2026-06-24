@@ -6,6 +6,7 @@
 
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
+- **2026-06-24** — Documented Talent Finder (13 routes under `/api/talent-finder`), merged in from origin/master's talent-finder feature (`backend/app/talent_finder/`, mounted in `main.py`). Route groups: search (POST /search, GET /search/{search_id}/status, GET /search/{search_id}/results), candidates (GET·DELETE /candidates/{candidate_id}, POST /candidates/{candidate_id}/shortlist·/reject·/opt-out·/move-to-pipeline·/generate-outreach), extract-brief (POST /extract-brief), import/csv (POST /import/csv), sources (GET /sources, POST /sources/configure). All require auth (get_current_user) and are org-scoped via get_active_org_id; responses are plain dicts (no Pydantic response_model).
 - **2026-06-24** — Added PATCH /api/team/{user_id} — update a team member's designation, user_type, and/or status (org-scoped). New UpdateMemberIn request schema.
 - **2026-06-24** — Initial api.md generated — documented 54 endpoints across backend (FastAPI), interview-engine (Fastify), and dashboard (Next route handlers).
 
@@ -1613,6 +1614,409 @@ Derivation: `overall_score` = resume_score*0.2 + screening_score*0.3 + functiona
 Status codes: 200 OK (possibly empty array); 401 Unauthorized; 403 Forbidden — "Not authorized to access this job's candidates" (job.organisation_id and active_org_id both set and differ); 404 Not Found — "Job not found"; 422 Unprocessable Entity — invalid UUID.
 
 Notes: Untyped list of dicts (no response_model). Cross-service linkage uses str(applicant.id) as the key into ProctoringLog.sessionId and InterviewSession.id. 403 org check only fires when BOTH job.organisation_id and active_org_id are truthy. Router prefix '/api/leaderboard' applied at mount in main.py.
+
+### `backend/app/talent_finder/routes.py`
+
+> AI-driven candidate sourcing ("Talent Finder"). Router mounted in `main.py` with prefix `/api/talent-finder`. **Every route** depends on `get_current_user` (auth required — JWT `token` cookie or `Authorization: Bearer`) and `get_active_org_id` (org scoping). `org_id` is `Optional[UUID]`: for super_admin it resolves from the `active_org_id` cookie (first-org fallback); for others it is the user's `organisation_id`; it may be `None`. **There is no explicit super_admin/admin role gate on any route** (docstrings label delete/configure as "admin", but the code does not enforce a role). Org isolation: `_get_search`/`_get_candidate` 404 when the row's `organisation_id` is set and differs from the caller's `org_id` (rows with a null `organisation_id`, or a caller with a null `org_id`, are not isolated). **No route declares a `response_model`** — all responses are plain dicts (shapes below are the literal dicts the handlers return). Most mutating routes also append a `TalentFinderAuditLog` row (best-effort; failures are swallowed). Enum string values referenced below come from `backend/app/talent_finder/models.py`: `SearchStatus` (pending|searching|normalizing|deduping|ranking|done|failed), `ResultStatus` (new|shortlisted|rejected|saved|invited), `OutreachStatus` (none|draft|approved|sent|opted_out).
+
+#### POST /api/talent-finder/extract-brief
+
+Auto-derive a search brief from a job (authored blueprint topics → must-haves; JD skill extraction → good-to-haves) and/or raw JD text. Deterministic, keyless.
+
+- **Auth:** required (get_current_user) + get_active_org_id.
+- **Path params:** none
+- **Query params:** none
+
+Request: raw JSON object (body typed as `dict`, no Pydantic model):
+```json
+{
+  "jobRoleId": "uuid string | null (optional) — if present, the Job is loaded by id (no org check) and used to seed the brief",
+  "jdText": "string | null (optional) — raw JD text used when no job description is available"
+}
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "brief": {
+    "title": "string | null",
+    "location": "string | null",
+    "experienceMin": "number | null",
+    "experienceMax": "number | null",
+    "mustHaveSkills": ["string"],
+    "goodToHaveSkills": ["string"],
+    "jdText": "string"
+  }
+}
+```
+
+Status codes: 200 OK; 401 not authenticated.
+
+Notes: `mustHaveSkills` come from the job's `functional_parameters.topics[].name`; if none, seeded from the top 6 extracted JD skills. `goodToHaveSkills` = up to 8 extracted skills not already in must-haves. `experienceMin`/`experienceMax` parsed from the job's `experience_band`. No audit log. If `jobRoleId` is absent or not found, `job` is None and the brief is derived from `jdText` only.
+
+#### POST /api/talent-finder/search
+
+Create and run a talent search synchronously: builds a brief from the (optional) job + request body, discovers candidates across the selected sources, dedups, hard-filters, weight-scores, persists profiles/sources/fit-scores/results, and returns a summary.
+
+- **Auth:** required (get_current_user) + get_active_org_id.
+- **Path params:** none
+- **Query params:** none
+
+Request: raw JSON object (body typed as `dict`, no Pydantic model). Fields consumed by `service.build_brief` / `service._selected_sources` / the search runner:
+```json
+{
+  "jobRoleId": "uuid string | null (optional) — Job loaded by id (no org check) to merge into the brief",
+  "title": "string | null (optional) — used when no job",
+  "location": "string | null (optional)",
+  "remoteOrOnsite": "string | null (optional)",
+  "experienceRange": { "min": "number | null", "max": "number | null" },
+  "mustHaveSkills": ["string"],
+  "goodToHaveSkills": ["string"],
+  "shouldNotHave": ["string"],
+  "excludeKeywords": ["string"],
+  "educationRequirement": "string | null (optional)",
+  "industryPreference": "string | null (optional)",
+  "jdText": "string | null (optional)",
+  "requireAvailable": "boolean (optional, default false)",
+  "includeInternational": "boolean (optional, default false)",
+  "studentFocus": "boolean (optional, default false)",
+  "targetCountries": ["string"],
+  "maxCandidates": "integer (optional, default 50)",
+  "sources": ["string (source_type)"],
+  "includeInternalDatabase": "boolean (optional, default true)",
+  "includeUploadedFiles": "boolean (optional)",
+  "includePublicWeb": "boolean (optional)",
+  "includeApprovedAPIs": "boolean (optional)",
+  "csvRows": [ { } ],
+  "manualProfiles": [ { } ],
+  "sourceConfig": { }
+}
+```
+Source selection: if `sources` is provided it is used verbatim; otherwise it is derived from the `include*` flags (`includeInternalDatabase` → `internal_db`,`resume_db`; `includeUploadedFiles` → `uploaded_csv`,`manual_import`; `includePublicWeb` → `public_web`; `includeApprovedAPIs` → `approved_api`), defaulting to `["internal_db","resume_db"]`.
+
+Response:
+```json
+{
+  "searchId": "uuid string",
+  "status": "done",
+  "found": 0,
+  "deduped": 0,
+  "ranked": 0,
+  "source_notes": { "<source_type>": "string note (e.g. \"ok\" or a permission/error message)" },
+  "no_results_hint": "string | null"
+}
+```
+(The `status`/`found`/`deduped`/`ranked`/`source_notes`/`no_results_hint` keys are the `run_search` summary spread into the response; on success `status` is `done`.)
+
+Status codes: 200 OK; 401 not authenticated; 500 — "Search failed: <error>" (any exception during `run_search`; the TalentSearch row is marked `status='failed'` with the error stored).
+
+Notes: Persists a `TalentSearch` row (status pending→searching→deduping→ranking→done) plus `CandidateProfile` (upserted by `dedup_key` within the org), `CandidateSource`, `CandidateFitScore`, and `TalentSearchResult` rows (ranked, capped at `max_candidates`). `no_results_hint` is a non-null guidance string when zero candidates ranked, else null. Audit: `search.run`.
+
+#### GET /api/talent-finder/search/{search_id}/status
+
+Poll a search's progress/counters.
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_search`).
+- **Path params:** `search_id`:UUID (required) — the TalentSearch id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{
+  "searchId": "uuid string",
+  "status": "pending | searching | normalizing | deduping | ranking | done | failed",
+  "found": 0,
+  "deduped": 0,
+  "ranked": 0,
+  "error": "string | null",
+  "source_notes": { "<source_type>": "string" }
+}
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Search not found" (missing, or org mismatch); 422 invalid UUID.
+
+Notes: `found`/`deduped`/`ranked` map to the row's `found_count`/`deduped_count`/`ranked_count`. `source_notes` read from `brief._source_notes` (empty object until the search has run).
+
+#### GET /api/talent-finder/search/{search_id}/results
+
+List a search's ranked candidates with full normalized profiles.
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_search`).
+- **Path params:** `search_id`:UUID (required) — the TalentSearch id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{
+  "searchId": "uuid string",
+  "count": 0,
+  "brief": { },
+  "results": [
+    {
+      "id": "uuid string",
+      "full_name": "string",
+      "current_title": "string | null",
+      "current_company": "string | null",
+      "location": "string | null",
+      "email": "string | null",
+      "phone": "string | null",
+      "profile_url": "string | null",
+      "source_name": "string | null",
+      "source_type": "string | null",
+      "source_permission_status": "string | null",
+      "skills": ["string"],
+      "years_of_experience": "number | null",
+      "education": ["string"],
+      "previous_companies": ["string"],
+      "resume_url": "string | null",
+      "portfolio_url": "string | null",
+      "github_url": "string | null",
+      "linkedin_url": "string | null",
+      "availability_status": "string | null",
+      "salary_expectation": "string | null",
+      "notice_period": "string | null",
+      "consent_status": "string",
+      "outreach_status": "none | draft | approved | sent | opted_out",
+      "fit_score": "number | null",
+      "fit_breakdown": { },
+      "fit_reasoning": "string | null",
+      "risk_flags": ["string"],
+      "completeness": "number",
+      "sources": [
+        { "source_name": "string | null", "source_type": "string | null", "source_permission_status": "string | null", "profile_url": "string | null" }
+      ],
+      "rank": "integer | null",
+      "result_status": "new | shortlisted | rejected | saved | invited",
+      "result_id": "uuid string"
+    }
+  ]
+}
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Search not found"; 422 invalid UUID.
+
+Notes: `brief` is the stored TalentSearch.brief (includes `_source_notes`). Results ordered by `fit_score` descending. Each item is `_serialize_profile(profile, sources)` plus `rank`, `result_status` (the `TalentSearchResult.status`), and `result_id`. No audit log.
+
+#### POST /api/talent-finder/candidates/{candidate_id}/shortlist
+
+Mark a sourced candidate shortlisted (sets every TalentSearchResult row for that candidate to `shortlisted`).
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_candidate`).
+- **Path params:** `candidate_id`:UUID (required) — the CandidateProfile id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{ "ok": true, "status": "shortlisted" }
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Candidate not found" (missing, or org mismatch); 422 invalid UUID.
+
+Notes: Audit: `candidate.shortlist`.
+
+#### POST /api/talent-finder/candidates/{candidate_id}/reject
+
+Mark a sourced candidate rejected (sets every TalentSearchResult row for that candidate to `rejected`).
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_candidate`).
+- **Path params:** `candidate_id`:UUID (required) — the CandidateProfile id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{ "ok": true, "status": "rejected" }
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Candidate not found"; 422 invalid UUID.
+
+Notes: Audit: `candidate.reject`.
+
+#### POST /api/talent-finder/candidates/{candidate_id}/opt-out
+
+Honor an opt-out: set the candidate's `outreach_status=opted_out` and `consent_status="opted_out"`.
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_candidate`).
+- **Path params:** `candidate_id`:UUID (required) — the CandidateProfile id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{ "ok": true, "status": "opted_out" }
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Candidate not found"; 422 invalid UUID.
+
+Notes: Audit: `candidate.opt_out`.
+
+#### POST /api/talent-finder/candidates/{candidate_id}/move-to-pipeline
+
+Move a sourced candidate into the existing interview pipeline by creating an `Applicant` on a target job, and mark the candidate's result rows `invited`.
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_candidate`).
+- **Path params:** `candidate_id`:UUID (required) — the CandidateProfile id.
+- **Query params:** none
+
+Request: raw JSON object (body typed as `dict`, optional — may be omitted/null):
+```json
+{ "jobId": "uuid string | null (optional) — target Job; if omitted, falls back to the job_id of the candidate's first TalentSearchResult's search" }
+```
+
+Response:
+```json
+{ "ok": true, "applicantId": "uuid string", "jobId": "uuid string" }
+```
+
+Status codes: 200 OK; 400 — "jobId required to move into the interview pipeline." (no jobId and none derivable) OR "Candidate has no email (needs a permissioned source) to invite." (candidate.email is null); 401 not authenticated; 404 — "Candidate not found"; 422 invalid UUID.
+
+Notes: Creates `Applicant(name, email, phone, job_id, source=ApplicantSource.scheduled, resume_url, resume_text=raw_source_payload.resume_text)`; sets all of the candidate's `TalentSearchResult` rows to `invited`. Audit: `candidate.move_to_pipeline` (detail includes applicant_id, job_id).
+
+#### POST /api/talent-finder/candidates/{candidate_id}/generate-outreach
+
+Generate a DRAFT outreach message for a candidate (recruiter must approve before sending). Refused if the candidate opted out.
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_candidate`).
+- **Path params:** `candidate_id`:UUID (required) — the CandidateProfile id.
+- **Query params:** none
+
+Request: raw JSON object (body typed as `dict = None`, optional — may be omitted/null):
+```json
+{
+  "channel": "string (optional, default \"email\") — stored on the outreach message",
+  "brief": "object | null (optional) — context for message generation; falls back to the candidate's fit_breakdown"
+}
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "outreachId": "uuid string",
+  "message": "string (generated draft message body)",
+  "status": "draft",
+  "note": "Draft only — recruiter must approve before sending."
+}
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Candidate not found"; 409 — "Candidate has opted out of outreach." (outreach_status == opted_out); 422 invalid UUID.
+
+Notes: Persists a `CandidateOutreachMessage(channel, message, status='draft')` and sets the candidate's `outreach_status='draft'`. Company name resolved from the active Organisation's `org_name` (else "our team"). Audit: `outreach.generate`.
+
+#### DELETE /api/talent-finder/candidates/{candidate_id}
+
+Privacy: hard-delete a candidate's sourced data (cascades sources / fit-scores / results / outreach via FK ondelete).
+
+- **Auth:** required (get_current_user) + get_active_org_id (org-isolated via `_get_candidate`). Docstring calls this admin-only, but **no role gate is enforced**.
+- **Path params:** `candidate_id`:UUID (required) — the CandidateProfile id.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{ "ok": true, "deleted": "uuid string (the candidate_id)" }
+```
+
+Status codes: 200 OK; 401 not authenticated; 404 — "Candidate not found"; 422 invalid UUID.
+
+Notes: `db.delete(candidate)`; FK cascades remove CandidateSource / CandidateFitScore / TalentSearchResult rows (CandidateOutreachMessage.search_id is SET NULL on search delete but candidate_id cascades). Audit: `data.delete`.
+
+#### POST /api/talent-finder/import/csv
+
+Upload a CSV of candidates; parses + normalizes header keys, records an import batch, and returns the parsed rows (does not create CandidateProfiles directly — rows are meant to be fed back into a search via `csvRows`).
+
+- **Auth:** required (get_current_user) + get_active_org_id.
+- **Path params:** none
+- **Query params:** none
+
+Request: `multipart/form-data`
+```
+file: UploadFile (required) — CSV; decoded utf-8 (errors ignored), parsed with csv.DictReader
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "batchId": "uuid string",
+  "rows": [ { "<normalized_header>": "string value" } ],
+  "imported": 0,
+  "skipped": 0
+}
+```
+
+Status codes: 200 OK; 401 not authenticated; 422 — missing file.
+
+Notes: Header keys are lowercased, trimmed, spaces→underscores. A row is kept only if it has `full_name`, `name`, or `email`; otherwise it counts toward `skipped`. Persists a `CandidateImportBatch(source_type="uploaded_csv", filename, row_count, imported_count, skipped_count)`. Audit: `import.csv`.
+
+#### GET /api/talent-finder/sources
+
+List all configured sourcing adapters with live enabled/permission status (powers the admin source panel).
+
+- **Auth:** required (get_current_user) + get_active_org_id.
+- **Path params:** none
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{
+  "sources": [
+    {
+      "source_type": "string (e.g. internal_db | resume_db | uploaded_csv | manual_import | github | web_search | public_web | approved_api | linkedin | internshala | naukri | indeed)",
+      "source_name": "string",
+      "permission_mode": "permissioned | public_allowed | user_provided | requires_permission",
+      "is_enabled": "boolean",
+      "available": "boolean",
+      "note": "string | null (recruiter-facing reason when not available)",
+      "rate_limit": { "max_per_minute": 30, "concurrency": 1 }
+    }
+  ]
+}
+```
+
+Status codes: 200 OK; 401 not authenticated.
+
+Notes: One entry per adapter in the registry. `available`/`note` come from each adapter's `validate_permissions()`; restricted adapters (linkedin/internshala/naukri/indeed) ship disabled with a permission note. `rate_limit` is the adapter's `rate_limit_config`. No audit log.
+
+#### POST /api/talent-finder/sources/configure
+
+Create or update an organisation's source-adapter config (enable/disable, permission mode, opaque config). Docstring calls this admin-only.
+
+- **Auth:** required (get_current_user) + get_active_org_id. **No role gate is enforced** despite the "admin" label.
+- **Path params:** none
+- **Query params:** none
+
+Request: raw JSON object (body typed as `dict`, no Pydantic model):
+```json
+{
+  "source_type": "string (required)",
+  "source_name": "string | null (optional, default = source_type when creating)",
+  "is_enabled": "boolean (optional, default = existing value)",
+  "permission_mode": "string (optional, default = existing value)",
+  "config": "object | null (optional) — only applied when non-null"
+}
+```
+
+Response:
+```json
+{ "ok": true, "source_type": "string", "is_enabled": "boolean" }
+```
+
+Status codes: 200 OK; 400 — "source_type required" (missing source_type); 401 not authenticated.
+
+Notes: Upserts a `SourceAdapterConfig` keyed by (organisation_id, source_type). `config` is stored verbatim (intended to hold API-key refs/endpoints, never raw secrets in logs). Audit: `sources.configure` (detail includes is_enabled).
 
 ---
 
