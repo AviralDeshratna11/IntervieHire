@@ -207,6 +207,10 @@ export default function DashboardShell({ children }) {
     return () => clearTimeout(timer);
   }, [phase, router]);
 
+  // /dashboard/random is intentionally blank — opt out of the dashboard surface
+  // entirely (the surface always renders the default Jobs tab otherwise).
+  if (pathname === '/dashboard/random') return children;
+
   if (phase !== 'authed') return <VerifyingScreen />;
 
   return (
