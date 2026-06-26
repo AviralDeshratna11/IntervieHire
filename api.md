@@ -6,6 +6,7 @@
 
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
+- **2026-06-26** — Added `entry_method` (nullable string recording **how** a candidate was added — `bulk_upload` | `ats` | `direct_link` | `career_page`; **independent** of `source`, which is the `ApplicantSource` enum that routes the applicant to a pipeline stage) to `AddApplicantIn` and `ApplicantOut`. Affected routes: `POST /api/jobs/{job_id}/applicants` (request body + response gain optional `entry_method`; client may send it), `POST /api/jobs/{job_id}/applicants/bulk` (each `BulkApplicantsIn.applicants[]` item inherits `entry_method` from `AddApplicantIn`, and each response item carries it), and `GET /api/jobs/{job_id}/responses` (serialized applicant objects now include `entry_method`). `POST /api/jobs/{job_id}/applicants/upload-resumes` server-sets `entry_method="bulk_upload"` on every applicant it creates (no client override on that route). DB migration: `init_db()` now runs the idempotent `ALTER TABLE applicants ADD COLUMN IF NOT EXISTS entry_method VARCHAR;`.
 - **2026-06-24** — Documented Talent Finder (13 routes under `/api/talent-finder`), merged in from origin/master's talent-finder feature (`backend/app/talent_finder/`, mounted in `main.py`). Route groups: search (POST /search, GET /search/{search_id}/status, GET /search/{search_id}/results), candidates (GET·DELETE /candidates/{candidate_id}, POST /candidates/{candidate_id}/shortlist·/reject·/opt-out·/move-to-pipeline·/generate-outreach), extract-brief (POST /extract-brief), import/csv (POST /import/csv), sources (GET /sources, POST /sources/configure). All require auth (get_current_user) and are org-scoped via get_active_org_id; responses are plain dicts (no Pydantic response_model).
 - **2026-06-24** — Added PATCH /api/team/{user_id} — update a team member's designation, user_type, and/or status (org-scoped). New UpdateMemberIn request schema.
 - **2026-06-24** — Initial api.md generated — documented 54 endpoints across backend (FastAPI), interview-engine (Fastify), and dashboard (Next route handlers).
@@ -570,7 +571,7 @@ For `tab='overview'` (FunnelOut shape):
   "score_distribution": { "0-20": 0, "20-40": 0, "40-60": 0, "60-80": 0, "80-100": 0 }
 }
 ```
-For `tab` in resume|screening|functional (and any other value): array of serialized Applicant ORM objects (ApplicantOut-like fields).
+For `tab` in resume|screening|functional (and any other value): array of serialized Applicant ORM objects (ApplicantOut-like fields, including `entry_method`: string|null).
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'.
 
@@ -636,6 +637,7 @@ Request:
   "email": "EmailStr (required)",
   "phone": "string|null (optional)",
   "source": "career_page|bulk_upload|direct_link|scheduled|ats|functional|null (optional)",
+  "entry_method": "string|null (optional) — how the candidate was added (bulk_upload|ats|direct_link|career_page); independent of source",
   "recruiter_screening": "string|null (optional)",
   "recruiter_screening_score": "float|null (optional)",
   "attempted_at": "datetime|null (optional)"
@@ -647,7 +649,7 @@ Response:
 // ApplicantOut
 {
   "id": "uuid", "name": "string", "email": "string", "phone": "string|null",
-  "source": "ApplicantSource|null", "remarks": "string|null",
+  "source": "ApplicantSource|null", "entry_method": "string|null", "remarks": "string|null",
   "match_score": "float|null", "resume_analysis_report": "string|null", "resume_text": "string|null",
   "resume_analysed": "bool|null", "resume_shortlisted": "bool|null", "decision": "string|null",
   "screening_status": "InterviewStatus|null", "screening_score": "float|null",
@@ -662,7 +664,7 @@ Response:
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'; 422 body validation error.
 
-Notes: response_model=ApplicantOut. source='scheduled' → screening_status=pending; source='functional' → functional_status=pending. Broadcasts OutgoingMessage type 'candidate_update' to room 'global'.
+Notes: response_model=ApplicantOut. entry_method is a free-form nullable string recording how the candidate was added (bulk_upload|ats|direct_link|career_page), independent of source (which routes the applicant to a stage). source='scheduled' → screening_status=pending; source='functional' → functional_status=pending. Broadcasts OutgoingMessage type 'candidate_update' to room 'global'.
 
 #### POST /api/jobs/{job_id}/applicants/bulk
 
@@ -677,7 +679,7 @@ Request:
 // BulkApplicantsIn
 {
   "applicants": [
-    { "name": "string", "email": "EmailStr", "phone": "string|null", "source": "ApplicantSource|null", "recruiter_screening": "string|null", "recruiter_screening_score": "float|null", "attempted_at": "datetime|null" }
+    { "name": "string", "email": "EmailStr", "phone": "string|null", "source": "ApplicantSource|null", "entry_method": "string|null", "recruiter_screening": "string|null", "recruiter_screening_score": "float|null", "attempted_at": "datetime|null" }
   ]
 }
 ```
@@ -689,7 +691,7 @@ Response:
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'; 422 body validation error.
 
-Notes: response_model=List[ApplicantOut]. Per-applicant source→status mapping same as single add.
+Notes: response_model=List[ApplicantOut]. Per-applicant source→status mapping same as single add. Each item inherits the optional entry_method field from AddApplicantIn (string|null), and each response item carries entry_method.
 
 #### POST /api/jobs/{job_id}/applicants/upload-resumes
 
@@ -711,7 +713,7 @@ Response:
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'; 422 missing files.
 
-Notes: response_model=List[ApplicantOut]. Saves to uploads/resumes/. DEEPSEEK_API_KEY read from env for parse_resume_with_deepseek. Dedup: matches existing applicant by lowercase email (ignores @candidate.io dummies) then by lowercase name (ignores 'Candidate'). New applicants get email fallback candidate.<hex>@candidate.io, phone '+1 555-0199', resume_analysed=False. Broadcasts WebSocket update.
+Notes: response_model=List[ApplicantOut]. Saves to uploads/resumes/. DEEPSEEK_API_KEY read from env for parse_resume_with_deepseek. Dedup: matches existing applicant by lowercase email (ignores @candidate.io dummies) then by lowercase name (ignores 'Candidate'). New applicants get email fallback candidate.<hex>@candidate.io, phone '+1 555-0199', resume_analysed=False, and server-set entry_method='bulk_upload' (this route has no entry_method input, so clients cannot override it). Broadcasts WebSocket update.
 
 #### PATCH /api/jobs/applicants/{applicant_id}
 

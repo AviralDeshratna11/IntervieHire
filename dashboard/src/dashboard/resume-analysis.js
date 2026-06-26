@@ -1,5 +1,5 @@
 import { document } from './runtime.js';
-import { escapeHTML } from './escape.js';
+import { escapeHTML, sourceLabel } from './escape.js';
 import { callDeepSeekAPI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
 import { renderJobDetailPanes } from './job-detail-panes.js';
 import { appendTerminalLog } from './kanban-swarm.js';
@@ -167,6 +167,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
               <th>Match</th>
               <th>Recommendation</th>
               <th>Resume Input</th>
+              <th>Source</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -216,6 +217,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                       ${!isAnalysed ? `<textarea id="ra-paste-${c.id}" class="ra-paste-area" placeholder="Or paste resume text here..." rows="2"></textarea>` : ''}
                     </div>
                   </td>
+                  <td><span class="source-badge">${sourceLabel(c.entryMethod)}</span></td>
                   <td>
                     <div class="ra-action-btns">
                       <button class="btn-stage-reject" data-candidate-id="${c.id}">Reject</button>
@@ -813,7 +815,7 @@ async function runResumeAnalysis(cid, job, opts = {}) {
       } else {
         const registered = cand.backendId
           ? Promise.resolve(cand.backendId)
-          : apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone }).then((created) => {
+          : apiAddApplicant(job.id, { name: cand.name, email: cand.email, phone: cand.phone, entryMethod: 'bulk_upload' }).then((created) => {
               if (!created || !created.id) throw new Error('Could not register the candidate in the backend.');
               cand.backendId = created.id;
               cand.jobId = job.id;

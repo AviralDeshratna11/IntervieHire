@@ -161,7 +161,7 @@ export async function ensureBackendApplicantId(c2, jobId) {
   return created.id;
 }
 
-export async function apiAddApplicant(jobId, { name, email, phone, source } = {}) {
+export async function apiAddApplicant(jobId, { name, email, phone, source, entryMethod } = {}) {
   const data = await request(`/jobs/${jobId}/applicants`, {
     method: 'POST',
     body: {
@@ -172,6 +172,9 @@ export async function apiAddApplicant(jobId, { name, email, phone, source } = {}
       // Recruiter Screening); 'functional' → functional_status=pending; omitted
       // → Resume Analysis only. Sent only when provided so existing callers are unaffected.
       ...(source ? { source } : {}),
+      // How the candidate was added (bulk_upload | direct_link | ats), independent
+      // of `source` (the stage-router). Drives the Source column. Sent only when set.
+      ...(entryMethod ? { entry_method: entryMethod } : {}),
     },
   });
   return mapApplicantOutToCandidate(data);
@@ -487,6 +490,9 @@ function mapApplicantOutToCandidate(a = {}) {
       : (a.screening_status || a.decision === 'shortlisted') ? 'Screening'
       : 'Resume',
     source: a.source || 'ATS',
+    // How the candidate was added (Source column). Independent of `source` above
+    // (the stage-router). Null for legacy rows added before this field existed.
+    entryMethod: a.entry_method || null,
     interviewStatus: mapInterviewStatus(a.functional_status),
     interviewScore: a.functional_score ?? a.overall_interview_score ?? null,
     cheatProbability: a.cheat_probability ? a.cheat_probability.charAt(0).toUpperCase() + a.cheat_probability.slice(1) : null,

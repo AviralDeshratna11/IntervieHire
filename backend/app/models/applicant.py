@@ -39,6 +39,9 @@ class Applicant(Base):
     email = Column(String, nullable=False, index=True)
     phone = Column(String, nullable=True)
     source = Column(Enum(ApplicantSource), nullable=True)
+    # How the candidate was added (bulk_upload | ats | direct_link | career_page).
+    # Independent of `source` above, which routes the applicant to a stage.
+    entry_method = Column(String, nullable=True)
     resume_url = Column(String, nullable=True)
     remarks = Column(Text, nullable=True)
 
