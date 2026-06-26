@@ -13,6 +13,7 @@
   --color-gold-rgb:         45, 212, 191;
   --color-indigo-rgb:       100, 160, 220;
   --color-brand-purple-rgb: 45, 212, 191;
+  --color-brand-purple:     #2dd4bf;
 
   --color-bg:               #0a0a0a;
   --color-surface:          rgba(255, 255, 255, 0.04);
@@ -98,6 +99,7 @@ body.light-theme {
   --color-gold-rgb:         15, 118, 110;
   --color-indigo-rgb:       37, 99, 235;
   --color-brand-purple-rgb: 15, 118, 110;
+  --color-brand-purple:     #0f766e;
 
   --color-bg:               #f6f8fb;
   --color-surface:          #ffffff;
