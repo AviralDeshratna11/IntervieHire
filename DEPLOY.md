@@ -10,7 +10,7 @@ reachable at `https://interview.interviehire.com/interview/avatar` from any devi
 | Candidate room (`interview-engine/apps/web`) | **Vercel** | `interview.interviehire.com` (has `/interview` + `/interview/avatar`) |
 | Recruiter dashboard (`dashboard`) | **Vercel** | `app.interviehire.com` |
 | Interview engine — Fastify (`interview-engine`) | **Render** | `interviehire-engine.onrender.com` |
-| Backend — FastAPI (`backend`) | **Render** | `interviehire-backend.onrender.com` |
+| Backend — FastAPI (`backend`) | **Railway** | `interviehire-backend-production.up.railway.app` (deploy config in `backend/railway.json`; `render.yaml` is a Render alternative) |
 | Postgres (shared) | **Railway** | both services set `DATABASE_URL` to it (`sync: false`) |
 | UE5 avatar (Pixel Streaming) | **Your PC** + Cloudflare named tunnel | `avatar.interviehire.com` |
 
@@ -112,6 +112,9 @@ cross-network WebRTC). Start order on the PC: UE app → signalling (`:80`) → 
 | engine + backend | `DATABASE_URL` | **Railway** Postgres — same URL for both (shared DB) |
 | backend | `FRONTEND_URL` | `https://app.interviehire.com` |
 | backend | `COOKIE_SAMESITE=none`, `COOKIE_SECURE=true` | cross-site auth cookie |
+| backend | `INTERVIEW_ROOM_URL` | **the room's own origin** — `https://interview.interviehire.com` (NOT `interviehire.com`, which serves the dashboard → `/interviewcandidateroom` 404s there) |
+| backend | `INVITE_LINK_BASE` | *optional* — backend's own public origin for `/i/{token}`. **Auto-derived from `RAILWAY_PUBLIC_DOMAIN` / `RENDER_EXTERNAL_URL` when unset**, so usually no need to set it. |
+| backend | `INVITE_FROM_EMAIL` | *optional* — transactional sender for interview invites (`interviews@interviehire.com`) |
 | web | `NEXT_PUBLIC_API_URL` / `_WS_URL` | engine on Render |
 | web | `NEXT_PUBLIC_AVATAR_URL` | `https://avatar.interviehire.com` |
 | dashboard | `NEXT_PUBLIC_API_URL` | backend on Render |

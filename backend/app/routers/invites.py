@@ -18,6 +18,7 @@ from uuid import UUID
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Tuple
 import uuid
+import os
 import time
 import threading
 import logging
@@ -69,9 +70,25 @@ def _rate_limit(request: Optional[Request], *, limit: int, window: float = 60.0)
 # ---------------------------------------------------------------------------
 
 def build_invite_link(token: str) -> str:
-    """Public, config-driven invite URL. `INVITE_LINK_BASE` is the origin that
-    serves `GET /i/{token}` (this backend, or a rewrite in front of it)."""
-    return f"{settings.INVITE_LINK_BASE.rstrip('/')}/i/{token}"
+    """Public invite URL for `GET /i/{token}` (served by this backend).
+
+    Resolution order so production links work with zero extra config:
+    1. an explicit, non-localhost ``INVITE_LINK_BASE``;
+    2. else the platform-provided public origin — Railway sets
+       ``RAILWAY_PUBLIC_DOMAIN``, Render sets ``RENDER_EXTERNAL_URL``;
+    3. else the configured default (localhost in dev).
+    """
+    base = (settings.INVITE_LINK_BASE or "").strip()
+    if not base or "localhost" in base or "127.0.0.1" in base:
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        render_url = os.getenv("RENDER_EXTERNAL_URL")
+        if railway_domain:
+            base = f"https://{railway_domain}"
+        elif render_url:
+            base = render_url
+    if not base:
+        base = "http://localhost:8000"
+    return f"{base.rstrip('/')}/i/{token}"
 
 
 def create_invite(
