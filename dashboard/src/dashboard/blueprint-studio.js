@@ -36,6 +36,10 @@ const studioUi = {
   generating: false,
   draftingReq: null,
   scenarioQid: null,
+  // One Edit toggle reveals inline rename + add/remove controls on topics/questions.
+  editMode: false,
+  // Collapsible "Recommended topics" dialogue.
+  suggestCollapsed: false,
   // Suggested-topics curation gate (transient until Generate runs).
   topicSuggestions: null,   // [{id,name,type,difficulty,rationale,accepted}] | null
   suggestingTopics: false,
@@ -266,14 +270,17 @@ function functionalCanvas(job, fb) {
   }
   return `
     ${gate}
+    <div class="bs-fn ${studioUi.editMode ? 'bs-editing' : ''}">
     <div class="bs-canvas-head">
       <div><div class="bs-canvas-title">Functional blueprint</div><div class="bs-canvas-sub">${fb.topics.length} topic${fb.topics.length !== 1 ? 's' : ''} · drag to reorder · every question carries a graded rubric</div></div>
       <div class="bs-head-actions">
+        <button class="bs-mini-btn ${studioUi.editMode ? 'primary' : 'ghost'} bs-edit-toggle" data-action="toggle-edit">${studioUi.editMode ? 'Done' : 'Edit'}</button>
         <button class="bs-mini-btn ghost" data-action="suggest-topics" ${studioUi.generating ? 'disabled' : ''}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg> Topics</button>
         <button class="bs-mini-btn" data-action="add-topic"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Topic</button>
       </div>
     </div>
-    ${fb.topics.map((t) => topicMarkup(t)).join('')}`;
+    ${fb.topics.map((t) => topicMarkup(t)).join('')}
+    </div>`;
 }
 
 // ── Suggested-topics gate (curation before generation) ───────────────────────
@@ -292,15 +299,19 @@ function suggestedTopicsPanel() {
   // Count only generatable topics (accepted AND named) so the Generate button's
   // enabled state + label match the seed the handler actually uses.
   const kept = list.filter((s) => s.accepted && (s.name || '').trim()).length;
-  return `<div class="bs-suggest bs-reveal">
+  const collapsed = studioUi.suggestCollapsed;
+  return `<div class="bs-suggest bs-reveal ${collapsed ? 'collapsed' : ''}">
     <div class="bs-suggest-head">
-      <div>
+      <div class="bs-suggest-head-main">
         <div class="bs-suggest-title">Recommended topics for this role</div>
-        <div class="bs-suggest-sub">Keep the areas worth probing — Generate builds rubric-graded questions for the ones you keep.</div>
+        ${collapsed ? '' : '<div class="bs-suggest-sub">Keep the areas worth probing — Generate builds rubric-graded questions for the ones you keep.</div>'}
       </div>
-      <span class="bs-suggest-count"><b>${kept}</b> / ${list.length} kept</span>
+      <div class="bs-suggest-head-r">
+        <span class="bs-suggest-count"><b>${kept}</b> / ${list.length} kept</span>
+        <button class="bs-suggest-collapse" data-action="toggle-suggest" title="${collapsed ? 'Expand recommended topics' : 'Collapse recommended topics'}"><svg class="bs-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+      </div>
     </div>
-    ${list.map((s) => suggItemMarkup(s)).join('')}
+    ${collapsed ? '' : `${list.map((s) => suggItemMarkup(s)).join('')}
     <button class="bs-mini-btn ghost bs-sugg-add" data-action="add-topic-suggestion"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add a topic of your own</button>
     <div class="bs-suggest-foot">
       <button class="bs-mini-btn ghost" data-action="suggest-topics" ${studioUi.generating ? 'disabled' : ''}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Re-suggest</button>
@@ -308,7 +319,7 @@ function suggestedTopicsPanel() {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         <span class="bs-btn-text">${studioUi.generating ? (studioUi.genLabel || 'Generating…') : `Generate from ${kept} topic${kept !== 1 ? 's' : ''}`}</span>
       </button>
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -445,15 +456,19 @@ function topicMarkup(topic) {
   const open = studioUi.expandedTopicId === topic.id;
   const typeClass = topic.type === 'Experiential' ? 'exp' : 'theo';
   const diffClass = topic.difficulty.toLowerCase();
+  const nameMarkup = studioUi.editMode
+    ? `<input class="bs-topic-name-input" data-action="edit-topic-name" data-topic-id="${topic.id}" value="${escapeHTML(topic.name)}" placeholder="Topic name" draggable="false" />`
+    : `<span class="bs-topic-name">${escapeHTML(topic.name)}</span>`;
   return `
   <div class="bs-topic ${open ? 'open' : ''}" data-topic-id="${topic.id}">
     <div class="bs-topic-bar" draggable="true" data-action="toggle-topic" data-topic-id="${topic.id}">
       <svg class="bs-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      <span class="bs-topic-name">${escapeHTML(topic.name)}</span>
+      ${nameMarkup}
       <span class="bs-tspacer"></span>
       <span class="bs-chip ${typeClass}">${escapeHTML(topic.type)}</span>
       <span class="bs-chip ${diffClass}">${escapeHTML(topic.difficulty)}</span>
       <span class="bs-chip cnt">${topic.questions.length}</span>
+      <button class="bs-icon-btn danger bs-topic-del" data-action="delete-topic" data-topic-id="${topic.id}" title="Remove topic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
     </div>
     ${open ? `
       <div class="bs-topic-body">
@@ -501,6 +516,7 @@ function questionMarkup(q) {
           ${leakageBadge(q)}
         </div>
       </div>
+      <button class="bs-icon-btn danger bs-q-del" data-action="delete-question" data-q-id="${q.id}" title="Remove question"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
     </div>
     ${open ? `<div class="bs-q-edit">${questionEditor(q)}</div>` : ''}
   </div>`;
@@ -740,6 +756,10 @@ function bindStudio(pane, job) {
         soundEngine.playClick(); reRender(); break;
       case 'toggle-inspector':
         studioUi.inspectorOpen = !studioUi.inspectorOpen; soundEngine.playClick(); reRender(); break;
+      case 'toggle-edit':
+        studioUi.editMode = !studioUi.editMode; soundEngine.playClick(); reRender(); break;
+      case 'toggle-suggest':
+        studioUi.suggestCollapsed = !studioUi.suggestCollapsed; soundEngine.playClick(); reRender(); break;
       case 'inspector-tab':
         studioUi.inspectorTab = el.dataset.tab; reRender(); break;
       case 'draft-gap':
@@ -840,6 +860,7 @@ function bindStudio(pane, job) {
       case 'dismiss-screening-suggest':
         studioUi.screeningSuggestions = null; studioUi.suggestingScreening = false; reRender(); break;
       case 'delete-question': deleteQuestion(job, qid); persist(); reRender(); break;
+      case 'delete-topic': deleteTopic(job, el.dataset.topicId); persist(); reRender(); break;
       case 'add-point': { const { q } = findQuestion(job, qid); const pts = pointsOf(q, el.dataset.kind); if (pts) { q.edited = true; pts.push(createRubricPoint('', el.dataset.kind === 'required' ? 2 : 1)); persist(); reRender(); } break; }
       case 'remove-point': { const { q } = findQuestion(job, qid); const pts = pointsOf(q, el.dataset.kind); if (pts) { q.edited = true; pts.splice(Number(el.dataset.idx), 1); persist(); reRender(); } break; }
       case 'add-flag': { const { q } = findQuestion(job, qid); if (q) { q.edited = true; q.rubric.redFlags.push(createRedFlag('', 'medium')); persist(); reRender(); } break; }
@@ -872,6 +893,14 @@ function bindStudio(pane, job) {
     const ol = e.target.closest('[data-action="input-outline"]');
     if (ol) { applyOutlineEdit(job, ol); return; }
 
+    // Inline topic rename (edit mode) — persist, no re-render (keeps focus).
+    const tn = e.target.closest('[data-action="edit-topic-name"]');
+    if (tn) {
+      const topic = (functionalOf(job).topics || []).find((t) => t.id === tn.dataset.topicId);
+      if (topic) { topic.name = tn.value; persist(); }
+      return;
+    }
+
     const el = e.target.closest('[data-action="edit"], [data-action="edit-point"], [data-action="edit-flag"]');
     if (!el) return;
     const { q } = findQuestion(job, el.getAttribute('data-q-id'));
@@ -903,6 +932,8 @@ function bindStudio(pane, job) {
 
   // Drag-to-reorder: topics anywhere, questions within their topic.
   pane.ondragstart = (e) => {
+    // Let the inline topic-name input select text instead of dragging its bar.
+    if (e.target.closest('.bs-topic-name-input')) { e.preventDefault(); return; }
     const tBar = e.target.closest('.bs-topic-bar');
     const qCard = e.target.closest('.bs-qcard');
     if (tBar) {
@@ -976,6 +1007,13 @@ function deleteQuestion(job, qid) {
   const sb = screeningOf(job);
   const j = sb.questions.findIndex((q) => q.id === qid);
   if (j >= 0) sb.questions.splice(j, 1);
+}
+
+function deleteTopic(job, topicId) {
+  const topics = functionalOf(job).topics;
+  const i = topics.findIndex((t) => t.id === topicId);
+  if (i >= 0) topics.splice(i, 1);
+  if (studioUi.expandedTopicId === topicId) studioUi.expandedTopicId = null;
 }
 
 // Rewrite a googleable question in place as an applied scenario (keeps its id +
@@ -1164,9 +1202,8 @@ async function handleGenerate(job, reRender, opts = {}) {
     return;
   }
   // Seeded generation (from the curation gate): the accepted suggestions shape
-  // the topics, and the whole menu is persisted onto the blueprint.
+  // the topics, which are appended to any existing blueprint.
   const seed = Array.isArray(opts.seed) ? opts.seed : [];
-  const captured = seed.length && studioUi.topicSuggestions ? studioUi.topicSuggestions.slice() : null;
 
   studioUi.generating = true;
   studioUi.genLabel = studioUi.mode === MODE_FUNCTIONAL ? 'Outlining…' : 'Generating…';
@@ -1212,10 +1249,30 @@ async function handleGenerate(job, reRender, opts = {}) {
   // Pin every question to a required competency + fill any uncovered requirement
   // with a targeted gap question, so coverage is complete on both paths.
   fb = pinBlueprintToRequirements(job, fb, requirements);
-  fb = mergeBlueprintPreservingEdits(existing, fb); // carry over hand-edited questions
-  if (seed.length) { stampSeedRationale(fb, seed); if (captured) fb.suggestedTopics = captured; }
-  job.functionalParameters = fb;
-  studioUi.expandedTopicId = fb.topics[0] ? fb.topics[0].id : null;
+  if (seed.length) {
+    // Append path (Generate from N kept topics): add the freshly generated topics
+    // to the existing blueprint, de-duped by name, instead of replacing it. Mutate
+    // the live topics array in place and do NOT reassign job.functionalParameters,
+    // so interviewStructure + suggestedTopics survive.
+    stampSeedRationale(fb, seed);
+    const existingTopics = existing.topics || (existing.topics = []);
+    const seen = new Set(existingTopics.map((t) => String(t.name || '').trim().toLowerCase()));
+    const newOnes = [];
+    for (const t of fb.topics) {
+      const key = String(t.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key); newOnes.push(t);
+    }
+    existingTopics.push(...newOnes);
+    if (newOnes[0]) studioUi.expandedTopicId = newOnes[0].id;
+    // Phase 2 enriches only the newly added topics — they share object refs with
+    // the live array, so their rubrics land on job.functionalParameters.topics.
+    fb = { ...fb, topics: newOnes };
+  } else {
+    fb = mergeBlueprintPreservingEdits(existing, fb); // carry over hand-edited questions
+    job.functionalParameters = fb;
+    studioUi.expandedTopicId = fb.topics[0] ? fb.topics[0].id : null;
+  }
 
   if (!aiOk) { autofillOutlineNotes(fb, job); finish('Blueprint drafted offline (template rubrics).'); return; }
 

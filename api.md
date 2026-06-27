@@ -6,6 +6,7 @@
 
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
+- **2026-06-27** — Added public no-auth endpoint `GET /api/public/careers/{subdomain}` — returns an organisation's public career page (the org's `org_name`/`logo_url`/`career_intro`/`career_subdomain`, plus its jobs), filtering jobs to that org AND `is_job_listed == true` AND `status == published`; 404 "Career page not found" when no org has that `career_subdomain`. Also added `career_subdomain` and `career_intro` (both nullable string) to the organisation schema — `OrganisationOut` (response of `GET`/`PUT`/`POST /api/organisation`) and `OrganisationIn` (optional request fields on `PUT`/`POST /api/organisation`, persisted via the existing upsert).
 - **2026-06-27** — Modified the `UsageStatsOut` response schema of `GET /api/usage/stats` (request/auth unchanged). ADDED fields: `ats`, `other`, `resume_reached`, `screening_reached`, `functional_reached`. REMOVED fields: `screening_waitlisted`, `functional_waitlisted`. The six entry-route counts (`career_page`/`bulk_upload`/`scheduled`/`direct_link`/`ats`/`other`) now reconcile exactly to `total_applicants` (`other` absorbs the `functional`/NULL sources), and the headline stage counts form a monotonic funnel `total_applicants ≥ resume_reached ≥ screening_reached ≥ functional_reached` (`screening_attempted`/`functional_attempted` now count only **completed** interviews; `screening_shortlisted` = advanced past screening = `functional_reached`; `functional_shortlisted` = `decision == "hired"`).
 - **2026-06-26** — Added `entry_method` (nullable string recording **how** a candidate was added — `bulk_upload` | `ats` | `direct_link` | `career_page`; **independent** of `source`, which is the `ApplicantSource` enum that routes the applicant to a pipeline stage) to `AddApplicantIn` and `ApplicantOut`. Affected routes: `POST /api/jobs/{job_id}/applicants` (request body + response gain optional `entry_method`; client may send it), `POST /api/jobs/{job_id}/applicants/bulk` (each `BulkApplicantsIn.applicants[]` item inherits `entry_method` from `AddApplicantIn`, and each response item carries it), and `GET /api/jobs/{job_id}/responses` (serialized applicant objects now include `entry_method`). `POST /api/jobs/{job_id}/applicants/upload-resumes` server-sets `entry_method="bulk_upload"` on every applicant it creates (no client override on that route). DB migration: `init_db()` now runs the idempotent `ALTER TABLE applicants ADD COLUMN IF NOT EXISTS entry_method VARCHAR;`.
 - **2026-06-24** — Documented Talent Finder (13 routes under `/api/talent-finder`), merged in from origin/master's talent-finder feature (`backend/app/talent_finder/`, mounted in `main.py`). Route groups: search (POST /search, GET /search/{search_id}/status, GET /search/{search_id}/results), candidates (GET·DELETE /candidates/{candidate_id}, POST /candidates/{candidate_id}/shortlist·/reject·/opt-out·/move-to-pipeline·/generate-outreach), extract-brief (POST /extract-brief), import/csv (POST /import/csv), sources (GET /sources, POST /sources/configure). All require auth (get_current_user) and are org-scoped via get_active_org_id; responses are plain dicts (no Pydantic response_model).
@@ -1103,7 +1104,9 @@ Response:
   "website_link": "string | null",
   "location": "string | null",
   "logo_url": "string | null",
-  "description": "string | null"
+  "description": "string | null",
+  "career_subdomain": "string | null",
+  "career_intro": "string | null"
 }
 ```
 
@@ -1128,7 +1131,9 @@ Request:
   "contact_email": "string | null (optional, default null)",
   "website_link": "string | null (optional, default null)",
   "location": "string | null (optional, default null)",
-  "description": "string | null (optional, default null)"
+  "description": "string | null (optional, default null)",
+  "career_subdomain": "string | null (optional, default null)",
+  "career_intro": "string | null (optional, default null)"
 }
 ```
 
@@ -1143,7 +1148,9 @@ Response:
   "website_link": "string | null",
   "location": "string | null",
   "logo_url": "string | null",
-  "description": "string | null"
+  "description": "string | null",
+  "career_subdomain": "string | null",
+  "career_intro": "string | null"
 }
 ```
 
@@ -1168,7 +1175,9 @@ Request:
   "contact_email": "string | null (optional, default null)",
   "website_link": "string | null (optional, default null)",
   "location": "string | null (optional, default null)",
-  "description": "string | null (optional, default null)"
+  "description": "string | null (optional, default null)",
+  "career_subdomain": "string | null (optional, default null)",
+  "career_intro": "string | null (optional, default null)"
 }
 ```
 
@@ -1183,7 +1192,9 @@ Response:
   "website_link": "string | null",
   "location": "string | null",
   "logo_url": "string | null",
-  "description": "string | null"
+  "description": "string | null",
+  "career_subdomain": "string | null",
+  "career_intro": "string | null"
 }
 ```
 
@@ -1578,6 +1589,43 @@ Response:
 Status codes: 200 OK; 404 "Invalid or expired scheduling token."; 400 "Invalid ISO datetime format."; 422 if request body missing the required "new_time" field.
 
 Notes: Mutates and commits the Applicant: functional stage sets functional_scheduled_at=parsed_time, functional_status=scheduled, sync_applicant_to_ai (non-fatal); screening stage sets screening_scheduled_at=parsed_time, screening_status=scheduled. Always increments calendar_sequence = (calendar_sequence or 0) + 1. If calendar_event_id exists, calls update_calendar_event (non-fatal). Resends send_ical_invitation_email (duration_minutes=30, sequence=calendar_sequence; non-fatal). Unlike /confirm, does NOT raise if no stage status is set.
+
+#### GET /api/public/careers/{subdomain}
+
+Public career page for an organisation: returns the org's public-facing profile plus its published, career-listed jobs. The org is resolved by its `career_subdomain`.
+
+- **Auth:** none (public, no cookie/JWT). Access is by knowing the org's `career_subdomain`.
+- **Path params:** `subdomain`:str — the Organisation.career_subdomain to resolve.
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{
+  "organisation": {
+    "org_name": "string",
+    "logo_url": "string | null",
+    "career_intro": "string | null",
+    "career_subdomain": "string | null"
+  },
+  "jobs": [
+    {
+      "id": "string",
+      "title": "string",              // job.title, falls back to role_name
+      "role_name": "string",
+      "location": "string | null",
+      "job_type": "string | null",
+      "experience_band": "string | null",
+      "description": "string | null"
+    }
+  ]
+}
+```
+
+Status codes: 200 OK; 404 "Career page not found" (no Organisation has the given career_subdomain).
+
+Notes: Plain dict response (no response_model). Resolves the Organisation by `career_subdomain`; `jobs` is filtered to that org AND `is_job_listed == True` AND `status == published` (JobStatus.published). Each job `id` is stringified; `title` falls back to `role_name` when null.
 
 ### `backend/app/routers/leaderboard.py`
 

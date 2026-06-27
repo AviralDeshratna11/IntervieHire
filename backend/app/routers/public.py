@@ -8,8 +8,9 @@ import logging
 
 from app.database import get_db
 from app.models.applicant import Applicant, InterviewStatus
-from app.models.job import Job
+from app.models.job import Job, JobStatus
 from app.models.user import User
+from app.models.organisation import Organisation
 from app.config import settings
 from app.utils.google_calendar import create_calendar_event, update_calendar_event
 from app.utils.email_sender import send_ical_invitation_email
@@ -394,4 +395,40 @@ def public_reschedule_interview(
         logger.error(f"Failed to send rescheduled confirmation email: {mail_err}")
     
     return {"status": "success", "new_scheduled_time": parsed_time.isoformat()}
+
+
+@router.get("/careers/{subdomain}")
+def public_careers(subdomain: str, db: Session = Depends(get_db)):
+    org = db.query(Organisation).filter(Organisation.career_subdomain == subdomain).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Career page not found")
+    jobs = (
+        db.query(Job)
+        .filter(
+            Job.organisation_id == org.id,
+            Job.is_job_listed == True,
+            Job.status == JobStatus.published,
+        )
+        .all()
+    )
+    return {
+        "organisation": {
+            "org_name": org.org_name,
+            "logo_url": org.logo_url,
+            "career_intro": org.career_intro,
+            "career_subdomain": org.career_subdomain,
+        },
+        "jobs": [
+            {
+                "id": str(j.id),
+                "title": j.title or j.role_name,
+                "role_name": j.role_name,
+                "location": j.location,
+                "job_type": j.job_type,
+                "experience_band": j.experience_band,
+                "description": j.description,
+            }
+            for j in jobs
+        ],
+    }
 

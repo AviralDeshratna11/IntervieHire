@@ -73,7 +73,9 @@ class OrganisationOut(BaseModel):
     location: Optional[str]
     logo_url: Optional[str]
     description: Optional[str]
- 
+    career_subdomain: Optional[str]
+    career_intro: Optional[str]
+
     class Config:
         from_attributes = True
  
@@ -84,8 +86,10 @@ class OrganisationIn(BaseModel):
     website_link: Optional[str] = None
     location: Optional[str] = None
     description: Optional[str] = None
- 
- 
+    career_subdomain: Optional[str] = None
+    career_intro: Optional[str] = None
+
+
 # ─── JOBS ────────────────────────────────────────────────────────────────────
  
 class JobPipelineCounts(BaseModel):

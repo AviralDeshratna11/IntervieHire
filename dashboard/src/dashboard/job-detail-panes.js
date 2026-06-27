@@ -191,6 +191,7 @@ function renderJobDetailPanes(job) {
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
           <p>Recruiter Screening — No candidates in this stage</p>
         </div>
+        ${buildStageQuestionsTable(job, 'screening')}
       `;
     } else {
       const allScreeningCands = screeningCands;
@@ -268,6 +269,7 @@ function renderJobDetailPanes(job) {
             </div>
           </div>
         </div>
+        ${buildStageQuestionsTable(job, 'screening')}
       `;
     }
   }
@@ -284,6 +286,7 @@ function renderJobDetailPanes(job) {
           <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
           <p>Functional Interview — No candidates in this stage</p>
         </div>
+        ${buildStageQuestionsTable(job, 'functional')}
       `;
     } else {
       const cheatColor = (prob) => {
@@ -384,6 +387,7 @@ function renderJobDetailPanes(job) {
             </div>
           </div>
         </div>
+        ${buildStageQuestionsTable(job, 'functional')}
       `;
     }
   }
@@ -919,6 +923,96 @@ function buildStageCandidatesHeader(paneKey, count) {
         <h3 class="ra-candidates-title">Candidates in ${label}</h3>
         <span class="ra-candidates-count">${count} candidate${count !== 1 ? 's' : ''}</span>
       </div>
+    </div>
+  `;
+}
+
+// ── Stage questions overview: read-only blueprint table ──────────────────────
+// Display-only summary of the interview questions configured for a stage, shown
+// beneath the candidate table on the Screening / Functional panes (independent of
+// candidates, so it renders even with zero candidates). No checkboxes, actions,
+// filters or row handlers — pure overview. Reuses the candidate-table classes
+// (.stage-table-container / .stage-data-table) so it needs no new CSS.
+//   screening → job.screeningBlueprint.questions[] (prompt / questionType / difficulty)
+//   functional → job.functionalParameters.topics[] grouped, each question
+//                (prompt / questionType / difficulty / estimatedMinutes)
+function buildStageQuestionsTable(job, stage) {
+  const isScreening = stage === 'screening';
+  const title = isScreening ? 'Screening questions' : 'Functional questions';
+  // Read-only blueprint overview — show '—' for any missing field, never a blank cell.
+  const cell = (v) => {
+    const s = String(v == null ? '' : v).trim();
+    return s ? escapeHTML(s) : '—';
+  };
+
+  let count = 0;
+  let bodyRows = '';
+
+  if (isScreening) {
+    const questions = Array.isArray(job.screeningBlueprint?.questions) ? job.screeningBlueprint.questions : [];
+    count = questions.length;
+    bodyRows = questions.map((q, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${escapeHTML(q.prompt || q.text || '')}</td>
+        <td>${cell(q.questionType || q.type)}</td>
+        <td>${cell(q.difficulty)}</td>
+      </tr>
+    `).join('');
+  } else {
+    const topics = Array.isArray(job.functionalParameters?.topics) ? job.functionalParameters.topics : [];
+    let n = 0;
+    topics.forEach((topic) => {
+      const qs = Array.isArray(topic.questions) ? topic.questions : [];
+      if (!qs.length) return;
+      bodyRows += `<tr class="stage-subhead"><td colspan="5" style="text-align:left;font-weight:600;color:var(--color-text-primary);background:rgba(255,255,255,0.02);">${escapeHTML(topic.name || 'Untitled topic')}</td></tr>`;
+      qs.forEach((q) => {
+        n += 1; count += 1;
+        const est = q.estimatedMinutes != null ? q.estimatedMinutes : (q.estMinutes != null ? q.estMinutes : '');
+        bodyRows += `
+          <tr>
+            <td>${n}</td>
+            <td>${escapeHTML(q.prompt || q.text || '')}</td>
+            <td>${cell(q.questionType || q.type)}</td>
+            <td>${cell(q.difficulty)}</td>
+            <td>${cell(est)}</td>
+          </tr>
+        `;
+      });
+    });
+  }
+
+  const sectionTitle = `
+    <div class="ra-candidates-section" style="margin-top:24px;margin-bottom:16px;">
+      <div class="ra-candidates-header">
+        <h3 class="ra-candidates-title">${title}</h3>
+        <span class="ra-candidates-count">${count} question${count !== 1 ? 's' : ''}</span>
+      </div>
+    </div>
+  `;
+
+  if (count === 0) {
+    return `
+      ${sectionTitle}
+      <div class="jd-questions-empty" style="padding:16px;color:var(--color-text-faint);font-size:0.82rem;">No questions defined for this round yet</div>
+    `;
+  }
+
+  const headCols = isScreening
+    ? '<th>#</th><th>Prompt</th><th>Type</th><th>Difficulty</th>'
+    : '<th>#</th><th>Prompt</th><th>Type</th><th>Difficulty</th><th>Est. min</th>';
+
+  return `
+    ${sectionTitle}
+    <div class="stage-table-container">
+      <table class="stage-data-table">
+        <thead>
+          <tr>${headCols}</tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+        </tbody>
+      </table>
     </div>
   `;
 }

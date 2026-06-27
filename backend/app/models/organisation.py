@@ -17,5 +17,7 @@ class Organisation(Base):
     location = Column(String, nullable=True)
     logo_url = Column(String, nullable=True)
     description = Column(Text, nullable=True)
+    career_subdomain = Column(String, nullable=True)   # public /careers/<slug>
+    career_intro = Column(Text, nullable=True)          # hero headline line
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

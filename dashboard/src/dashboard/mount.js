@@ -20,7 +20,7 @@ import { soundEngine } from './sound.js';
 import { initSourcing, navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { renderSpotlightResults, SpotlightCommands, spotlightUi, toggleSpotlightModal } from './spotlight.js';
 import { AppState, generateJobId } from './state.js';
-import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, apiInviteMember, isApiMode, getDataSource } from './api.js';
+import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, apiSetJobListed, apiGetOrganisation, apiUpdateOrganisation, apiInviteMember, isApiMode, getDataSource } from './api.js';
 import { initOrgSwitcher } from './org-switcher.js';
 
 // ==========================================
@@ -234,7 +234,7 @@ function initMountBindings() {
 
   document.addEventListener('click', closeAllJobKebabs);
 
-  window.handleJobKebab = function(jobId, action) {
+  window.handleJobKebab = async function(jobId, action) {
     closeAllJobKebabs();
     const job = AppState.jobs.find(j => j.id === jobId);
     if (!job) return;
@@ -253,6 +253,10 @@ function initMountBindings() {
         renderJobCards();
         const label = job.listedOnCareer ? 'listed on' : 'removed from';
         showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
+        if (getDataSource() === 'api' && job._backend) {
+          try { await apiSetJobListed(job.id, job.listedOnCareer); }
+          catch (e) { job.listedOnCareer = !job.listedOnCareer; renderJobCards(); showPremiumToast('Could not update career page', 'error'); }
+        }
         break;
       }
       case 'duplicate': {
@@ -795,42 +799,85 @@ function initMountBindings() {
     soundEngine.playChime([261.63, 392.00, 523.25], 0.2, 0.08); // Confirmation chime
   });
 
-  // 3. Settings Forms (persist to localStorage so they survive a refresh)
-  // Restore a previously saved career sub-domain into the field + status link.
-  (() => {
+  // 3. Settings Forms — Career Page config. Persists to the org profile in API
+  //    mode (career_subdomain / career_intro), with localStorage as the local-mode
+  //    fallback so the field survives a refresh either way.
+  const applyCareerDomain = (sub) => {
+    const statusLink = document.querySelector('.status-link');
+    if (statusLink && sub) {
+      statusLink.textContent = `interviehire.com/careers/${sub} ↗`;
+      statusLink.href = `https://interviehire.com/careers/${sub}`;
+    }
+  };
+
+  // HYDRATE on mount: local restore first (instant), then the authoritative org
+  // record overrides it in API mode. Guard against not being on the Career view.
+  (async () => {
+    const field = document.getElementById('career-subdomain');
+    if (!field) return; // not on the Career Page view — nothing to wire
+    const introField = document.getElementById('career-intro');
     try {
       const saved = localStorage.getItem('IntervieHire_career_subdomain');
-      if (!saved) return;
-      const field = document.getElementById('career-subdomain');
-      if (field) field.value = saved;
-      const statusLink = document.querySelector('.status-link');
-      if (statusLink) {
-        statusLink.textContent = `IntervieHire.com/careers/${saved} ↗`;
-        statusLink.href = `https://IntervieHire.com/careers/${saved}`;
-      }
+      if (saved) { field.value = saved; applyCareerDomain(saved); }
     } catch { /* ignore corrupt/blocked storage */ }
+    if (getDataSource() === 'api') {
+      try {
+        const org = await apiGetOrganisation();
+        if (org) {
+          if (org.career_subdomain) { field.value = org.career_subdomain; applyCareerDomain(org.career_subdomain); }
+          if (introField && org.career_intro != null) introField.value = org.career_intro;
+        }
+      } catch { /* keep the local fallback already applied */ }
+    }
   })();
 
-  document.getElementById('career-settings-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    soundEngine.playChime([523.25], 0.15);
-    const domainName = document.getElementById('career-subdomain').value;
-    try { localStorage.setItem('IntervieHire_career_subdomain', domainName); } catch {}
-    const statusLink = document.querySelector('.status-link');
-    statusLink.textContent = `IntervieHire.com/careers/${domainName} ↗`;
-    statusLink.href = `https://IntervieHire.com/careers/${domainName}`;
+  // EDIT ⇄ SAVE state machine driven by the single toggle button. State is tracked
+  // via the button's data-editing attribute.
+  const careerToggle = document.getElementById('career-edit-toggle');
+  if (careerToggle) {
+    careerToggle.addEventListener('click', async () => {
+      const field = document.getElementById('career-subdomain');
+      const introField = document.getElementById('career-intro');
+      if (!field) return;
 
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    const origText = submitBtn.textContent;
-    submitBtn.textContent = '✓ Saved Settings!';
-    submitBtn.style.background = 'var(--color-success)';
-    submitBtn.style.color = '#fff';
-    setTimeout(() => {
-      submitBtn.textContent = origText;
-      submitBtn.style.background = '';
-      submitBtn.style.color = '';
-    }, 2000);
-  });
+      // → ENTER EDIT MODE: unlock inputs, focus the subdomain, flip the label.
+      if (careerToggle.dataset.editing !== '1') {
+        field.disabled = false;
+        if (introField) introField.disabled = false;
+        careerToggle.dataset.editing = '1';
+        careerToggle.textContent = 'Save Configurations';
+        field.focus();
+        soundEngine.playClick();
+        return;
+      }
+
+      // → SAVE: read values, persist, then relock + 2s green-flash confirmation.
+      const subdomain = field.value.trim();
+      const intro = introField ? introField.value : '';
+      if (getDataSource() === 'api') {
+        try {
+          await apiUpdateOrganisation({ career_subdomain: subdomain, career_intro: intro });
+        } catch (e) {
+          showPremiumToast(`Could not save career page: ${(e && e.message) || 'backend error'}`, 'error');
+          return; // keep inputs editable so the recruiter can retry
+        }
+      }
+      try { localStorage.setItem('IntervieHire_career_subdomain', subdomain); } catch {}
+      soundEngine.playChime([523.25], 0.15);
+      field.disabled = true;
+      if (introField) introField.disabled = true;
+      careerToggle.dataset.editing = '';
+      applyCareerDomain(subdomain);
+      careerToggle.textContent = '✓ Saved';
+      careerToggle.style.background = 'var(--color-success)';
+      careerToggle.style.color = '#fff';
+      setTimeout(() => {
+        careerToggle.textContent = 'Edit Configurations';
+        careerToggle.style.background = '';
+        careerToggle.style.color = '';
+      }, 2000);
+    });
+  }
 
   document.querySelectorAll('.settings-toggle:not([style*="pointer-events"])').forEach(toggle => {
     toggle.addEventListener('click', () => {

@@ -70,6 +70,19 @@ export async function apiDeleteJob(id) {
 export async function apiUpdateJobStatus(id, status) {
   return request(`/jobs/${id}/settings`, { method: 'PATCH', body: { status } });
 }
+// Toggle whether a job appears on the public career page (drives is_job_listed).
+export async function apiSetJobListed(id, listed) {
+  return request(`/jobs/${id}/settings`, { method: 'PATCH', body: { is_job_listed: listed } });
+}
+
+// ── Organisation ───────────────────────────────────────────────────────────
+// The org profile carries the career page config (career_subdomain, career_intro).
+export async function apiGetOrganisation() {
+  return request('/organisation');
+}
+export async function apiUpdateOrganisation(patch) {
+  return request('/organisation', { method: 'PUT', body: patch });
+}
 
 // Debounced backend autosave for job parameters (scoring config, criteria, flow,
 // questions). Any feature that mutates a job calls this right after
@@ -368,6 +381,7 @@ function mapJobOutToJob(j = {}) {
       goodToHaveMinMatch: rp.good_to_have_min_match ?? 1,
     },
     scoringConfig: rp.scoring_config || undefined,
+    listedOnCareer: !!j.is_job_listed,
     screeningParams: mapScreeningParamsIn(j.screening_parameters),
     screeningBlueprint: { questions: arr(j.screening_questions).map((q) => createQuestionBlueprint({ prompt: typeof q === 'string' ? q : q.text, questionType: 'hr_screening', difficulty: 'Easy' })) },
     functionalParameters: mapFunctionalIn(j.functional_parameters),

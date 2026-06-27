@@ -607,21 +607,14 @@ export const html = `
                     <label for="career-subdomain">Company Subdomain</label>
                     <div class="input-prefix-wrap">
                       <span class="prefix">interviehire.com/careers/</span>
-                      <input type="text" id="career-subdomain" value="devasri-tech" required />
+                      <input type="text" id="career-subdomain" value="devasri-tech" required disabled />
                     </div>
                   </div>
                   <div class="form-group">
-                    <label for="career-theme">Portal Theme Mode</label>
-                    <select id="career-theme">
-                      <option value="dark">Dark Slate Brand Theme (Default)</option>
-                      <option value="light">Crisp Editorial Light Theme</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
                     <label for="career-intro">Hero Headline Introduction</label>
-                    <input type="text" id="career-intro" value="Build the future of technology with us." />
+                    <input type="text" id="career-intro" value="Build the future of technology with us." disabled />
                   </div>
-                  <button type="submit" class="btn-submit">Save Configurations</button>
+                  <button type="button" class="btn-submit" id="career-edit-toggle">Edit Configurations</button>
                 </form>
               </div>
 

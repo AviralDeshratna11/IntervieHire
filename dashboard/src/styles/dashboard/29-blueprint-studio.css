@@ -340,6 +340,28 @@ body.light-theme .bs-dim-track { background: rgba(0,0,0,.06); }
   .bs-rs-node { transform: scale(1); }
 }
 
+/* ── Edit mode + collapsible "Recommended topics" ── */
+.bs-edit-toggle { white-space: nowrap; }
+
+/* inline topic rename (edit mode) */
+.bs-topic-name-input { flex: 1; min-width: 0; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600; color: var(--color-text); background: var(--color-surface-2); border: 1px solid var(--glass-border); border-radius: 7px; padding: 5px 9px; transition: var(--spring-fast); }
+.bs-topic-name-input:focus { outline: none; border-color: var(--glass-border-gold); box-shadow: 0 0 0 3px var(--color-gold-dim); }
+.bs-editing .bs-topic-bar { cursor: default; }
+.bs-editing .bs-topic-bar .bs-tspacer { display: none; }
+
+/* edit-only delete buttons — hidden until the canvas is in edit mode */
+.bs-topic-del, .bs-q-del { display: none; }
+.bs-editing .bs-topic-del, .bs-editing .bs-q-del { display: inline-flex; }
+
+/* collapsible "Recommended topics" dialogue */
+.bs-suggest-head-main { min-width: 0; }
+.bs-suggest-head-r { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.bs-suggest-collapse { background: none; border: none; color: var(--color-text-faint); cursor: pointer; padding: 4px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; transition: var(--spring-fast); }
+.bs-suggest-collapse:hover { color: var(--color-gold); background: var(--color-surface-2); }
+.bs-suggest-collapse .bs-chev { color: inherit; transition: var(--spring-fast); }
+.bs-suggest:not(.collapsed) .bs-suggest-collapse .bs-chev { transform: rotate(180deg); color: var(--color-gold); }
+.bs-suggest.collapsed .bs-suggest-head { margin-bottom: 0; align-items: center; }
+
 @media print {
   body * { visibility: hidden; }
   .bs-runsheet, .bs-runsheet * { visibility: visible; }
