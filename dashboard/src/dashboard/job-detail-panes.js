@@ -37,11 +37,17 @@ function renderJobDetailPanes(job) {
   // 1. Resume pane — criteria config + candidates table
   const resumeList = document.getElementById('list-stage-resume');
   if (resumeList) {
-    // Show every active candidate on the Resume Analysis page, not only Resume-stage
-    // ones: schedule-mode and advanced candidates (Screening/Functional/Hired) stay
-    // visible here with their report intact — only Rejected drops off. The per-row
-    // Advance button is gated separately (rendered only when status === 'Resume').
-    const resumeCands = jobCandidates.filter(c => c.status !== 'Rejected');
+    // The view dropdown (All / Advanced / Rejected) scopes which candidates show on
+    // the Resume Analysis page: 'all' = everyone incl. rejected (report intact);
+    // 'advanced' = anyone past Resume (Screening/Functional/Hired); 'rejected' = only
+    // rejected. Reject is a soft decision (decision='rejected'), so rejected candidates
+    // are retained and resurfaced here under All/Rejected. Per-row action state is
+    // derived from c.status in the row template.
+    const view = AppState.resumeStageView || 'all';
+    const resumeCands = jobCandidates.filter(c =>
+      view === 'advanced' ? ['Screening', 'Functional', 'Hired'].includes(c.status)
+      : view === 'rejected' ? c.status === 'Rejected'
+      : true);
     const criteria = job.resumeCriteria || { mustHave: [], redFlags: [], goodToHave: [], goodToHaveMinMatch: 1 };
     const stageHeaderHTML = buildStageCandidatesHeader('resume', resumeCands.length);
 
@@ -156,16 +162,12 @@ function renderJobDetailPanes(job) {
 
     const resumeCandContainer = document.getElementById('list-stage-resume-candidates');
     if (resumeCandContainer) {
-      if (resumeCands.length === 0) {
-        resumeCandContainer.innerHTML = `
-          <div class="jd-empty-pane">
-            <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-faint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-            <p>No candidates in resume analysis stage yet</p>
-          </div>
-        `;
-      } else {
-        renderResumeStagePaneForJob(resumeCands, job, resumeCandContainer);
-      }
+      // Always render via renderResumeStagePaneForJob so the toolbar (incl. the
+      // View All/Advanced/Rejected dropdown) stays present even when the current
+      // view has zero rows — otherwise the dropdown vanishes and the user can't
+      // switch back out of an empty view. The empty-state message renders inside
+      // the pane, below the toolbar.
+      renderResumeStagePaneForJob(resumeCands, job, resumeCandContainer);
     }
 
     // Edit criteria button
@@ -821,6 +823,8 @@ function refreshAfterStageChange() {
 
   const activeJob = AppState.jobs.find(j => j.id === AppState.activeJobId);
   if (activeJob) {
+    const elResume = document.getElementById('jd-count-resume');
+    if (elResume) elResume.textContent = activeJob.pipeline.resume;
     const elScreening = document.getElementById('jd-count-screening');
     if (elScreening) elScreening.textContent = activeJob.pipeline.screening;
     const elFunctional = document.getElementById('jd-count-functional');

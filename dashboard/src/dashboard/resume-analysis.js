@@ -1,4 +1,4 @@
-import { document } from './runtime.js';
+import { document, setTimeout } from './runtime.js';
 import { escapeHTML, sourceLabel } from './escape.js';
 import { callDeepSeekAPI, parseAIJson, saveStateToLocalStorage } from './ai-api.js';
 import { renderJobDetailPanes } from './job-detail-panes.js';
@@ -134,25 +134,35 @@ function renderResumeStagePaneForJob(candidates, job, container) {
   const pendingCount = candidates.filter(c => !resumeAnalysisCache[c.id]).length;
   const analysedCount = candidates.length - pendingCount;
 
+  const viewLabels = { all: 'All', advanced: 'Advanced', rejected: 'Rejected' };
+  const curView = AppState.resumeStageView || 'all';
+  const emptyMsg = curView === 'advanced' ? 'No candidates have been advanced yet'
+    : curView === 'rejected' ? 'No candidates have been rejected'
+    : 'No candidates in resume analysis stage yet';
+
   container.innerHTML = `
     <div class="stage-table-container">
-      <div class="stage-table-filters" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: none; background: none; padding: 0;">
-        <div style="display: flex; gap: 8px;">
+      <div class="stage-table-filters" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: none; background: none; padding: 12px 16px;">
+        <div class="ra-toolbar-stats" style="display: flex; gap: 10px; align-items: center;">
           <span class="ra-toolbar-stat" style="font-size: 0.76rem; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); padding: 3px 10px; border-radius: 12px; color: var(--color-text-muted);">${analysedCount} analysed</span>
           <span class="ra-toolbar-stat pending" style="font-size: 0.76rem; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); padding: 3px 10px; border-radius: 12px; color: var(--color-text-muted);">${pendingCount} pending</span>
         </div>
-        <div class="stage-table-actions-bar" style="margin: 0; display: flex; gap: 8px; align-items: center;">
-          <button class="btn-bulk-actions">Bulk Actions <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
-          <button class="btn-ra-import" id="btn-ra-import" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:600; color:var(--color-text-muted); background:rgba(255,255,255,0.04); border:1px solid var(--glass-border); cursor:pointer; font-family:var(--font-body);" title="Import a CSV/Excel of candidates with public Google-Doc/Drive resume links">
+        <div class="stage-table-actions-bar ra-actions-bar" style="margin: 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <button class="btn-ra-view-filter ra-tb-btn" id="btn-ra-view-filter" title="Filter which candidates are shown">
+            View: ${viewLabels[curView]}
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <button class="btn-bulk-actions ra-tb-btn">Bulk Actions <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          <button class="btn-ra-import ra-tb-btn" id="btn-ra-import" title="Import a CSV/Excel of candidates with public Google-Doc/Drive resume links">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Import CSV/Excel
           </button>
           <input type="file" id="ra-import-file" accept=".csv,.xlsx,.xls" hidden />
-          ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all" id="btn-ra-reanalyse-all" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:600; color:var(--color-text-muted); background:rgba(255,255,255,0.04); border:1px solid var(--glass-border); cursor:pointer; font-family:var(--font-body);" title="Re-run analysis on all analysed resumes using the current parameters">
+          ${analysedCount > 0 ? `<button class="btn-ra-reanalyse-all ra-tb-btn" id="btn-ra-reanalyse-all" title="Re-run analysis on all analysed resumes using the current parameters">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Reanalyse all (${analysedCount})
           </button>` : ''}
-          ${pendingCount > 0 ? `<button class="btn-ra-analyse-all" id="btn-ra-analyse-all" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; font-size:0.76rem; font-weight:600; color:var(--color-gold); background:rgba(var(--color-gold-rgb),0.08); border:1px solid rgba(var(--color-gold-rgb),0.2); cursor:pointer; font-family:var(--font-body);">
+          ${pendingCount > 0 ? `<button class="btn-ra-analyse-all ra-tb-btn ra-tb-primary" id="btn-ra-analyse-all">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             Analyse All (${pendingCount})
           </button>` : ''}
@@ -172,7 +182,7 @@ function renderResumeStagePaneForJob(candidates, job, container) {
             </tr>
           </thead>
           <tbody>
-            ${candidates.map(c => {
+            ${candidates.length === 0 ? `<tr><td colspan="7" class="ra-empty-row">${emptyMsg}</td></tr>` : candidates.map(c => {
               const cached = resumeAnalysisCache[c.id];
               const score = cached ? cached.matchScore : 0;
               const matchClass = getMatchClass(score);
@@ -220,8 +230,12 @@ function renderResumeStagePaneForJob(candidates, job, container) {
                   <td><span class="source-badge">${sourceLabel(c.entryMethod)}</span></td>
                   <td>
                     <div class="ra-action-btns">
-                      <button class="btn-stage-reject" data-candidate-id="${c.id}">Reject</button>
-                      ${c.status === 'Resume' ? `<button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening">Advance</button>` : ''}
+                      ${c.status === 'Rejected'
+                        ? `<span class="ra-stage-tag rejected">Rejected</span>`
+                        : c.status === 'Resume'
+                          ? `<button class="btn-stage-advance" data-candidate-id="${c.id}" data-next-stage="Screening">Advance</button>
+                             <button class="btn-stage-reject" data-candidate-id="${c.id}">Reject</button>`
+                          : `<span class="ra-stage-tag advanced">Advanced</span>`}
                     </div>
                   </td>
                 </tr>
@@ -325,6 +339,32 @@ function bindResumeAnalysisEvents(job) {
       return;
     }
     runBulkResumeAnalysis(analysedCids, job, { force: true });
+  });
+
+  const viewFilterBtn = document.getElementById('btn-ra-view-filter');
+  viewFilterBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = viewFilterBtn.querySelector('.ra-view-dropdown');
+    if (open) { open.remove(); return; }
+    document.querySelectorAll('.bulk-actions-dropdown').forEach(d => d.remove());
+    const cur = AppState.resumeStageView || 'all';
+    const opts = [['all', 'All'], ['advanced', 'Advanced'], ['rejected', 'Rejected']];
+    const dd = document.createElement('div');
+    dd.className = 'bulk-actions-dropdown ra-view-dropdown';
+    dd.innerHTML = opts.map(([val, label]) =>
+      `<button class="bulk-dd-item${val === cur ? ' active' : ''}" data-view="${val}">${label}</button>`
+    ).join('');
+    dd.addEventListener('click', (ev) => {
+      const item = ev.target.closest('.bulk-dd-item');
+      if (!item) return;
+      AppState.resumeStageView = item.dataset.view;
+      dd.remove();
+      renderJobDetailPanes(job);
+    });
+    viewFilterBtn.style.position = 'relative';
+    viewFilterBtn.appendChild(dd);
+    const closeDD = (ev) => { if (!dd.contains(ev.target) && ev.target !== viewFilterBtn) { dd.remove(); document.removeEventListener('click', closeDD); } };
+    setTimeout(() => document.addEventListener('click', closeDD), 0);
   });
 }
 

@@ -21,7 +21,8 @@ const AppState = {
     functional: { interviewStatus: [], cheatProb: [], recruiterScreening: [], scoreMin: null, scoreMax: null, actions: [] }
   },
   dateRange: 'all',
-  
+  resumeStageView: 'all',
+
   jobs: [
     {
       id: 'AKRO62EF45E26EA1',

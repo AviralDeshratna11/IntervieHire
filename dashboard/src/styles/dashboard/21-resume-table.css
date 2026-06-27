@@ -35,6 +35,26 @@
   vertical-align: middle;
   white-space: nowrap;
 }
+/* Candidate column: keep name/email/summary readable without letting the
+   resume-summary line stretch the table past the viewport (which pushed the
+   Actions column — incl. Advance — off-screen on smaller laptops). Override the
+   table-wide `nowrap` for this column only; other cells stay nowrap for alignment. */
+.ra-data-table tbody td:nth-child(2) {
+  white-space: normal;
+  max-width: 280px;
+}
+.ra-data-table .table-candidate-cell {
+  max-width: 280px;
+  min-width: 0;
+}
+.ra-data-table .cand-name-link,
+.ra-data-table .cand-email-sub {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ra-match-pill {
   display: inline-block;
   padding: 3px 10px;
@@ -205,6 +225,46 @@
 .btn-ra-reanalyse-all svg,
 .btn-ra-import svg { stroke: currentColor; }
 
+/* Resume-analysis toolbar — one uniform button shape so View / Bulk Actions /
+   Import / Reanalyse / Analyse all read as the same control (identical height,
+   padding, weight and icon gap). Scoped under .ra-actions-bar so it overrides the
+   per-button legacy rules above by specificity, no !important and no inline styles. */
+.ra-actions-bar .ra-tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--spring-fast);
+}
+.ra-actions-bar .ra-tb-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--glass-border-hover);
+  color: var(--color-text-primary);
+  transform: translateY(-1px);
+}
+.ra-actions-bar .ra-tb-btn svg { stroke: currentColor; flex-shrink: 0; }
+.ra-actions-bar .ra-tb-btn.ra-tb-primary {
+  color: var(--color-gold);
+  background: rgba(var(--color-gold-rgb), 0.08);
+  border-color: rgba(var(--color-gold-rgb), 0.25);
+}
+.ra-actions-bar .ra-tb-btn.ra-tb-primary:hover {
+  background: rgba(var(--color-gold-rgb), 0.14);
+  border-color: rgba(var(--color-gold-rgb), 0.4);
+  color: var(--color-gold);
+}
+
 /* RA Recommendation Badge */
 .ra-rec-badge {
   display: inline-flex;
@@ -295,9 +355,14 @@
   font-size: 0.68rem;
 }
 
-/* RA Summary Preview */
+/* RA Summary Preview — clamp to 2 lines so the full text is retained but the
+   row height/width stays bounded (keeps the candidate column from overflowing). */
 .ra-summary-preview {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
   font-size: 0.68rem;
   color: var(--color-text-muted);
   margin-top: 2px;
@@ -310,6 +375,15 @@
   background: rgba(16, 185, 129, 0.02) !important;
 }
 
+/* Placeholder row shown when the current View filter (All/Advanced/Rejected) has
+   no matching candidates — keeps the toolbar (and its View dropdown) in place so
+   the user can always switch back. */
+.ra-data-table .ra-empty-row {
+  padding: 32px 14px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
 /* RA Action Buttons */
 .ra-action-btns {
   display: flex;
@@ -320,6 +394,41 @@
 .ra-action-btns .btn-stage-advance {
   padding: 4px 8px;
   font-size: 0.72rem;
+}
+
+/* Inert status pill shown in the Actions column once a candidate has left the
+   Resume stage (advanced) or been rejected — non-interactive by design. */
+.ra-stage-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  cursor: default;
+}
+.ra-stage-tag.advanced {
+  background: rgba(16, 185, 129, 0.1);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.ra-stage-tag.rejected {
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+/* Active option marker for the View (All/Advanced/Rejected) dropdown, which
+   reuses the bulk-actions dropdown shell. */
+.ra-view-dropdown .bulk-dd-item.active {
+  color: var(--color-gold);
+}
+body.light-theme .ra-stage-tag.advanced {
+  color: #059669;
+}
+body.light-theme .ra-stage-tag.rejected {
+  color: #dc2626;
 }
 
 /* RA Spinner */

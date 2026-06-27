@@ -64,6 +64,7 @@ function navigateToJobDetail(jobId, stage = 'overview') {
   document.getElementById('view-job-detail').classList.add('active-view');
 
   // Sub-tab counts
+  document.getElementById('jd-count-resume').textContent = job.pipeline.resume;
   document.getElementById('jd-count-screening').textContent = job.pipeline.screening;
   document.getElementById('jd-count-functional').textContent = job.pipeline.functional;
 
@@ -134,6 +135,8 @@ async function hydrateBackendApplicants(job) {
   recalculateJobPipelines();
 
   // Update sub-tab counts
+  const elResume = document.getElementById('jd-count-resume');
+  if (elResume) elResume.textContent = job.pipeline.resume;
   const elScreening = document.getElementById('jd-count-screening');
   if (elScreening) elScreening.textContent = job.pipeline.screening;
   const elFunctional = document.getElementById('jd-count-functional');

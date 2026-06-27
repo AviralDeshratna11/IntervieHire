@@ -15,7 +15,7 @@ export function escapeHTML(value = '') {
 // by the backend `entry_method` value (independent of the stage-routing `source`).
 // Unknown / null (legacy rows added before entry_method existed) → em-dash.
 export const SOURCE_LABELS = {
-  bulk_upload: 'Bulk Upload',
+  bulk_upload: 'Bulk',
   ats: 'ATS',
   direct_link: 'Direct',
   career_page: 'Career Page',
