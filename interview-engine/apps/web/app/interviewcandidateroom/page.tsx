@@ -81,6 +81,53 @@ export default function Interview() {
   const [branding, setBranding] = useState<{ name?: string; primaryColor?: string; logoUrl?: string } | null>(null);
   const [startError, setStartError] = useState('');
 
+  // Live interviewer questions. "Lina" (the Convai/UE avatar) asks her own
+  // questions; we surface what she ACTUALLY asked by polling the server
+  // transcript (her tab-audio → Deepgram, speaker:'interviewer'). Only populated
+  // while "Capture interviewer" is on; otherwise the premade blueprint questions
+  // below are shown as a fallback.
+  const [linaQuestions, setLinaQuestions] = useState<{ text: string; ts: number }[]>([]);
+  const [linaIndex, setLinaIndex] = useState(0);
+  const linaCountRef = useRef(0);
+
+  useEffect(() => {
+    if (sessionId === 'demo-session' || avatarCapture !== 'on') return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/interviews/${sessionId}/transcript`);
+        if (!res.ok) return;
+        const data = await res.json();
+        // Pull ONLY the questions Lina asked: split her speech into sentences and
+        // keep the ones that read as a question — drop her explanations and the
+        // candidate's answers (candidate is a different speaker anyway).
+        const isQuestion = (s: string) =>
+          /\?\s*$/.test(s) ||
+          /^(what|why|how|when|where|which|who|can you|could you|would you|do you|have you|tell me|describe|walk me|explain|give me|share|talk me)\b/i.test(s);
+        const qs: { text: string; ts: number }[] = [];
+        for (const e of (data.events || [])) {
+          if (e?.speaker !== 'interviewer' || e?.source === 'manual') continue;
+          const ts = e?.timestampMs ?? 0;
+          for (const s of String(e?.text || '').split(/(?<=[.?!])\s+/)) {
+            const t = s.trim();
+            if (t.length > 8 && isQuestion(t) && (qs.length === 0 || qs[qs.length - 1].text !== t)) {
+              qs.push({ text: t, ts });
+            }
+          }
+        }
+        if (!alive) return;
+        if (qs.length > linaCountRef.current) {
+          linaCountRef.current = qs.length;
+          setLinaIndex(qs.length - 1); // jump to the newest question she asked
+        }
+        setLinaQuestions(qs);
+      } catch { /* transient — ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, [sessionId, avatarCapture]);
+
   const avatarSrc = useMemo(() => withPixelStreamingParams(AVATAR_URL), []);
 
   // The dashboard's "Launch test interview" opens this room with ?sessionId=…
@@ -382,7 +429,14 @@ export default function Interview() {
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
   const clock = `${mm}:${ss}`;
-  const question = questions[questionIndex] || { text: 'No questions loaded.', tag: 'Interview', hint: 'Please wait.' };
+  // Prefer Lina's actually-asked questions (from the live transcript) over the
+  // premade blueprint list; fall back to premade when none are captured yet.
+  const useLina = linaQuestions.length > 0;
+  const qList = useLina ? linaQuestions : questions;
+  const qIdx = useLina ? Math.min(linaIndex, linaQuestions.length - 1) : questionIndex;
+  const question = useLina
+    ? { text: linaQuestions[qIdx]?.text || '…', tag: 'LINA · LIVE', hint: 'This is what your interviewer just asked.' }
+    : (questions[questionIndex] || { text: 'No questions loaded.', tag: 'Interview', hint: 'Please wait.' });
 
   const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   const mobileBlocked = !!interviewSettings && interviewSettings.allowMobile === false && isMobileDevice;
@@ -607,8 +661,8 @@ export default function Interview() {
                 <div>
                   <h2>{question.text}</h2>
                   <div className="question-meta">
-                    Question {String(questionIndex + 1).padStart(2, '0')}/
-                    {String(questions.length).padStart(2, '0')}
+                    {useLina ? 'Interviewer asked' : 'Question'} {String(qIdx + 1).padStart(2, '0')}/
+                    {String(qList.length).padStart(2, '0')}
                   </div>
                 </div>
                 <div className="tag">{question.tag}</div>
@@ -618,15 +672,15 @@ export default function Interview() {
                 <button
                   className="circle-btn"
                   type="button"
-                  disabled={questionIndex === 0}
-                  onClick={() => setQuestionIndex((i) => Math.max(0, i - 1))}
+                  disabled={qIdx === 0}
+                  onClick={() => (useLina ? setLinaIndex((i) => Math.max(0, i - 1)) : setQuestionIndex((i) => Math.max(0, i - 1)))}
                 >
                   ‹
                 </button>
                 <button
                   className="next-btn"
                   type="button"
-                  onClick={() => setQuestionIndex((i) => Math.min(questions.length - 1, i + 1))}
+                  onClick={() => (useLina ? setLinaIndex((i) => Math.min(qList.length - 1, i + 1)) : setQuestionIndex((i) => Math.min(qList.length - 1, i + 1)))}
                 >
                   NEXT ›
                 </button>
