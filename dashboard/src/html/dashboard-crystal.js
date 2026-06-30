@@ -610,7 +610,7 @@ export const html = `
                     <label for="career-subdomain">Company Subdomain</label>
                     <div class="input-prefix-wrap">
                       <span class="prefix">interviehire.com/careers/</span>
-                      <input type="text" id="career-subdomain" value="devasri-tech" required disabled />
+                      <input type="text" id="career-subdomain" value="" required disabled />
                     </div>
                   </div>
                   <div class="form-group">
@@ -624,10 +624,10 @@ export const html = `
               <div class="card-glass panel-preview">
                 <h3 class="panel-title">Live Subdomain Status</h3>
                 <div class="status-indicator-box">
-                  <span class="pulsing-dot green"></span>
+                  <span class="pulsing-dot"></span>
                   <div class="status-text">
-                    <div class="status-title">Live & Active</div>
-                    <a href="https://interviehire.com/careers/devasri-tech" target="_blank" class="status-link">interviehire.com/careers/devasri-tech ↗</a>
+                    <div class="status-title">Not published yet</div>
+                    <a target="_blank" class="status-link">Set your career page URL to publish jobs</a>
                   </div>
                 </div>
                 <div class="meta-metric-box">

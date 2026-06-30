@@ -81,14 +81,25 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
 def get_active_org_id(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Optional[UUID]:
     if current_user.user_type == UserType.super_admin:
+        # 1. Explicit per-browser selection (switch-context / login).
         org_id_cookie = request.cookies.get("active_org_id")
         if org_id_cookie:
             try:
                 return UUID(org_id_cookie)
             except Exception:
                 pass
-        # Fallback to the first organisation in the database if none selected yet
+        # 2. Durable server-side choice — survives cookie loss and re-login.
+        if current_user.last_active_org_id:
+            return current_user.last_active_org_id
+        # 3. A super_admin that happens to own an org.
+        if current_user.organisation_id:
+            return current_user.organisation_id
+        # 4. Deterministic last resort (was an arbitrary .first() = "devasri-tech").
         from app.models.organisation import Organisation
-        first_org = db.query(Organisation).first()
+        first_org = (
+            db.query(Organisation)
+            .order_by(Organisation.created_at.asc(), Organisation.id.asc())
+            .first()
+        )
         return first_org.id if first_org else None
     return current_user.organisation_id

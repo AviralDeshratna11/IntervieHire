@@ -803,10 +803,29 @@ function initMountBindings() {
   //    mode (career_subdomain / career_intro), with localStorage as the local-mode
   //    fallback so the field survives a refresh either way.
   const applyCareerDomain = (sub) => {
-    const statusLink = document.querySelector('.status-link');
-    if (statusLink && sub) {
-      statusLink.textContent = `interviehire.com/careers/${sub} ↗`;
-      statusLink.href = `https://interviehire.com/careers/${sub}`;
+    const root = document.getElementById('view-career');
+    const statusLink = root && root.querySelector('.status-link');
+    const statusTitle = root && root.querySelector('.status-title');
+    const statusDot = root && root.querySelector('.pulsing-dot');
+    const clean = (sub || '').trim();
+    if (clean) {
+      if (statusLink) {
+        statusLink.textContent = `interviehire.com/careers/${clean} ↗`;
+        statusLink.href = `https://interviehire.com/careers/${clean}`;
+        statusLink.style.pointerEvents = '';
+      }
+      if (statusTitle) statusTitle.textContent = 'Live & Active';
+      if (statusDot) { statusDot.classList.add('green'); statusDot.style.background = ''; }
+    } else {
+      // No subdomain yet — make the publish gap explicit instead of showing the
+      // stale demo default as if the page were live.
+      if (statusLink) {
+        statusLink.textContent = 'Set your career page URL to publish jobs';
+        statusLink.removeAttribute('href');
+        statusLink.style.pointerEvents = 'none';
+      }
+      if (statusTitle) statusTitle.textContent = 'Not published yet';
+      if (statusDot) { statusDot.classList.remove('green'); statusDot.style.background = '#f59e0b'; }
     }
   };
 
@@ -824,7 +843,10 @@ function initMountBindings() {
       try {
         const org = await apiGetOrganisation();
         if (org) {
-          if (org.career_subdomain) { field.value = org.career_subdomain; applyCareerDomain(org.career_subdomain); }
+          // Authoritative: reflect the active org's real value, INCLUDING empty, so
+          // the stale "devasri-tech" default never lingers for an unpublished org.
+          field.value = org.career_subdomain || '';
+          applyCareerDomain(org.career_subdomain || '');
           if (introField && org.career_intro != null) introField.value = org.career_intro;
         }
       } catch { /* keep the local fallback already applied */ }

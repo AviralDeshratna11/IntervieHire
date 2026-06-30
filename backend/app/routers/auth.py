@@ -120,7 +120,7 @@ def signup(data: SignupIn, response: Response, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
+def login(data: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not user.hashed_password:
         raise HTTPException(
@@ -154,13 +154,30 @@ def login(data: LoginIn, response: Response, db: Session = Depends(get_db)):
 
     onboarding_required = user.organisation_id is None and user.user_type != UserType.super_admin
 
-    # If super_admin, we can set their active_org_id cookie to the first org if not set
+    # Super-admin active-org context. NEVER clobber an existing selection: prefer the
+    # cookie already in this browser, then the durable server-side choice, then a
+    # deterministic first org for a brand-new admin.
     if user.user_type == UserType.super_admin:
-        first_org = db.query(Organisation).first()
-        if first_org:
+        target_org_id = None
+        existing = request.cookies.get("active_org_id")
+        if existing:
+            try:
+                target_org_id = UUID(existing)
+            except Exception:
+                target_org_id = None
+        if target_org_id is None:
+            target_org_id = user.last_active_org_id
+        if target_org_id is None:
+            first_org = (
+                db.query(Organisation)
+                .order_by(Organisation.created_at.asc(), Organisation.id.asc())
+                .first()
+            )
+            target_org_id = first_org.id if first_org else None
+        if target_org_id is not None:
             response.set_cookie(
                 key="active_org_id",
-                value=str(first_org.id),
+                value=str(target_org_id),
                 httponly=True,
                 max_age=7 * 24 * 60 * 60,
                 samesite=COOKIE_SAMESITE,
@@ -271,7 +288,7 @@ def list_organisations(current_user: User = Depends(get_current_user), db: Sessi
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Super Admins can list all organisations."
         )
-    orgs = db.query(Organisation).all()
+    orgs = db.query(Organisation).order_by(Organisation.org_name).all()
     return orgs
 
 
@@ -290,6 +307,11 @@ def switch_context(data: SwitchContextIn, response: Response, current_user: User
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organisation not found."
         )
+
+    # Persist the choice so it survives cookie loss and future logins. The cookie is
+    # still set below as the fast per-request path.
+    current_user.last_active_org_id = org.id
+    db.commit()
 
     response.set_cookie(
         key="active_org_id",

@@ -31,6 +31,9 @@ class User(Base):
     status = Column(Enum(UserStatus), default=UserStatus.invited)
     hashed_password = Column(String, nullable=True)  # null until they accept invite
     organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id"), nullable=True)
+    # Durable active-org memory for super_admins. Intentionally NOT a ForeignKey: a
+    # 2nd FK to organisations makes the `organisation` relationship's join ambiguous.
+    last_active_org_id = Column(UUID(as_uuid=True), nullable=True)
     google_refresh_token = Column(String, nullable=True)
     google_client_id = Column(String, nullable=True)
     google_client_secret = Column(String, nullable=True)

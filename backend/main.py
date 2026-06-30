@@ -44,6 +44,7 @@ def init_db():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token VARCHAR;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_client_id VARCHAR;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_client_secret VARCHAR;"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_org_id UUID;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS overall_interview_score FLOAT;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS proctoring_severity_flag VARCHAR;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_sequence INTEGER DEFAULT 0;"))

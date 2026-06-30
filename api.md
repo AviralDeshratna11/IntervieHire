@@ -6,6 +6,7 @@
 
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
+- **2026-06-30** — Durable super_admin active-organisation memory via the new internal `users.last_active_org_id` column (`backend/app/routers/auth.py`, `backend/app/utils/auth.py` `get_active_org_id`). **NO request/response schema fields changed** — `last_active_org_id` is internal only and appears in NO `*Out` Pydantic model; only the behavior/prose of four `/api/auth` routes changed. **POST /api/auth/login** no longer clobbers an existing super_admin `active_org_id` selection: the cookie is set only when a target resolves, by precedence (1) the `active_org_id` cookie already on the request, else (2) the user's stored `users.last_active_org_id`, else (3) a deterministic first org `ORDER BY created_at ASC, id ASC` (previously it unconditionally overwrote the cookie with an arbitrary `Organisation.first()` on every login, which made the wrong org reappear). **POST /api/auth/switch-context** now ALSO persists the chosen org to `users.last_active_org_id` (server-side `db.commit()`) so the selection survives cookie loss and future logins. **GET /api/auth/organisations** now returns the list `ORDER BY org_name` (was unordered). **GET /api/auth/me** / the shared `get_active_org_id` helper now resolve the super_admin org via the fallback chain `active_org_id` cookie → `users.last_active_org_id` → the super_admin's own `organisation_id` → deterministic first org (`ORDER BY created_at ASC, id ASC`) (was cookie → arbitrary `.first()`).
 - **2026-06-30** — Restructured the `UsageStatsOut` response schema of **GET /api/usage/stats** (`backend/app/routers/usage.py`, `backend/app/schemas.py`) for the Usage Overview cards — request/auth UNCHANGED. REMOVED `int` field `scheduled` (was a Card-1 entry-route bucket). **Card 1 (Total Applicants)** now counts by **`entry_method`** (`career_page`/`bulk_upload`/`direct_link`/`ats`, else `other`) — i.e. how the candidate was actually added — instead of the internal stage-router field `source`; `other` absorbs NULL/functional/any unlisted method and the five buckets reconcile to `total_applicants`. ADDED four `int` fields: `screening_not_scheduled`, `screening_rejected`, `functional_not_scheduled`, `functional_rejected`. **Card 3 (Recruiter Screening)** and **Card 4 (Functional Interview)** pills are now a 5-way precedence partition over the candidates who reached that stage, so the five pills SUM to the stage headline (`screening_reached` / `functional_reached`): screening = Advanced (`screening_advanced`, = reached functional) → Rejected (`decision == "rejected"`) → Attempted → Scheduled → Not Scheduled; functional = Hired (`decision == "hired"`) → Rejected → Attempted → Scheduled → Not Scheduled. `screening_attempted` now means recruiter feedback is present (`recruiter_screening` not null OR `recruiter_screening_score` not null), NOT `screening_status == "completed"` (nothing ever writes that value); `functional_attempted` still means `functional_status == "completed"` (set by the engine webhook). `resume_*` fields and **GET /api/usage/candidates-table** are unchanged.
 - **2026-06-30** — Modified the `UsageStatsOut` response schema of **GET /api/usage/stats** (`backend/app/routers/usage.py`, `backend/app/schemas.py`) — request/auth UNCHANGED. RENAMED four `int` response fields: `resume_shortlisted` → `resume_advanced`, `resume_waitlisted` → `resume_rejected`, `screening_shortlisted` → `screening_advanced`, `functional_shortlisted` → `functional_hired` (all other fields unchanged). NEW semantics: `resume_analysed` = `resume_reached` (count reaching the resume stage; ≥ `resume_advanced`); `resume_advanced` = `screening_reached` (advanced from resume into screening); `resume_rejected` = analysed at resume but NOT advanced to screening AND (`decision == "rejected"` OR the applicant's `resume_waitlisted` flag is set); `screening_advanced` = `functional_reached` (advanced from screening into functional); `functional_hired` = `decision == "hired"`. Also, **test-session applicants** (`remarks == "__ih_test_session__"`) are now EXCLUDED from BOTH **GET /api/usage/stats** AND **GET /api/usage/candidates-table** (mirrors the funnel/roster/analytics exclusion in `jobs.py`); the `candidates-table` request/response schema is otherwise unchanged.
 - **2026-06-30** — **POST /api/jobs/{job_id}/test-session** (`backend/app/routers/jobs.py`): the throwaway test-interview applicant's `name` now derives from the authenticated user (`tester_name = current_user.name` stripped, falling back to "Test Candidate" when empty/blank) instead of a hardcoded "Test Candidate", and is applied on BOTH create (new test applicant) AND reuse (an existing `remarks='__ih_test_session__'`-tagged applicant has its `name` refreshed to `tester_name` each call). Everything else unchanged — still tagged/excluded from funnel/roster/responses/analytics, `source=direct_link`, resets `functional_status=scheduled`/`functional_scheduled_at` to one minute ago, calls `sync_applicant_to_ai`. Auth and request/response schemas (success `{ "session_id": str }`; 500 on falsy sync) are unchanged.
@@ -74,7 +75,7 @@ Notes: Two branches — (1) existing user with status=invited → accepts invite
 
 #### POST /api/auth/login
 
-Authenticate via email + password. On success sets JWT httpOnly `token` cookie (7-day); for super_admin also sets `active_org_id` cookie to the first organisation if one exists.
+Authenticate via email + password. On success sets JWT httpOnly `token` cookie (7-day); for super_admin also resolves and sets an `active_org_id` cookie WITHOUT clobbering an existing selection.
 
 - **Auth:** public (none)
 - **Path params:** none
@@ -107,7 +108,7 @@ Plain dict (no response_model). `onboarding_required` = (organisation_id is None
 
 Status codes: 200 OK; 401 Unauthorized — "Incorrect email or password." (user not found OR no hashed_password OR password mismatch); 403 Forbidden — "Your account has been deactivated." (status == inactive); 422 Unprocessable Entity — Pydantic validation error.
 
-Notes: Password verified with bcrypt.checkpw. Sets cookie `token` (httponly, max_age=604800, samesite=COOKIE_SAMESITE default 'lax', secure=COOKIE_SECURE default false, path='/'). If user_type == super_admin and ≥1 Organisation exists, additionally sets `active_org_id` cookie to str(first_org.id).
+Notes: Password verified with bcrypt.checkpw. Sets cookie `token` (httponly, max_age=604800, samesite=COOKIE_SAMESITE default 'lax', secure=COOKIE_SECURE default false, path='/'). **(2026-06-30)** For super_admin, the `active_org_id` cookie is now set only when a target org resolves, by precedence: (1) the `active_org_id` cookie already present on the request, else (2) the user's stored internal `users.last_active_org_id`, else (3) a deterministic first org `ORDER BY created_at ASC, id ASC`. It no longer clobbers an existing selection on every login (previously, when ≥1 Organisation existed, it unconditionally set `active_org_id` to an arbitrary `Organisation.first()`). The handler also reads `request: Request` internally to inspect the incoming cookie; this is internal and the request/response schema is unchanged (`last_active_org_id` is never exposed).
 
 #### POST /api/auth/logout
 
@@ -177,7 +178,7 @@ Notes: Creates Organisation(org_name, domain, contact_email = data.contact_email
 
 #### GET /api/auth/me
 
-Return the authenticated user's profile, including resolved organisation name. For super_admin, organisation context resolves to the `active_org_id` cookie (or first org fallback).
+Return the authenticated user's profile, including resolved organisation name. For super_admin, organisation context resolves via `get_active_org_id` (the `active_org_id` cookie, then the stored `users.last_active_org_id`, then the super_admin's own org, then a deterministic first-org fallback).
 
 - **Auth:** JWT httpOnly cookie (required) — Depends(get_current_user).
 - **Path params:** none
@@ -203,7 +204,7 @@ response_model = `UserProfileOut` (Config.from_attributes=True). designation/org
 
 Status codes: 200 OK; 401 Unauthorized — get_current_user failures.
 
-Notes: For super_admin, org_id resolved via get_active_org_id (active_org_id cookie, fallback first Organisation). For non-super_admin with organisation_id set, organisation_name looked up from current_user.organisation_id. `onboarding_required` = (resolved org_id is None) AND (user_type != super_admin).
+Notes: For super_admin, org_id resolved via get_active_org_id. **(2026-06-30)** Its super_admin fallback chain is now: `active_org_id` cookie → the user's stored internal `users.last_active_org_id` → the super_admin's own `organisation_id` → deterministic first org (`ORDER BY created_at ASC, id ASC`) — previously it was just cookie → arbitrary `.first()`. For non-super_admin with organisation_id set, organisation_name looked up from current_user.organisation_id. `onboarding_required` = (resolved org_id is None) AND (user_type != super_admin).
 
 #### GET /api/auth/organisations
 
@@ -232,13 +233,13 @@ Response:
   }
 ]
 ```
-No response_model — returns raw list of SQLAlchemy Organisation ORM objects (FastAPI serializes columns).
+No response_model — returns raw list of SQLAlchemy Organisation ORM objects (FastAPI serializes columns), **ordered `ORDER BY org_name`** (2026-06-30; previously unordered).
 
 Status codes: 200 OK; 401 Unauthorized — get_current_user failures; 403 Forbidden — "Only Super Admins can list all organisations." (user_type != super_admin).
 
 #### POST /api/auth/switch-context
 
-Super Admin only: switch active organisation context by setting the `active_org_id` httpOnly cookie.
+Super Admin only: switch active organisation context by setting the `active_org_id` httpOnly cookie and durably persisting the selection server-side.
 
 - **Auth:** JWT httpOnly cookie (required); role gate: user_type must be super_admin (else 403).
 - **Path params:** none
@@ -263,7 +264,7 @@ Response:
 
 Status codes: 200 OK; 401 Unauthorized — get_current_user failures; 403 Forbidden — "Only Super Admins can switch organisation context."; 404 Not Found — "Organisation not found."; 422 Unprocessable Entity — invalid/missing UUID.
 
-Notes: On success sets cookie `active_org_id` = str(org.id) (httponly, max_age=604800, samesite/secure from env, path='/').
+Notes: On success sets cookie `active_org_id` = str(org.id) (httponly, max_age=604800, samesite/secure from env, path='/'). **(2026-06-30)** Also persists the chosen org to the internal `users.last_active_org_id` column (server-side `db.commit()`) so the selection is durable — it survives cookie loss and future logins (login/`get_active_org_id` read it back). Request/response schema unchanged; `last_active_org_id` is internal and not returned.
 
 ### `backend/app/routers/jobs.py`
 
