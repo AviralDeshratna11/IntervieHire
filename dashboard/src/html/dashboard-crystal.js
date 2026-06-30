@@ -300,7 +300,6 @@ export const html = `
                 <div class="metric-pills">
                   <div class="m-pill">Career Page <span class="v">0</span></div>
                   <div class="m-pill">Bulk Upload <span class="v">0</span></div>
-                  <div class="m-pill">Scheduled <span class="v">0</span></div>
                   <div class="m-pill">Direct Link <span class="v">0</span></div>
                   <div class="m-pill">ATS <span class="v">0</span></div>
                   <div class="m-pill">Other <span class="v">0</span></div>
@@ -333,9 +332,11 @@ export const html = `
                   <span class="metric-val" id="stat-recruiter-screening">—</span>
                 </div>
                 <div class="metric-pills">
-                  <div class="m-pill">Attempted <span class="v">0</span></div>
+                  <div class="m-pill">Not Scheduled <span class="v">0</span></div>
                   <div class="m-pill">Scheduled <span class="v">0</span></div>
+                  <div class="m-pill">Attempted <span class="v">0</span></div>
                   <div class="m-pill">Advanced <span class="v">0</span></div>
+                  <div class="m-pill">Rejected <span class="v">0</span></div>
                 </div>
               </div>
 
@@ -349,9 +350,11 @@ export const html = `
                   <span class="metric-val" id="stat-functional-interview">—</span>
                 </div>
                 <div class="metric-pills">
-                  <div class="m-pill">Attempted <span class="v">0</span></div>
+                  <div class="m-pill">Not Scheduled <span class="v">0</span></div>
                   <div class="m-pill">Scheduled <span class="v">0</span></div>
+                  <div class="m-pill">Attempted <span class="v">0</span></div>
                   <div class="m-pill">Hired <span class="v">0</span></div>
+                  <div class="m-pill">Rejected <span class="v">0</span></div>
                 </div>
               </div>
             </div>

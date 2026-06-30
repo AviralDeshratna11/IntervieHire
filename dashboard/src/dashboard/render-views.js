@@ -777,29 +777,41 @@ function updateSummaryMetrics() {
     vals.forEach((v, i) => { if (pills[i]) pills[i].textContent = v; });
   };
 
-  // Card 1 — entry routes; `other` absorbs anything outside the five named
-  // routes so the six pills always sum to the total.
+  // Card 1 — entry routes (how the candidate was added). Demo candidates carry a
+  // capitalized `source` label (no `entryMethod`), so bucket by that; `other`
+  // absorbs anything outside the four named routes (incl. legacy 'Scheduled') so
+  // the five pills always sum to the total. (The source↔entry_method fix is an
+  // API-mode/backend concern — see usage.py.)
   const cnt = (src) => filtered.filter(c => c.source === src).length;
   const careerPage = cnt('Career Page'), bulkUpload = cnt('Bulk Upload'),
-        scheduled = cnt('Scheduled'), directLink = cnt('Direct Link'), ats = cnt('ATS');
-  const other = total - (careerPage + bulkUpload + scheduled + directLink + ats);
-  setPills(1, [careerPage, bulkUpload, scheduled, directLink, ats, other]);
+        directLink = cnt('Direct Link'), ats = cnt('ATS');
+  const other = total - (careerPage + bulkUpload + directLink + ats);
+  setPills(1, [careerPage, bulkUpload, directLink, ats, other]);
 
   // Card 2 — resume (demo state has no resume flags; approximate from the funnel).
   // Third pill = Rejected at resume: reachedResume is the non-Rejected count, so
   // total - reachedResume is the rejected count and Analysed + Rejected = total.
   setPills(2, [reachedResume, reachedScreening, total - reachedResume]);
 
-  // Card 3 — recruiter screening.
+  // Card 3 — recruiter screening. Precedence partition over the reached-screening
+  // population so the five pills sum to the headline. Advanced = already past
+  // screening (= reachedFunctional). The rest (status 'Screening') split by
+  // interviewStatus: Completed → Attempted; a non-null non-Completed slot →
+  // Scheduled; null (no slot) → Not Scheduled. Rejected = 0: demo objects don't
+  // record the stage of a 'Rejected' status, and the headline excludes Rejected.
   const scrAttempted = filtered.filter(c => c.status === 'Screening' && c.interviewStatus === 'Completed').length;
-  const scrScheduled = filtered.filter(c => c.status === 'Screening' && c.interviewStatus !== 'Completed').length;
-  setPills(3, [scrAttempted, scrScheduled, reachedFunctional]);
+  const scrScheduled = filtered.filter(c => c.status === 'Screening' && c.interviewStatus != null && c.interviewStatus !== 'Completed').length;
+  const scrNotScheduled = filtered.filter(c => c.status === 'Screening' && c.interviewStatus == null).length;
+  setPills(3, [scrNotScheduled, scrScheduled, scrAttempted, reachedFunctional, 0]);
 
-  // Card 4 — functional interview.
+  // Card 4 — functional interview. Same partition over the reached-functional
+  // population. Hired = status 'Hired'; the rest (status 'Functional') split by
+  // interviewStatus as above. Rejected = 0 (same demo limitation).
   const funAttempted = filtered.filter(c => c.status === 'Functional' && c.interviewStatus === 'Completed').length;
-  const funScheduled = filtered.filter(c => c.status === 'Functional' && c.interviewStatus !== 'Completed').length;
+  const funScheduled = filtered.filter(c => c.status === 'Functional' && c.interviewStatus != null && c.interviewStatus !== 'Completed').length;
+  const funNotScheduled = filtered.filter(c => c.status === 'Functional' && c.interviewStatus == null).length;
   const hired = filtered.filter(c => c.status === 'Hired').length;
-  setPills(4, [funAttempted, funScheduled, hired]);
+  setPills(4, [funNotScheduled, funScheduled, funAttempted, hired, 0]);
 }
 
 
@@ -823,10 +835,10 @@ function applyUsageStats(s) {
     const pills = document.querySelectorAll(`.card-metric:nth-child(${n}) .m-pill .v`);
     vals.forEach((v, i) => { if (pills[i]) pills[i].textContent = v ?? 0; });
   };
-  setPills(1, [s.career_page, s.bulk_upload, s.scheduled, s.direct_link, s.ats, s.other]);
+  setPills(1, [s.career_page, s.bulk_upload, s.direct_link, s.ats, s.other]);
   setPills(2, [s.resume_analysed, s.resume_advanced, s.resume_rejected]);
-  setPills(3, [s.screening_attempted, s.screening_scheduled, s.screening_advanced]);
-  setPills(4, [s.functional_attempted, s.functional_scheduled, s.functional_hired]);
+  setPills(3, [s.screening_not_scheduled, s.screening_scheduled, s.screening_attempted, s.screening_advanced, s.screening_rejected]);
+  setPills(4, [s.functional_not_scheduled, s.functional_scheduled, s.functional_attempted, s.functional_hired, s.functional_rejected]);
   // Real numbers are in — drop the loading pulse set by setUsageLoading().
   document.querySelectorAll('.metrics-grid').forEach((el) => el.classList.remove('is-loading'));
 }

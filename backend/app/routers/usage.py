@@ -6,7 +6,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models.job import Job, JobCollaborator
-from app.models.applicant import Applicant, ApplicantSource
+from app.models.applicant import Applicant
 from app.models.user import User, UserType
 from app.schemas import UsageStatsOut, JobTableRow
 from app.utils.auth import get_current_user, get_active_org_id
@@ -38,10 +38,12 @@ def get_usage_stats(
     visible_job_ids = _get_visible_job_ids(current_user, active_org_id, db)
     if not visible_job_ids:
         return UsageStatsOut(
-            total_applicants=0, career_page=0, bulk_upload=0, scheduled=0, direct_link=0, ats=0, other=0,
+            total_applicants=0, career_page=0, bulk_upload=0, direct_link=0, ats=0, other=0,
             resume_reached=0, resume_analysed=0, resume_advanced=0, resume_rejected=0,
-            screening_reached=0, screening_attempted=0, screening_scheduled=0, screening_advanced=0,
-            functional_reached=0, functional_attempted=0, functional_scheduled=0, functional_hired=0
+            screening_reached=0, screening_not_scheduled=0, screening_scheduled=0,
+            screening_attempted=0, screening_advanced=0, screening_rejected=0,
+            functional_reached=0, functional_not_scheduled=0, functional_scheduled=0,
+            functional_attempted=0, functional_hired=0, functional_rejected=0,
         )
 
     query = db.query(Applicant).filter(Applicant.job_id.in_(visible_job_ids))
@@ -66,24 +68,33 @@ def get_usage_stats(
     def _reached_resume(a):
         return _reached_screening(a) or bool(a.resume_analysed)
 
+    # Stage "Attempted" signals. Recruiter-screening completion is NOT stored in
+    # screening_status (nothing ever writes "completed"); it lives in the recruiter
+    # feedback fields. Functional completion IS set "completed" by the engine webhook.
+    def _screening_attempted(a):
+        return a.recruiter_screening is not None or a.recruiter_screening_score is not None
+
+    def _functional_attempted(a):
+        return a.functional_status is not None and a.functional_status.value == "completed"
+
     functional_reached = sum(1 for a in applicants if _reached_functional(a))
     screening_reached = sum(1 for a in applicants if _reached_screening(a))
     resume_reached = sum(1 for a in applicants if _reached_resume(a))
 
-    # Entry routes; `other` absorbs unlisted sources (functional / NULL) so the
-    # six route counts always reconcile to total_applicants.
-    career_page = sum(1 for a in applicants if a.source == ApplicantSource.career_page)
-    bulk_upload = sum(1 for a in applicants if a.source == ApplicantSource.bulk_upload)
-    scheduled = sum(1 for a in applicants if a.source == ApplicantSource.scheduled)
-    direct_link = sum(1 for a in applicants if a.source == ApplicantSource.direct_link)
-    ats = sum(1 for a in applicants if a.source == ApplicantSource.ats)
-    other = total - (career_page + bulk_upload + scheduled + direct_link + ats)
+    # How the candidate was actually added: entry_method matches the "Source"
+    # column shown everywhere else in the UI. (`source` is the internal stage
+    # router and mislabels e.g. a direct-link candidate as "scheduled".) `other`
+    # absorbs NULL / functional / any unlisted method so the buckets reconcile.
+    career_page = sum(1 for a in applicants if (a.entry_method or "") == "career_page")
+    bulk_upload = sum(1 for a in applicants if (a.entry_method or "") == "bulk_upload")
+    direct_link = sum(1 for a in applicants if (a.entry_method or "") == "direct_link")
+    ats = sum(1 for a in applicants if (a.entry_method or "") == "ats")
+    other = total - (career_page + bulk_upload + direct_link + ats)
 
     return UsageStatsOut(
         total_applicants=total,
         career_page=career_page,
         bulk_upload=bulk_upload,
-        scheduled=scheduled,
         direct_link=direct_link,
         ats=ats,
         other=other,
@@ -95,14 +106,57 @@ def get_usage_stats(
             if _reached_resume(a) and not _reached_screening(a)
             and (a.decision == "rejected" or a.resume_waitlisted)
         ),
+        # Screening — precedence partition over reached-screening so the five pills
+        # sum to screening_reached: Advanced (reached functional) is terminal here,
+        # then Rejected, then Attempted (recruiter feedback present), then Scheduled,
+        # else Not Scheduled (reached the stage but still idle).
         screening_reached=screening_reached,
-        screening_attempted=sum(1 for a in applicants if a.screening_status is not None and a.screening_status.value == "completed"),
-        screening_scheduled=sum(1 for a in applicants if a.screening_status is not None and a.screening_status.value == "scheduled"),
         screening_advanced=functional_reached,
+        screening_rejected=sum(
+            1 for a in applicants
+            if _reached_screening(a) and not _reached_functional(a) and a.decision == "rejected"
+        ),
+        screening_attempted=sum(
+            1 for a in applicants
+            if _reached_screening(a) and not _reached_functional(a)
+            and a.decision != "rejected" and _screening_attempted(a)
+        ),
+        screening_scheduled=sum(
+            1 for a in applicants
+            if _reached_screening(a) and not _reached_functional(a)
+            and a.decision != "rejected" and not _screening_attempted(a)
+            and a.screening_status is not None and a.screening_status.value == "scheduled"
+        ),
+        screening_not_scheduled=sum(
+            1 for a in applicants
+            if _reached_screening(a) and not _reached_functional(a)
+            and a.decision != "rejected" and not _screening_attempted(a)
+            and not (a.screening_status is not None and a.screening_status.value == "scheduled")
+        ),
+        # Functional — same precedence partition over reached-functional.
         functional_reached=functional_reached,
-        functional_attempted=sum(1 for a in applicants if a.functional_status is not None and a.functional_status.value == "completed"),
-        functional_scheduled=sum(1 for a in applicants if a.functional_status is not None and a.functional_status.value == "scheduled"),
         functional_hired=sum(1 for a in applicants if a.decision == "hired"),
+        functional_rejected=sum(
+            1 for a in applicants
+            if _reached_functional(a) and a.decision == "rejected"
+        ),
+        functional_attempted=sum(
+            1 for a in applicants
+            if _reached_functional(a) and a.decision not in ("hired", "rejected")
+            and _functional_attempted(a)
+        ),
+        functional_scheduled=sum(
+            1 for a in applicants
+            if _reached_functional(a) and a.decision not in ("hired", "rejected")
+            and not _functional_attempted(a)
+            and a.functional_status is not None and a.functional_status.value == "scheduled"
+        ),
+        functional_not_scheduled=sum(
+            1 for a in applicants
+            if _reached_functional(a) and a.decision not in ("hired", "rejected")
+            and not _functional_attempted(a)
+            and not (a.functional_status is not None and a.functional_status.value == "scheduled")
+        ),
     )
 
 

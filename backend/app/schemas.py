@@ -281,10 +281,9 @@ class CollaboratorIn(BaseModel):
  
 class UsageStatsOut(BaseModel):
     total_applicants: int
-    # Card 1 — entry routes (these six reconcile to total_applicants)
+    # Card 1 — entry routes by entry_method (these five reconcile to total_applicants)
     career_page: int
     bulk_upload: int
-    scheduled: int
     direct_link: int
     ats: int
     other: int
@@ -293,16 +292,20 @@ class UsageStatsOut(BaseModel):
     resume_analysed: int
     resume_advanced: int
     resume_rejected: int
-    # Card 3 — recruiter screening (attempted/scheduled/advanced = pills)
+    # Card 3 — recruiter screening (not_scheduled/scheduled/attempted/advanced/rejected = pills)
     screening_reached: int
-    screening_attempted: int
+    screening_not_scheduled: int
     screening_scheduled: int
+    screening_attempted: int
     screening_advanced: int
-    # Card 4 — functional interview (attempted/scheduled/hired = pills)
+    screening_rejected: int
+    # Card 4 — functional interview (not_scheduled/scheduled/attempted/hired/rejected = pills)
     functional_reached: int
-    functional_attempted: int
+    functional_not_scheduled: int
     functional_scheduled: int
+    functional_attempted: int
     functional_hired: int
+    functional_rejected: int
  
 class JobTableRow(BaseModel):
     id: UUID
