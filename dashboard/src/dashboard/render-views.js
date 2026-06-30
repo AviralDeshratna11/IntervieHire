@@ -786,7 +786,9 @@ function updateSummaryMetrics() {
   setPills(1, [careerPage, bulkUpload, scheduled, directLink, ats, other]);
 
   // Card 2 — resume (demo state has no resume flags; approximate from the funnel).
-  setPills(2, [reachedResume, reachedScreening, 0]);
+  // Third pill = Rejected at resume: reachedResume is the non-Rejected count, so
+  // total - reachedResume is the rejected count and Analysed + Rejected = total.
+  setPills(2, [reachedResume, reachedScreening, total - reachedResume]);
 
   // Card 3 — recruiter screening.
   const scrAttempted = filtered.filter(c => c.status === 'Screening' && c.interviewStatus === 'Completed').length;
@@ -822,9 +824,9 @@ function applyUsageStats(s) {
     vals.forEach((v, i) => { if (pills[i]) pills[i].textContent = v ?? 0; });
   };
   setPills(1, [s.career_page, s.bulk_upload, s.scheduled, s.direct_link, s.ats, s.other]);
-  setPills(2, [s.resume_analysed, s.resume_shortlisted, s.resume_waitlisted]);
-  setPills(3, [s.screening_attempted, s.screening_scheduled, s.screening_shortlisted]);
-  setPills(4, [s.functional_attempted, s.functional_scheduled, s.functional_shortlisted]);
+  setPills(2, [s.resume_analysed, s.resume_advanced, s.resume_rejected]);
+  setPills(3, [s.screening_attempted, s.screening_scheduled, s.screening_advanced]);
+  setPills(4, [s.functional_attempted, s.functional_scheduled, s.functional_hired]);
   // Real numbers are in — drop the loading pulse set by setUsageLoading().
   document.querySelectorAll('.metrics-grid').forEach((el) => el.classList.remove('is-loading'));
 }

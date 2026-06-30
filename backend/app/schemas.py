@@ -288,21 +288,21 @@ class UsageStatsOut(BaseModel):
     direct_link: int
     ats: int
     other: int
-    # Card 2 — resume (reached = headline; analysed/shortlisted/waitlisted = pills)
+    # Card 2 — resume (reached = headline; analysed/advanced/rejected = pills)
     resume_reached: int
     resume_analysed: int
-    resume_shortlisted: int
-    resume_waitlisted: int
-    # Card 3 — recruiter screening
+    resume_advanced: int
+    resume_rejected: int
+    # Card 3 — recruiter screening (attempted/scheduled/advanced = pills)
     screening_reached: int
     screening_attempted: int
     screening_scheduled: int
-    screening_shortlisted: int
-    # Card 4 — functional interview
+    screening_advanced: int
+    # Card 4 — functional interview (attempted/scheduled/hired = pills)
     functional_reached: int
     functional_attempted: int
     functional_scheduled: int
-    functional_shortlisted: int
+    functional_hired: int
  
 class JobTableRow(BaseModel):
     id: UUID

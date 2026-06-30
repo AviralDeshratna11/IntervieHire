@@ -10,6 +10,7 @@ from app.models.applicant import Applicant, ApplicantSource
 from app.models.user import User, UserType
 from app.schemas import UsageStatsOut, JobTableRow
 from app.utils.auth import get_current_user, get_active_org_id
+from app.routers.jobs import _is_test_applicant
 
 router = APIRouter()
 
@@ -38,9 +39,9 @@ def get_usage_stats(
     if not visible_job_ids:
         return UsageStatsOut(
             total_applicants=0, career_page=0, bulk_upload=0, scheduled=0, direct_link=0, ats=0, other=0,
-            resume_reached=0, resume_analysed=0, resume_shortlisted=0, resume_waitlisted=0,
-            screening_reached=0, screening_attempted=0, screening_scheduled=0, screening_shortlisted=0,
-            functional_reached=0, functional_attempted=0, functional_scheduled=0, functional_shortlisted=0
+            resume_reached=0, resume_analysed=0, resume_advanced=0, resume_rejected=0,
+            screening_reached=0, screening_attempted=0, screening_scheduled=0, screening_advanced=0,
+            functional_reached=0, functional_attempted=0, functional_scheduled=0, functional_hired=0
         )
 
     query = db.query(Applicant).filter(Applicant.job_id.in_(visible_job_ids))
@@ -50,6 +51,7 @@ def get_usage_stats(
         query = query.filter(Applicant.created_at <= date_to)
 
     applicants = query.all()
+    applicants = [a for a in applicants if not _is_test_applicant(a)]
     total = len(applicants)
 
     # Reached-stage flags mirror the dashboard's stage derivation (api.js
@@ -86,17 +88,21 @@ def get_usage_stats(
         ats=ats,
         other=other,
         resume_reached=resume_reached,
-        resume_analysed=sum(1 for a in applicants if a.resume_analysed),
-        resume_shortlisted=sum(1 for a in applicants if a.resume_shortlisted),
-        resume_waitlisted=sum(1 for a in applicants if a.resume_waitlisted),
+        resume_analysed=resume_reached,
+        resume_advanced=screening_reached,
+        resume_rejected=sum(
+            1 for a in applicants
+            if _reached_resume(a) and not _reached_screening(a)
+            and (a.decision == "rejected" or a.resume_waitlisted)
+        ),
         screening_reached=screening_reached,
         screening_attempted=sum(1 for a in applicants if a.screening_status is not None and a.screening_status.value == "completed"),
         screening_scheduled=sum(1 for a in applicants if a.screening_status is not None and a.screening_status.value == "scheduled"),
-        screening_shortlisted=functional_reached,
+        screening_advanced=functional_reached,
         functional_reached=functional_reached,
         functional_attempted=sum(1 for a in applicants if a.functional_status is not None and a.functional_status.value == "completed"),
         functional_scheduled=sum(1 for a in applicants if a.functional_status is not None and a.functional_status.value == "scheduled"),
-        functional_shortlisted=sum(1 for a in applicants if a.decision == "hired"),
+        functional_hired=sum(1 for a in applicants if a.decision == "hired"),
     )
 
 
@@ -140,6 +146,7 @@ def get_candidates_table(
         return []
 
     applicants = db.query(Applicant).filter(Applicant.job_id.in_(visible_job_ids)).all()
+    applicants = [a for a in applicants if not _is_test_applicant(a)]
 
     # Sync with InterviewSession
     from app.models.ai_integration import InterviewSession, SessionStatus, Severity

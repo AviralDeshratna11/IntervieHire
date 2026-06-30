@@ -318,8 +318,8 @@ export const html = `
                 </div>
                 <div class="metric-pills">
                   <div class="m-pill">Analysed <span class="v">0</span></div>
-                  <div class="m-pill">Shortlisted <span class="v">0</span></div>
-                  <div class="m-pill">Waitlisted <span class="v">0</span></div>
+                  <div class="m-pill">Advanced <span class="v">0</span></div>
+                  <div class="m-pill">Rejected <span class="v">0</span></div>
                 </div>
               </div>
 
@@ -335,7 +335,7 @@ export const html = `
                 <div class="metric-pills">
                   <div class="m-pill">Attempted <span class="v">0</span></div>
                   <div class="m-pill">Scheduled <span class="v">0</span></div>
-                  <div class="m-pill">Shortlisted <span class="v">0</span></div>
+                  <div class="m-pill">Advanced <span class="v">0</span></div>
                 </div>
               </div>
 
@@ -351,7 +351,7 @@ export const html = `
                 <div class="metric-pills">
                   <div class="m-pill">Attempted <span class="v">0</span></div>
                   <div class="m-pill">Scheduled <span class="v">0</span></div>
-                  <div class="m-pill">Shortlisted <span class="v">0</span></div>
+                  <div class="m-pill">Hired <span class="v">0</span></div>
                 </div>
               </div>
             </div>

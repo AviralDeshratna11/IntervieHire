@@ -51,6 +51,7 @@ def init_db():
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS entry_method VARCHAR;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS interview_settings TEXT;"))
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_job_listed BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("""ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';"""))
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS career_subdomain VARCHAR;"))
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS career_intro TEXT;"))
