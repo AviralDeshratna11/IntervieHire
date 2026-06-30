@@ -154,6 +154,16 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
             pass
         candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
         if not candidate:
+            # The engine's Candidate table enforces UNIQUE(companyId, email): the
+            # same person can be an applicant in several jobs of one org, each with
+            # a different applicant.id. Resolve by (companyId, email) before
+            # inserting — otherwise the INSERT violates that constraint, poisons
+            # the DB session, and the entire /schedule request fails with a 502.
+            candidate = db.query(Candidate).filter(
+                Candidate.companyId == company_id,
+                Candidate.email == applicant.email,
+            ).first()
+        if not candidate:
             candidate = Candidate(
                 id=candidate_id,
                 companyId=company_id,
@@ -179,6 +189,11 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
                 if "resumeQuestions" in pr:
                     candidate.parsedResume = {k: v for k, v in pr.items() if k != "resumeQuestions"}
             db.commit()
+
+        # The InterviewSession must reference the ACTUAL candidate row, which may
+        # pre-exist under a different id than this applicant's (same person, another
+        # role in the org). Use the resolved id so the session FK stays valid.
+        candidate_id = str(candidate.id)
 
         # 4. Sync InterviewSession — always reset to SCHEDULED so re-advances generate a fresh interview
         session_id = str(applicant.id) # Use candidate ID as Session ID directly
