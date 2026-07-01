@@ -44,7 +44,6 @@ def init_db():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_refresh_token VARCHAR;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_client_id VARCHAR;"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_client_secret VARCHAR;"))
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_org_id UUID;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS overall_interview_score FLOAT;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS proctoring_severity_flag VARCHAR;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS calendar_sequence INTEGER DEFAULT 0;"))
@@ -52,7 +51,6 @@ def init_db():
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS entry_method VARCHAR;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS interview_settings TEXT;"))
-        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_job_listed BOOLEAN DEFAULT FALSE;"))
         conn.execute(text("""ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';"""))
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS career_subdomain VARCHAR;"))
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS career_intro TEXT;"))
@@ -145,4 +143,4 @@ app.include_router(invites.public_link_router, tags=["Invites"])  # public GET /
 
 @app.get("/")
 def root():
-    return {"status": "ok", "app": settings.APP_NAME,"deploy_marker":"raj-1"}
+    return {"status": "ok", "app": settings.APP_NAME}
