@@ -8,8 +8,14 @@ import { useTranscript } from '@/hooks/useTranscript';
 import { MonitorUp, ShieldCheck, Video } from 'lucide-react';
 import type { CalibrationResult } from '@/hooks/useGazeCalibration';
 import { roomStyles } from './roomStyles';
+import { WaitingRoom } from './WaitingRoom';
 
 const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL || 'http://localhost:80';
+
+// How early a candidate may enter the room before their scheduled slot. The
+// lobby unlocks and the engine's /start accepts a start once inside this window.
+// MUST stay in sync with EARLY_ENTRY_MS in the engine interview.routes.ts.
+const EARLY_ENTRY_MS = 10 * 60 * 1000;
 
 function withPixelStreamingParams(rawUrl: string) {
   try {
@@ -79,8 +85,15 @@ export default function Interview() {
   const [avatarCaptureMsg, setAvatarCaptureMsg] = useState('');
   // Per-job interview settings + branding, synced from the recruiter dashboard.
   const [interviewSettings, setInterviewSettings] = useState<any>(null);
-  const [branding, setBranding] = useState<{ name?: string; primaryColor?: string; logoUrl?: string } | null>(null);
+  const [branding, setBranding] = useState<{ name?: string; primaryColor?: string; logoUrl?: string; whiteLabel?: boolean } | null>(null);
   const [startError, setStartError] = useState('');
+  // Scheduled-slot barrier: when a session has a future scheduledAt, the room is
+  // locked behind a countdown lobby until (scheduledAt − EARLY_ENTRY_MS). null =
+  // no schedule (plain link / demo) → no lobby. scheduleChecked gates the initial
+  // render so we don't flash the permission gate before the slot is known.
+  const [scheduledAtMs, setScheduledAtMs] = useState<number | null>(null);
+  const [scheduleChecked, setScheduleChecked] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Live interviewer questions. "Lina" (the Convai/UE avatar) asks her own
   // questions; we surface what she ACTUALLY asked by polling the server
@@ -164,13 +177,29 @@ export default function Interview() {
         const s = await res.json();
         if (!alive) return;
         setInterviewSettings(s?.settings || {});
-        if (s?.company) setBranding({ name: s.company.name, primaryColor: s.company.primaryColor, logoUrl: s.company.logoUrl });
+        if (s?.company) setBranding({ name: s.company.name, primaryColor: s.company.primaryColor, logoUrl: s.company.logoUrl, whiteLabel: !!s?.settings?.whiteLabel });
+        // Arm the scheduled-slot lobby if a future slot exists.
+        const at = s?.scheduledAt ? new Date(s.scheduledAt).getTime() : NaN;
+        if (Number.isFinite(at)) setScheduledAtMs(at);
       } catch {
         /* permissive on error */
+      } finally {
+        if (alive) setScheduleChecked(true);
       }
     })();
     return () => { alive = false; };
   }, [sessionId]);
+
+  // Lobby heartbeat: drives the countdown and auto-unlocks the room the moment
+  // the entry window opens. Only runs while genuinely waiting, so it stops once
+  // the interview is reachable. Demo sessions never gate.
+  const unlockAtMs = scheduledAtMs != null ? scheduledAtMs - EARLY_ENTRY_MS : null;
+  const lobbyLocked = sessionId !== 'demo-session' && !startError && unlockAtMs != null && nowMs < unlockAtMs;
+  useEffect(() => {
+    if (!lobbyLocked) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [lobbyLocked]);
 
   // --- Dynamic questions loading from session ---
   useEffect(() => {
@@ -500,6 +529,33 @@ export default function Interview() {
             <p className="gate-sub">This interview must be taken on a desktop or laptop. Open this link on a computer to continue.</p>
           </div>
         </div>
+      </>
+    );
+  }
+
+  // Hold on a light loading gate until we know whether this session has a future
+  // scheduled slot — avoids flashing the permission gate before the lobby appears.
+  if (!startError && sessionId !== 'demo-session' && !scheduleChecked) {
+    return (
+      <>
+        <style>{roomStyles}</style>
+        <div className="gate">
+          <div className="gate-card">
+            <p className="gate-eyebrow">Interview lobby</p>
+            <h1 className="gate-title">Preparing your interview…</h1>
+            <p className="gate-sub">One moment while we load your session.</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Scheduled-slot barrier: locked until (scheduledAt − EARLY_ENTRY_MS).
+  if (lobbyLocked && scheduledAtMs != null && unlockAtMs != null) {
+    return (
+      <>
+        <style>{roomStyles}</style>
+        <WaitingRoom scheduledAtMs={scheduledAtMs} unlockAtMs={unlockAtMs} nowMs={nowMs} brand={branding} />
       </>
     );
   }

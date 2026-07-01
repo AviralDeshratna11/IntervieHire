@@ -276,6 +276,15 @@ export async function interviewRoutes(app: FastifyInstance) {
     if (s.allowLate === false && session.scheduledAt && Date.now() > new Date(session.scheduledAt).getTime() + LATE_GRACE_MS) {
       return reply.code(403).send({ error: 'The scheduled interview window has passed.', code: 'LATE_ATTEMPT' });
     }
+    // Scheduled-slot barrier: a session with a future slot cannot be started until
+    // its early-entry window opens. This is the server half of the candidate-room
+    // countdown lobby — it makes the lock real (a bypassed client can't start
+    // early). EARLY_ENTRY_MS MUST match the web EARLY_ENTRY_MS. Sessions with no
+    // scheduledAt (plain link / demo) are unaffected.
+    const EARLY_ENTRY_MS = 10 * 60 * 1000;
+    if (session.scheduledAt && Date.now() < new Date(session.scheduledAt).getTime() - EARLY_ENTRY_MS) {
+      return reply.code(403).send({ error: 'This interview has not opened yet. Please return at your scheduled time.', code: 'TOO_EARLY' });
+    }
     if (s.requireCv === true && !session.candidate?.resumeText) {
       return reply.code(400).send({ error: 'A CV/resume is required before starting this interview.', code: 'CV_REQUIRED' });
     }
