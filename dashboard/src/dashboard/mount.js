@@ -1379,6 +1379,10 @@ Return ONLY valid JSON:
       } catch (err) {
         console.error("Job creation from JD failed:", err);
         showPremiumToast("Failed to process job description. Check API status.", "error");
+      } finally {
+        // Always restore the button — on success we navigate away via
+        // openJobFlowView but the (reused) button node must not stay stuck on
+        // "Generating interview pipeline…" for the next job upload.
         btnContinue.disabled = false;
         btnContinue.innerHTML = originalHTML;
       }
