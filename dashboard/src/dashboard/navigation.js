@@ -18,6 +18,7 @@ import { openJobFlowView, toggleHeaderElementsForJobFlow } from './job-flow.js';
 import { renderKanbanBoard, resetWaveformAudio, startSwarmLogs } from './kanban-swarm.js';
 import { renderTalentFinderPane } from './talent-finder-panel.js';
 import { renderAnalyticsTable, renderJobCards, renderTeamTable, hydrateUsageAnalytics } from './render-views.js';
+import { renderCareerJobs } from './career-panel.js';
 import { soundEngine } from './sound.js';
 import { syncSettingsControls } from './settings-page.js';
 import { AppState, generateJobId } from './state.js';
@@ -134,6 +135,7 @@ function navigateToTab(tabId) {
     subText.textContent = 'Design corporate listings page appearance and themes';
     actionBtn.style.display = 'none'; // No primary CTA for career config page
     document.getElementById('view-career').classList.add('active-view');
+    renderCareerJobs(); // refresh the record panel on open (covers edits made on the Jobs view)
     soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.15);
   }
 }

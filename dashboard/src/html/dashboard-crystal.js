@@ -625,16 +625,21 @@ export const html = `
                 </div>
                 <div class="meta-metric-box">
                   <div class="sub-metric">
-                    <span class="lbl">Subdomain Visits</span>
-                    <span class="val">142</span>
-                  </div>
-                  <div class="sub-metric">
-                    <span class="lbl">Apply Rate</span>
-                    <span class="val">12.4%</span>
+                    <span class="lbl">Jobs live on career page</span>
+                    <span class="val" id="career-live-count">0</span>
                   </div>
                 </div>
               </div>
             </div>
+
+            <!-- Jobs live on the public career page — the dashboard-side record +
+                 quick-manage list. Static shell filled by renderCareerJobs()
+                 (career-panel.js); mirrors the #jobs-list-container pattern. -->
+            <section class="card-glass career-jobs-panel">
+              <h3 class="panel-title">Jobs on your career page</h3>
+              <p class="panel-desc">These roles are live on your public career page right now. Remove one to take it down instantly.</p>
+              <div id="career-jobs-list"></div>
+            </section>
           </section>
 
           <!-- ===================================== -->

@@ -7,6 +7,7 @@ import { navigateToJobDetail } from './job-detail.js';
 import { recalculateJobPipelines } from './kanban-swarm.js';
 import { navigateToTab, openDrawer } from './navigation.js';
 import { renderJobCards } from './render-views.js';
+import { renderCareerJobs } from './career-panel.js';
 import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
@@ -227,6 +228,7 @@ function openPublishJobModal(jobId) {
     }
 
     saveStateToLocalStorage();
+    renderCareerJobs(); // publish auto-lists → reflect it in the Career-view record panel
 
     // Persist BOTH published status and career-page listing to the backend so they
     // survive a refresh. The public career query requires status='published' AND

@@ -23,6 +23,7 @@ import { AppState, generateJobId } from './state.js';
 import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, apiSetJobListed, apiDuplicateJob, apiPatchJobSettings, apiGetOrganisation, apiUpdateOrganisation, apiInviteMember, isApiMode, getDataSource } from './api.js';
 import { initOrgSwitcher } from './org-switcher.js';
 import { initSettingsPage, syncSettingsControls } from './settings-page.js';
+import { renderCareerJobs } from './career-panel.js';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -266,6 +267,7 @@ function initMountBindings() {
         job.listedOnCareer = nextListed;
         if (nextListed) job.status = 'published';
         renderJobCards();
+        renderCareerJobs(); // keep the Career-view record panel in sync (both directions)
         const label = nextListed ? 'listed on' : 'removed from';
         showPremiumToast(`"${job.cardName || job.roleName}" ${label} career page.`, 'success');
         break;
@@ -851,6 +853,9 @@ function initMountBindings() {
     const statusTitle = root && root.querySelector('.status-title');
     const statusDot = root && root.querySelector('.pulsing-dot');
     const clean = (sub || '').trim();
+    // Share the authoritative subdomain with the Career-view jobs panel so its
+    // "View live" links resolve to the right public career URL.
+    AppState.careerSubdomain = clean;
     if (clean) {
       if (statusLink) {
         statusLink.textContent = `interviehire.com/careers/${clean} ↗`;
@@ -870,6 +875,9 @@ function initMountBindings() {
       if (statusTitle) statusTitle.textContent = 'Not published yet';
       if (statusDot) { statusDot.classList.remove('green'); statusDot.style.background = '#f59e0b'; }
     }
+    // First-paint (and refresh) the Career-view jobs panel from the same
+    // server-provided subdomain the status box already uses.
+    renderCareerJobs();
   };
 
   // HYDRATE on mount: local restore first (instant), then the authoritative org
