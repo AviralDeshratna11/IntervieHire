@@ -57,6 +57,26 @@ def init_db():
         conn.execute(text('ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS "inviteToken" VARCHAR;'))
         conn.commit()
 
+        # Backfill: repair legacy jobs with a NULL organisation_id by inheriting the
+        # org of their creator. Deny-by-default access checks (leaderboard/jobs)
+        # treat a null-org job as inaccessible, so this reconnects orphaned rows to
+        # their rightful tenant. Idempotent — only touches still-null rows, and only
+        # when the creator has a known org. Non-fatal (Postgres UPDATE ... FROM).
+        try:
+            conn.execute(text(
+                """
+                UPDATE jobs
+                SET organisation_id = users.organisation_id
+                FROM users
+                WHERE jobs.organisation_id IS NULL
+                  AND jobs.created_by_id = users.id
+                  AND users.organisation_id IS NOT NULL;
+                """
+            ))
+            conn.commit()
+        except Exception as backfill_err:
+            print(f"Backfill error (jobs.organisation_id): {backfill_err}")
+
         # Add 'super_admin' to usertype enum in postgresql
         try:
             conn.execute(text("COMMIT;"))  # ALTER TYPE cannot run inside a transaction block in PostgreSQL
@@ -144,8 +164,10 @@ app.add_middleware(
         "http://localhost:3100",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Narrowed from "*" — only the verbs/headers this API actually serves. The
+    # origin list above is already an explicit allowlist.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
 
 # Routers
