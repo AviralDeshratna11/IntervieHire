@@ -5,12 +5,12 @@
 // Until the eval pipeline is wired at stitch time, reports are sampled
 // deterministically per candidate from the job's blueprint so the tab is live.
 
-import { document } from './runtime.js';
-import { escapeHTML, sourceLabel } from './escape.js';
-import { AppState } from './state.js';
-import { filterCandidatesByDateRange } from './render-views.js';
-import { soundEngine } from './sound.js';
-import { isApiMode, apiFetchCandidateReport, apiFetchTestReport } from './api.js';
+import { document } from './runtime';
+import { escapeHTML, sourceLabel } from './escape';
+import { AppState } from './state';
+import { filterCandidatesByDateRange } from './render-views';
+import { soundEngine } from './sound';
+import { isApiMode, apiFetchCandidateReport, apiFetchTestReport } from './api';
 
 const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role alignment'];
 
@@ -721,8 +721,8 @@ function bind(container, job) {
     const action = el.dataset.action;
     if (action === 'select') { daUi.selectedId = el.dataset.cid; daUi.openAnswerId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'back') { daUi.selectedId = null; daUi.openDimKey = null; daUi.showAllDims = false; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
-    else if (action === 'open-report') { soundEngine.playClick(); const cid = el.dataset.cid; import('./report-page.js').then((m) => m.openCandidateReportPage && m.openCandidateReportPage(cid)); }
-    else if (action === 'dl-transcript') { soundEngine.playClick(); const cid = el.dataset.cid; const name = el.dataset.name; import('./report-page.js').then((m) => m.downloadInterviewTranscript && m.downloadInterviewTranscript(cid, name)); }
+    else if (action === 'open-report') { soundEngine.playClick(); const cid = el.dataset.cid; import('./report-page').then((m) => m.openCandidateReportPage && m.openCandidateReportPage(cid)); }
+    else if (action === 'dl-transcript') { soundEngine.playClick(); const cid = el.dataset.cid; const name = el.dataset.name; import('./report-page').then((m) => m.downloadInterviewTranscript && m.downloadInterviewTranscript(cid, name)); }
     else if (action === 'toggle-answer') { const a = el.dataset.aid; daUi.openAnswerId = daUi.openAnswerId === a ? null : a; daUi.openDimKey = null; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-test') { daUi.testOpen = !daUi.testOpen; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'refresh-test') { testReports.delete(job.id); soundEngine.playClick(); renderDeepAnalysisPane(job, container); }

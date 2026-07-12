@@ -2,10 +2,10 @@
 
 import { memo, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { initDashboardPage } from '../../src/dashboard/index.js';
-import { STAGE_SLUG_TO_TAB } from '../../src/dashboard/job-stages.js';
+import { initDashboardPage } from '../../src/dashboard/index';
+import { STAGE_SLUG_TO_TAB } from '../../src/dashboard/job-stages';
 import { html } from '../../src/html/dashboard-crystal';
-import { apiMe, apiLogout, isAuthed, clearAuthed } from '../../src/auth-client.js';
+import { apiMe, apiLogout, isAuthed, clearAuthed } from '../../src/auth-client';
 
 const ROLE_LABEL = { super_admin: 'Admin', org_admin: 'Org. Admin', member: 'Member' };
 
