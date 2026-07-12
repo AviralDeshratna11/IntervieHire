@@ -1,4 +1,4 @@
-import { document, window, setTimeout } from './runtime.js';
+import { document, setTimeout } from './runtime.js';
 import { escapeHTML } from './escape.js';
 import { EXPERIENCE_BANDS, DIFFICULTY_LEVELS } from './constants.js';
 import { saveStateToLocalStorage, generateResumeCriteriaSuggestions } from './ai-api.js';
@@ -7,11 +7,10 @@ import { navigateToJobDetail } from './job-detail.js';
 import { recalculateJobPipelines } from './kanban-swarm.js';
 import { navigateToTab, openDrawer } from './navigation.js';
 import { renderJobCards } from './render-views.js';
-import { renderCareerJobs } from './career-panel.js';
 import { soundEngine } from './sound.js';
 import { navigateToSourcing, showPremiumToast } from './sourcing.js';
 import { AppState } from './state.js';
-import { getDataSource, ENGINE_WEB_URL, apiCreateTestSession, apiPatchJobSettings } from './api.js';
+import { getDataSource, ENGINE_WEB_URL, apiCreateTestSession, apiUpdateJobStatus } from './api.js';
 import {
   ensureFunctionalBlueprint, computeCalibration, computeGenerationPlan, analyzeRequirements,
   generateFunctionalOutline, localFunctionalBlueprint, pinBlueprintToRequirements,
@@ -214,11 +213,7 @@ function openPublishJobModal(jobId) {
     if (roleName) job.roleName = roleName;
     job.tags = tagsVal ? tagsVal.split(',').map(t => t.trim()).filter(Boolean) : [];
     const prevStatus = job.status;
-    const prevListed = job.listedOnCareer;
     job.status = 'published';
-    // Auto-list on publish: a published job goes straight onto the public career
-    // page (careerPage.enabled below is local-only, so also persist is_job_listed).
-    job.listedOnCareer = true;
 
     if (job.pipelineConfig) {
       job.pipelineConfig.careerPage.enabled = true;
@@ -228,17 +223,13 @@ function openPublishJobModal(jobId) {
     }
 
     saveStateToLocalStorage();
-    renderCareerJobs(); // publish auto-lists → reflect it in the Career-view record panel
 
-    // Persist BOTH published status and career-page listing to the backend so they
-    // survive a refresh. The public career query requires status='published' AND
-    // is_job_listed=true, so set both together. hydrateJobs() replaces AppState.jobs
-    // with the backend list on reload, so an unpersisted publish reverts to 'draft'.
-    // Roll back if the backend rejects.
+    // Persist the published status to the backend so it survives a refresh.
+    // hydrateJobs() replaces AppState.jobs with the backend list on reload, so
+    // an unpersisted publish reverts to 'draft'. Roll back if the backend rejects.
     if (getDataSource() === 'api' && job._backend) {
-      apiPatchJobSettings(job.id, { status: 'published', is_job_listed: true }).catch((e) => {
+      apiUpdateJobStatus(job.id, 'published').catch((e) => {
         job.status = prevStatus;
-        job.listedOnCareer = prevListed;
         saveStateToLocalStorage();
         renderJobCards();
         showPremiumToast(`Couldn't publish: ${(e && e.message) || 'backend error'}`, 'error');
@@ -1185,8 +1176,13 @@ function renderScreeningConfig(job, panel) {
       </button>
     `;
   } else if (activeTab === 'test') {
-    // Test Interview is a recruiter-only preview — it must not list real candidates (P6).
-    // The responses table below shows a single row for the logged-in account instead.
+    const jobCandidates = AppState.candidates.filter(c => {
+      if (getDataSource() === 'api' && job._backend) {
+        return c.jobId === job.id;
+      }
+      return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+    });
+    const stageCandidates = jobCandidates.filter(c => c.status === 'Screening');
     const interviewSlug = (job.roleName || 'role').toLowerCase().replace(/[^a-z0-9]+/g, '-') + job.id.slice(0, 6);
     const interviewLink = `${ENGINE_WEB_URL}/interview/${interviewSlug}`;
 
@@ -1210,7 +1206,7 @@ function renderScreeningConfig(job, panel) {
 
         <div class="test-responses-section" style="margin-top:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:0.9rem; font-weight:700; color:var(--color-text-primary); margin:0;">Test Responses</h3>
+            <h3 style="font-size:0.9rem; font-weight:700; color:var(--color-text-primary); margin:0;">Screening Responses (${stageCandidates.length})</h3>
             <button class="btn-jf-edit" id="btn-regenerate-ai-resp" style="display:flex; align-items:center; gap:6px; font-size:0.75rem;">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
               Regenerate AI Response
@@ -1229,18 +1225,35 @@ function renderScreeningConfig(job, panel) {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>
-                    <div style="display:flex; flex-direction:column;">
-                      <span style="font-weight:600; font-size:0.82rem; color:var(--color-text-primary);">${escapeHTML(window.IH_USER_NAME || window.IH_ORG_NAME || 'You')}</span>
-                      <span style="font-size:0.72rem; color:var(--color-text-muted);">Your test session</span>
-                    </div>
-                  </td>
-                  <td style="font-size:0.78rem; color:var(--color-text-muted);">—</td>
-                  <td>${interviewStatusChip('Not Started')}</td>
-                  <td style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary);">—</td>
-                  <td style="text-align:right;">—</td>
-                </tr>
+                ${stageCandidates.length === 0 ? `
+                  <tr>
+                    <td colspan="5" style="text-align:center; padding:24px; color:var(--color-text-faint); font-size:0.8rem;">No responses for this stage yet. Try running a test session!</td>
+                  </tr>
+                ` : stageCandidates.map(c => {
+                  const hasReport = c.interviewStatus === 'Completed' || c.interviewStatus === 'Incomplete';
+                  const scoreLabel = c.interviewScore != null ? c.interviewScore : '—';
+                  return `
+                    <tr>
+                      <td>
+                        <div style="display:flex; flex-direction:column;">
+                          <span style="font-weight:600; font-size:0.82rem; color:var(--color-text-primary);">${escapeHTML(c.name)}</span>
+                          <span style="font-size:0.72rem; color:var(--color-text-muted);">${escapeHTML(c.email)}</span>
+                        </div>
+                      </td>
+                      <td style="font-size:0.78rem; color:var(--color-text-muted);">${c.attemptedAt || '—'}</td>
+                      <td>${interviewStatusChip(c.interviewStatus)}</td>
+                      <td style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary);">${scoreLabel}</td>
+                      <td style="text-align:right;">
+                        ${hasReport ? `
+                          <button class="btn-jf-edit btn-preview-report" data-cand-id="${c.id}" style="font-size:0.75rem; padding:4px 8px; display:inline-flex; align-items:center; gap:4px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            Preview
+                          </button>
+                        ` : '—'}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
           </div>
@@ -1690,8 +1703,13 @@ function renderFunctionalConfig(job, panel) {
       </button>
     `;
   } else if (activeTab === 'test') {
-    // Test Interview is a recruiter-only preview — it must not list real candidates (P6).
-    // The responses table below shows a single row for the logged-in account instead.
+    const jobCandidates = AppState.candidates.filter(c => {
+      if (getDataSource() === 'api' && job._backend) {
+        return c.jobId === job.id;
+      }
+      return c.jobApplied === job.roleName || c.jobApplied === job.cardName;
+    });
+    const stageCandidates = jobCandidates.filter(c => c.status === 'Functional');
     const interviewSlug = (job.roleName || 'role').toLowerCase().replace(/[^a-z0-9]+/g, '-') + job.id.slice(0, 6);
     const interviewLink = `${ENGINE_WEB_URL}/interview/${interviewSlug}`;
 
@@ -1715,7 +1733,7 @@ function renderFunctionalConfig(job, panel) {
 
         <div class="test-responses-section" style="margin-top:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <h3 style="font-size:0.9rem; font-weight:700; color:var(--color-text-primary); margin:0;">Test Responses</h3>
+            <h3 style="font-size:0.9rem; font-weight:700; color:var(--color-text-primary); margin:0;">Functional Responses (${stageCandidates.length})</h3>
             <button class="btn-jf-edit" id="btn-regenerate-ai-resp" style="display:flex; align-items:center; gap:6px; font-size:0.75rem;">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
               Regenerate AI Response
@@ -1734,18 +1752,35 @@ function renderFunctionalConfig(job, panel) {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>
-                    <div style="display:flex; flex-direction:column;">
-                      <span style="font-weight:600; font-size:0.82rem; color:var(--color-text-primary);">${escapeHTML(window.IH_USER_NAME || window.IH_ORG_NAME || 'You')}</span>
-                      <span style="font-size:0.72rem; color:var(--color-text-muted);">Your test session</span>
-                    </div>
-                  </td>
-                  <td style="font-size:0.78rem; color:var(--color-text-muted);">—</td>
-                  <td>${interviewStatusChip('Not Started')}</td>
-                  <td style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary);">—</td>
-                  <td style="text-align:right;">—</td>
-                </tr>
+                ${stageCandidates.length === 0 ? `
+                  <tr>
+                    <td colspan="5" style="text-align:center; padding:24px; color:var(--color-text-faint); font-size:0.8rem;">No responses for this stage yet. Try running a test session!</td>
+                  </tr>
+                ` : stageCandidates.map(c => {
+                  const hasReport = c.interviewStatus === 'Completed' || c.interviewStatus === 'Incomplete';
+                  const scoreLabel = c.interviewScore != null ? c.interviewScore : '—';
+                  return `
+                    <tr>
+                      <td>
+                        <div style="display:flex; flex-direction:column;">
+                          <span style="font-weight:600; font-size:0.82rem; color:var(--color-text-primary);">${escapeHTML(c.name)}</span>
+                          <span style="font-size:0.72rem; color:var(--color-text-muted);">${escapeHTML(c.email)}</span>
+                        </div>
+                      </td>
+                      <td style="font-size:0.78rem; color:var(--color-text-muted);">${c.attemptedAt || '—'}</td>
+                      <td>${interviewStatusChip(c.interviewStatus)}</td>
+                      <td style="font-size:0.82rem; font-weight:600; color:var(--color-text-primary);">${scoreLabel}</td>
+                      <td style="text-align:right;">
+                        ${hasReport ? `
+                          <button class="btn-jf-edit btn-preview-report" data-cand-id="${c.id}" style="font-size:0.75rem; padding:4px 8px; display:inline-flex; align-items:center; gap:4px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            Preview
+                          </button>
+                        ` : '—'}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
           </div>

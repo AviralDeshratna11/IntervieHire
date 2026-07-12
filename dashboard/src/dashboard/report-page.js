@@ -656,6 +656,7 @@ function renderTranscriptPane(candidate) {
 // ---------- Remarks / Actions ----------
 
 function renderRemarksPane(candidate, analysis) {
+  const remarks = candidate.remarks || [];
   const nextStage = getCandidateNextStage(candidate.status);
   const canAdvance = !!nextStage && (candidate.status !== 'Resume' || !!analysis);
   return `
@@ -663,6 +664,16 @@ function renderRemarksPane(candidate, analysis) {
       <h4 class="rp-card-title">Recruiter Notes</h4>
       <textarea class="rp-notes-area" id="rp-notes-area" placeholder="Add custom notes on notice buyout, communication flags, panel feedback…">${escapeHTML(candidate.recruiterNotes || '')}</textarea>
       <p class="rp-muted" id="rp-notes-saved">Notes save automatically when you click away.</p>
+    </div>
+    <div class="rp-card">
+      <h4 class="rp-card-title">Remarks Timeline</h4>
+      <div class="rp-remarks-feed" id="rp-remarks-feed">
+        ${remarks.length ? remarks.map(r => `<div class="rp-remark"><span class="rp-remark-time">${escapeHTML(r.at)}</span><p>${escapeHTML(r.text)}</p></div>`).join('') : '<p class="rp-muted">No remarks yet.</p>'}
+      </div>
+      <form class="rp-remark-form" id="rp-remark-form">
+        <input type="text" id="rp-remark-input" placeholder="Add a remark for the hiring panel…" autocomplete="off" />
+        <button type="submit">Add</button>
+      </form>
     </div>
     <div class="rp-card">
       <h4 class="rp-card-title">Stage Actions</h4>
@@ -773,6 +784,7 @@ async function openCandidateReportPage(candidateId, initialTab = 'overview') {
     { key: 'competencies', label: 'Competencies', icon: '☆' },
     { key: 'resume', label: 'Resume', icon: '🗎' },
     { key: 'screening', label: 'Recruiter Screening', icon: '☷', badge: candidate.recruiterScreening },
+    { key: 'analysis', label: 'Interview Analysis', icon: '📊' },
     { key: 'proctoring', label: 'Proctoring', icon: '◉' },
     { key: 'transcript', label: 'Transcript', icon: '🗩' },
   ];
@@ -812,6 +824,7 @@ async function openCandidateReportPage(candidateId, initialTab = 'overview') {
         <div class="rp-pane" data-rp-pane="competencies">${renderCompetenciesPane(candidate, analysis)}</div>
         <div class="rp-pane" data-rp-pane="resume">${await renderResumePane(candidate, analysis)}</div>
         <div class="rp-pane" data-rp-pane="screening">${renderScreeningPane(candidate)}</div>
+        <div class="rp-pane" data-rp-pane="analysis">${renderInterviewAnalysisPane(candidate, interviewReport)}</div>
         <div class="rp-pane" data-rp-pane="proctoring">${renderProctoringPane(candidate, interviewReport)}</div>
         <div class="rp-pane" data-rp-pane="transcript">${renderTranscriptPane(candidate)}</div>
         <div class="rp-pane" data-rp-pane="remarks">${renderRemarksPane(candidate, analysis)}</div>
@@ -951,6 +964,20 @@ function bindReportPage(candidate, job, analysis, root, initialTab = 'overview')
     const saved = root.querySelector('#rp-notes-saved');
     if (saved) { saved.textContent = 'Saved ✓'; setTimeout(() => { saved.textContent = 'Notes save automatically when you click away.'; }, 2000); }
   });
+  root.querySelector('#rp-remark-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = root.querySelector('#rp-remark-input');
+    const text = input.value.trim();
+    if (!text) return;
+    if (!candidate.remarks) candidate.remarks = [];
+    candidate.remarks.push({ text, at: new Date().toLocaleString() });
+    saveStateToLocalStorage();
+    input.value = '';
+    const feedEl = root.querySelector('#rp-remarks-feed');
+    feedEl.innerHTML = candidate.remarks.map(r => `<div class="rp-remark"><span class="rp-remark-time">${escapeHTML(r.at)}</span><p>${escapeHTML(r.text)}</p></div>`).join('');
+    soundEngine.playChime([523.25, 659.25], 0.1, 0.06);
+  });
+
   // Stage actions
   root.querySelector('#rp-btn-reject')?.addEventListener('click', async () => {
     const { updateCandidateStatus } = await import('./job-detail-panes.js');
@@ -966,4 +993,4 @@ function bindReportPage(candidate, job, analysis, root, initialTab = 'overview')
   });
 }
 
-export { openCandidateReportPage, downloadInterviewTranscript };
+export { openCandidateReportPage };

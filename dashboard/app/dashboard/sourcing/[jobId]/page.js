@@ -1,5 +1,5 @@
 'use client';
 
-export default function SourcingPage() {
+export default function SettingsGeneralPage() {
   return null;
 }
