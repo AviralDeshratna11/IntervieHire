@@ -1,6 +1,6 @@
-import { document, window } from './runtime.js';
-import { AppState } from './state.js';
-import { escapeHTML } from './escape.js';
+import { document, window } from './runtime';
+import { AppState } from './state';
+import { escapeHTML } from './escape';
 
 // "Jobs on your career page" — the dashboard-side record + quick-manage panel for
 // the Career view. Mirrors the dashboard's static-shell + dynamic-render

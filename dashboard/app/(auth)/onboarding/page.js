@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthShell, ErrorBanner, SubmitButton } from '../AuthShell';
-import { apiOnboarding, apiMe, isAuthed } from '../../../src/auth-client.js';
+import { apiOnboarding, apiMe, isAuthed } from '../../../src/auth-client';
 
 export default function OnboardingPage() {
   const router = useRouter();
