@@ -11,6 +11,7 @@ import { AppState } from './state';
 import { filterCandidatesByDateRange } from './render-views';
 import { soundEngine } from './sound';
 import { isApiMode, apiFetchCandidateReport, apiFetchTestReport } from './api';
+import type { Candidate, Job } from './types';
 
 const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role alignment'];
 
@@ -19,8 +20,8 @@ const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role al
 // yields a long, uneven skillScores list of raw snake_case keys. We map keys to
 // human labels, order by canonical priority (broadly-assessed core dimensions
 // first), and cap the list with a toggle — faithful to the data, just legible.
-const normKey = (k) => String(k || '').toLowerCase().replace(/\s+/g, '_');
-const DIM_LABELS = {
+const normKey = (k: unknown): string => String(k || '').toLowerCase().replace(/\s+/g, '_');
+const DIM_LABELS: Record<string, string> = {
   relevance: 'Relevance', correctness: 'Correctness', completeness: 'Completeness',
   depth: 'Depth', clarity: 'Clarity', communication: 'Communication', role_alignment: 'Role alignment',
   ownership: 'Ownership', impact: 'Impact', reflection: 'Reflection',
@@ -42,34 +43,34 @@ const DIM_LABELS = {
 const DIM_PRIORITY = ['correctness', 'algorithm_correctness', 'completeness', 'concept_coverage',
   'depth', 'depth_expansion', 'clarity', 'communication', 'relevance', 'role_alignment'];
 const DIM_CAP = 6;
-function prettyDim(key) {
+function prettyDim(key: unknown): string {
   const n = normKey(key);
   if (DIM_LABELS[n]) return DIM_LABELS[n];
   const s = n.replace(/_/g, ' ');
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
-function dimPriority(key) { const i = DIM_PRIORITY.indexOf(normKey(key)); return i === -1 ? 99 : i; }
+function dimPriority(key: unknown): number { const i = DIM_PRIORITY.indexOf(normKey(key)); return i === -1 ? 99 : i; }
 
-const RECO_META = {
+const RECO_META: Record<string, { label: string; color: string }> = {
   strong_proceed: { label: 'Strong proceed', color: '#2dd4bf' },
   proceed: { label: 'Proceed', color: '#34d399' },
   hold: { label: 'Hold', color: '#fbbf24' },
   reject: { label: 'Reject', color: '#f87171' },
   needs_human_review: { label: 'Needs review', color: '#fb923c' },
 };
-const SEV_COLOR = { low: '#9a9a9a', medium: '#fbbf24', high: '#fb923c', critical: '#f87171' };
-const CONF_COLOR = { high: '#34d399', medium: '#fbbf24', low: '#f87171' };
+const SEV_COLOR: Record<string, string> = { low: '#9a9a9a', medium: '#fbbf24', high: '#fb923c', critical: '#f87171' };
+const CONF_COLOR: Record<string, string> = { high: '#34d399', medium: '#fbbf24', low: '#f87171' };
 
-function scoreColor(s) {
+function scoreColor(s: number): string {
   if (s >= 88) return '#2dd4bf';
   if (s >= 72) return '#34d399';
   if (s >= 55) return '#fbbf24';
   return '#f87171';
 }
-const uniq = (a) => [...new Set((a || []).filter(Boolean))];
+const uniq = (a?: unknown[]): any[] => [...new Set((a || []).filter(Boolean))];
 
 // Deterministic PRNG so each candidate's sampled report is stable across renders.
-function rng(seedStr) {
+function rng(seedStr: string): () => number {
   let h = 2166136261;
   for (let i = 0; i < seedStr.length; i++) h = Math.imul(h ^ seedStr.charCodeAt(i), 16777619);
   return () => {
@@ -85,24 +86,27 @@ const GENERIC_Q = [
   { prompt: 'How would you explain your work to someone outside your field?', questionType: 'behavioral', topic: 'Communication', rubric: { requiredPoints: [{ description: 'Plain language, no jargon' }], redFlags: [] } },
 ];
 
-export function buildSampleCandidateReport(candidate, job) {
+export function buildSampleCandidateReport(candidate: Candidate, job: Job) {
   const rand = rng(candidate.id || candidate.name || 'seed');
-  const anchor = Number.isFinite(candidate.interviewScore) ? candidate.interviewScore : Math.round(55 + rand() * 40);
-  const vary = (base, spread) => Math.max(10, Math.min(100, Math.round(base + (rand() * 2 - 1) * spread)));
+  const anchor = Number.isFinite(candidate.interviewScore) ? (candidate.interviewScore as number) : Math.round(55 + rand() * 40);
+  const vary = (base: number, spread: number): number => Math.max(10, Math.min(100, Math.round(base + (rand() * 2 - 1) * spread)));
 
-  const topics = (job.functionalParameters && job.functionalParameters.topics) || [];
-  let items = topics.flatMap((t) => t.questions.map((q) => ({ q, topicName: t.name })));
+  // Blueprint topics are loosely typed on Job (topics: unknown[]); treat as any[]
+  // and guard each topic's `questions` so a topic authored without questions can't
+  // throw here (the real engine tolerates sparse blueprints).
+  const topics = ((job.functionalParameters && job.functionalParameters.topics) || []) as any[];
+  let items = topics.flatMap((t: any) => (t.questions || []).map((q: any) => ({ q, topicName: t.name })));
   if (!items.length) items = GENERIC_Q.map((q) => ({ q, topicName: q.topic }));
 
   const questionBreakdown = items.map((item, i) => {
     const qScore = vary(anchor, 16);
-    const reqs = (item.q.rubric?.requiredPoints || []).map((p) => p.description).filter(Boolean);
+    const reqs = (item.q.rubric?.requiredPoints || []).map((p: any) => p.description).filter(Boolean);
     const splitAt = Math.max(0, Math.round(reqs.length * (0.4 + rand() * 0.5)));
     const covered = reqs.slice(0, splitAt);
     const missed = reqs.slice(splitAt);
     // Seed per-dimension grounding so the evidence UI is demonstrable offline.
     // The real engine populates evidence[] with verbatim transcript quotes.
-    const dimensionScores = {};
+    const dimensionScores: Record<string, any> = {};
     DIMENSIONS.forEach((d, di) => {
       const dScore = vary(qScore, 12);
       const src = covered.length ? covered[(i + di) % covered.length] : null;
@@ -135,20 +139,23 @@ export function buildSampleCandidateReport(candidate, job) {
     };
   });
 
-  const overallScore = Math.round(questionBreakdown.reduce((a, r) => a + r.overallScore, 0) / questionBreakdown.length);
+  // GENERIC_Q guarantees ≥1 item, but guard the divisor anyway so a future empty
+  // path can never produce NaN scores.
+  const denom = Math.max(1, questionBreakdown.length);
+  const overallScore = Math.round(questionBreakdown.reduce((a, r) => a + r.overallScore, 0) / denom);
   const allFlags = questionBreakdown.flatMap((r) => r.redFlags);
   const hasCritical = allFlags.some((f) => f.severity === 'critical');
   const hasHigh = allFlags.some((f) => f.severity === 'high');
   let recommendation = overallScore >= 88 ? 'strong_proceed' : overallScore >= 72 ? 'proceed' : overallScore >= 55 ? 'hold' : 'reject';
   if (hasHigh && overallScore < 80) recommendation = 'hold';
   if (hasCritical) recommendation = 'needs_human_review';
-  const lowR = questionBreakdown.filter((r) => r.evaluationConfidence === 'low').length / questionBreakdown.length;
-  const highR = questionBreakdown.filter((r) => r.evaluationConfidence === 'high').length / questionBreakdown.length;
+  const lowR = questionBreakdown.filter((r) => r.evaluationConfidence === 'low').length / denom;
+  const highR = questionBreakdown.filter((r) => r.evaluationConfidence === 'high').length / denom;
   const recommendationConfidence = lowR >= 0.35 ? 'low' : highR >= 0.6 ? 'high' : 'medium';
 
   const skillScores = DIMENSIONS.map((d) => ({
     skill: d,
-    score: Math.round(questionBreakdown.reduce((a, r) => a + (r.dimensionScores[d]?.score || 0), 0) / questionBreakdown.length),
+    score: Math.round(questionBreakdown.reduce((a, r) => a + (r.dimensionScores[d]?.score || 0), 0) / denom),
     evidenceAnswerIds: questionBreakdown.map((r) => r.answerId),
   }));
 
@@ -160,7 +167,7 @@ export function buildSampleCandidateReport(candidate, job) {
     overallScore,
     recommendation,
     recommendationConfidence,
-    summary: `Candidate scored ${overallScore}/100 with a ${RECO_META[recommendation].label.toLowerCase()} recommendation and ${recommendationConfidence} confidence based on transcript-only evaluation.`,
+    summary: `Candidate scored ${overallScore}/100 with a ${(RECO_META[recommendation] || RECO_META.hold).label.toLowerCase()} recommendation and ${recommendationConfidence} confidence based on transcript-only evaluation.`,
     strengths: uniq(questionBreakdown.flatMap((r) => r.strengths)).slice(0, 6),
     weaknesses: uniq(questionBreakdown.flatMap((r) => r.weaknesses)).slice(0, 6),
     redFlags: allFlags,
@@ -171,25 +178,36 @@ export function buildSampleCandidateReport(candidate, job) {
   };
 }
 
-const daUi = { selectedId: null, openAnswerId: null, showAllDims: false, openDimKey: null, testOpen: false, hiringFilter: 'all' };
+// Transient per-view UI state. Typed explicitly so the ids/keys can hold a string
+// once a candidate/answer/dimension is selected (a bare literal would infer `null`
+// and reject those assignments).
+interface DaUiState {
+  selectedId: string | null;
+  openAnswerId: string | null;
+  showAllDims: boolean;
+  openDimKey: string | null;
+  testOpen: boolean;
+  hiringFilter: string;
+}
+const daUi: DaUiState = { selectedId: null, openAnswerId: null, showAllDims: false, openDimKey: null, testOpen: false, hiringFilter: 'all' };
 
 // Live (api mode) report cache: candidateId -> { state:'loading'|'ready'|'pending'|'error', report?, error? }.
-const liveReports = new Map();
+const liveReports = new Map<string, { state: string; report?: any; error?: string }>();
 
 // "Run test interview" result cache: jobId -> { state:'loading'|'ready'|'none', report? }.
 // Test interviews use a throwaway candidate that's excluded from the roster/funnel,
 // so its report is fetched and shown separately, never added to AppState.candidates.
-const testReports = new Map();
+const testReports = new Map<string, { state: string; report?: any }>();
 
 // Render the job's test-interview result as a separate, collapsible card above the
 // roster — additive only: it does not enter AppState.candidates, the roster, or the
 // stat strip, so the funnel and analytics counts are unaffected.
-function testInterviewSection(job, container) {
+function testInterviewSection(job: Job, container: any): string {
   const entry = testReports.get(job.id);
   if (!entry) {
     testReports.set(job.id, { state: 'loading' });
     apiFetchTestReport(job.id)
-      .then((rep) => testReports.set(job.id, rep ? { state: 'ready', report: rep } : { state: 'none' }))
+      .then((rep: any) => testReports.set(job.id, rep ? { state: 'ready', report: rep } : { state: 'none' }))
       .catch(() => testReports.set(job.id, { state: 'none' }))
       .finally(() => { if (AppState.activeJobId === job.id && !daUi.selectedId) renderDeepAnalysisPane(job, container); });
     return '';
@@ -211,9 +229,9 @@ function testInterviewSection(job, container) {
     </div>`;
 }
 
-const hasFunctional = (c) => c.interviewStatus === 'Completed' && Number.isFinite(c.interviewScore);
-const hasResume = (c) => !!c.resumeAnalysis || c.matchScore != null;
-const hasScreening = (c) => !!c.recruiterScreening || c.recruiterScreeningScore != null;
+const hasFunctional = (c: Candidate): boolean => c.interviewStatus === 'Completed' && Number.isFinite(c.interviewScore);
+const hasResume = (c: Candidate): boolean => !!c.resumeAnalysis || c.matchScore != null;
+const hasScreening = (c: Candidate): boolean => !!c.recruiterScreening || c.recruiterScreeningScore != null;
 
 // ── R / S / F funnel chips ──────────────────────────────────────────────────
 // Each hiring stage (Resume → Screening → Functional) resolves to one state:
@@ -225,15 +243,15 @@ const hasScreening = (c) => !!c.recruiterScreening || c.recruiterScreeningScore 
 // the earlier ones green (you cleared them to get there), and a rejection greys out
 // every stage after it (those never happened). So a resume-rejected candidate reads
 // R red · S grey · F grey, exactly as the recruiter sees the pipeline.
-const STAGE_STATE_STYLE = {
+const STAGE_STATE_STYLE: Record<string, { color: string; bg: string; border: string; tip: string }> = {
   pass: { color: '#34d399', bg: 'rgba(52,211,153,.16)', border: 'rgba(52,211,153,.45)', tip: 'cleared' },
   reject: { color: '#f87171', bg: 'rgba(248,113,113,.16)', border: 'rgba(248,113,113,.45)', tip: 'rejected' },
   active: { color: '#fbbf24', bg: 'rgba(251,191,36,.18)', border: 'rgba(251,191,36,.5)', tip: 'in progress' },
   idle: { color: '#94a3b8', bg: 'rgba(148,163,184,.12)', border: 'rgba(148,163,184,.3)', tip: 'not reached' },
 };
 
-function deriveStageStates(c) {
-  const inList = (v, arr) => arr.indexOf(v) !== -1;
+function deriveStageStates(c: Candidate): { resume: string; screening: string; functional: string } {
+  const inList = (v: any, arr: string[]): boolean => arr.indexOf(v) !== -1;
 
   // Per-stage raw signals off the candidate object (see mapApplicantOutToCandidate).
   const screeningCompleted = c.screeningStatus === 'Completed' || !!c.recruiterScreening || c.recruiterScreeningScore != null;
@@ -297,27 +315,29 @@ function deriveStageStates(c) {
 // Deep Analysis now holds ALL THREE result blocks per candidate (resume, screening,
 // functional), so the roster includes anyone with at least one result — not just
 // candidates who finished the interview (which left the tab empty pre-interview).
-function rosterCandidates(job) {
+function rosterCandidates(job: Job): Candidate[] {
   return filterCandidatesByDateRange(AppState.candidates)
-    .filter((c) => (c.jobApplied === job.roleName || c.jobApplied === job.cardName) && (hasResume(c) || hasScreening(c) || hasFunctional(c)));
+    .filter((c: Candidate) => (c.jobApplied === job.roleName || c.jobApplied === job.cardName) && (hasResume(c) || hasScreening(c) || hasFunctional(c)));
 }
 
 // One headline number per candidate: functional score if interviewed, else resume
 // match, else screening score. Null when nothing numeric exists yet.
-function headlineScore(c) {
-  if (hasFunctional(c)) return Math.round(c.interviewScore);
-  const m = (c.resumeAnalysis && c.resumeAnalysis.matchScore) ?? c.matchScore;
+function headlineScore(c: Candidate): number | null {
+  if (hasFunctional(c)) return Math.round(c.interviewScore as number);
+  const ra = c.resumeAnalysis as any;
+  const m = (ra && ra.matchScore) ?? c.matchScore;
   if (Number.isFinite(m)) return Math.round(m);
-  if (Number.isFinite(c.recruiterScreeningScore)) return Math.round(c.recruiterScreeningScore);
+  if (Number.isFinite(c.recruiterScreeningScore)) return Math.round(c.recruiterScreeningScore as number);
   return null;
 }
 
-function rosterEntry(c) {
+function rosterEntry(c: Candidate) {
   const score = headlineScore(c);
+  const ra = c.resumeAnalysis as any;
   let recommendation = 'hold';
-  if (hasFunctional(c)) recommendation = recoFromScore(score);
-  else if (c.resumeAnalysis && c.resumeAnalysis.recommendation) {
-    const r = c.resumeAnalysis.recommendation;
+  if (hasFunctional(c)) recommendation = recoFromScore(score ?? 0);
+  else if (ra && ra.recommendation) {
+    const r = ra.recommendation;
     recommendation = r === 'Advance' ? 'proceed' : r === 'Reject' ? 'reject' : 'hold';
   } else if (c.recruiterScreening) {
     recommendation = c.recruiterScreening === 'Good fit' ? 'proceed' : c.recruiterScreening === 'Poor fit' ? 'reject' : 'hold';
@@ -325,9 +345,9 @@ function rosterEntry(c) {
   return { candidate: c, report: { overallScore: score, recommendation, recommendationConfidence: 'medium', redFlags: [], stages: { resume: hasResume(c), screening: hasScreening(c), functional: hasFunctional(c) } } };
 }
 
-const initials = (name) => (name || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const initials = (name: string | null | undefined): string => (name || '?').split(/\s+/).map((w) => w[0] || '').slice(0, 2).join('').toUpperCase();
 
-export function renderDeepAnalysisPane(job, container) {
+export function renderDeepAnalysisPane(job: Job, container: any): void {
   if (!job || !container) return;
   const apiLive = isApiMode() && !!job._backend;
   // The test-interview result renders above the roster (api mode only). It's fetched
@@ -337,19 +357,19 @@ export function renderDeepAnalysisPane(job, container) {
     .sort((a, b) => (b.report.overallScore ?? -1) - (a.report.overallScore ?? -1));
   if (!entries.length) { container.innerHTML = `<div class="da-intel">${testHTML}${emptyState(apiLive)}</div>`; bind(container, job); return; }
 
-  const selected = daUi.selectedId && entries.find((e) => e.candidate.id === daUi.selectedId);
+  const selected = daUi.selectedId ? entries.find((e) => e.candidate.id === daUi.selectedId) : null;
   if (!selected) { container.innerHTML = `<div class="da-intel">${testHTML}${rosterMarkup(job, entries)}</div>`; bind(container, job); return; }
   renderDetail(job, container, selected.candidate);
 }
 
 // ── Live path (real backend) ──────────────────────────────────────────────────
-const recoFromScore = (s) => (s >= 88 ? 'strong_proceed' : s >= 72 ? 'proceed' : s >= 55 ? 'hold' : 'reject');
+const recoFromScore = (s: number): string => (s >= 88 ? 'strong_proceed' : s >= 72 ? 'proceed' : s >= 55 ? 'hold' : 'reject');
 // Detail: three stacked blocks. Resume + screening render synchronously off the
 // candidate object; the functional block is sampled in local mode, or fetched live
 // in api mode (loading → ready/pending/error) without blocking the other two.
-function renderDetail(job, container, candidate) {
+function renderDetail(job: Job, container: any, candidate: Candidate): void {
   const apiLive = isApiMode() && !!job._backend;
-  let functionalHTML;
+  let functionalHTML: string;
   if (!hasFunctional(candidate)) {
     functionalHTML = `<div class="da-li muted">No functional interview completed yet.</div>`;
   } else if (!apiLive) {
@@ -360,7 +380,7 @@ function renderDetail(job, container, candidate) {
       liveReports.set(candidate.id, { state: 'loading' });
       apiFetchCandidateReport(candidate.id)
         .then((rep) => liveReports.set(candidate.id, rep && Array.isArray(rep.questionBreakdown) ? { state: 'ready', report: rep } : { state: 'pending' }))
-        .catch((e) => liveReports.set(candidate.id, { state: 'error', error: (e && e.message) || '' }))
+        .catch((e: any) => liveReports.set(candidate.id, { state: 'error', error: (e && e.message) || '' }))
         .finally(() => { if (daUi.selectedId === candidate.id && AppState.activeJobId === job.id) renderDeepAnalysisPane(job, container); });
       functionalHTML = functionalPending('loading');
     } else if (entry.state === 'ready') {
@@ -373,7 +393,7 @@ function renderDetail(job, container, candidate) {
   bind(container, job);
 }
 
-function functionalPending(state, error) {
+function functionalPending(state: string, error?: string): string {
   const msg = state === 'loading'
     ? ['Loading evaluation…', 'Fetching this candidate’s interview report from the backend.']
     : state === 'error'
@@ -382,13 +402,13 @@ function functionalPending(state, error) {
   return `<div class="da-pending ${state === 'loading' ? 'is-loading' : ''}"><div class="da-pending-state">${escapeHTML(msg[0])}</div><div class="da-pending-desc">${escapeHTML(msg[1])}</div></div>`;
 }
 
-function sectionEmpty(title, copy) {
+function sectionEmpty(title: string, copy: string): string {
   return `<div class="da-section"><h3 class="da-section-title">${escapeHTML(title)}</h3><div class="da-li muted">${escapeHTML(copy)}</div></div>`;
 }
 
 // Resume analysis block — match score + recommendation + evidenced strengths/gaps.
-function resumeBlock(c) {
-  const a = c.resumeAnalysis;
+function resumeBlock(c: Candidate): string {
+  const a = c.resumeAnalysis as any;
   const score = (a && a.matchScore) ?? c.matchScore;
   if (!a && score == null) return sectionEmpty('Resume analysis', 'Not analysed yet — run resume analysis on this candidate to populate this block.');
   const reco = a && a.recommendation;
@@ -400,14 +420,14 @@ function resumeBlock(c) {
       <h3 class="da-section-title">Resume analysis${score != null ? `<span class="da-dim-count" style="color:${scoreColor(score)};">${Math.round(score)}</span>` : ''}${reco ? `<span class="da-reco-chip" style="color:${recoColor};border-color:${recoColor}40;background:${recoColor}14;">${escapeHTML(reco)}</span>` : ''}</h3>
       ${strengths.length || gaps.length ? `
         <div class="da-cols">
-          <div class="da-section da-half"><h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Strengths</h3>${strengths.length ? strengths.slice(0, 3).map((s) => `<div class="da-li ok">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}</div>
-          <div class="da-section da-half"><h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/></svg> Gaps</h3>${gaps.length ? gaps.slice(0, 3).map((s) => `<div class="da-li warn">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}</div>
+          <div class="da-section da-half"><h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Strengths</h3>${strengths.length ? strengths.slice(0, 3).map((s: any) => `<div class="da-li ok">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}</div>
+          <div class="da-section da-half"><h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/></svg> Gaps</h3>${gaps.length ? gaps.slice(0, 3).map((s: any) => `<div class="da-li warn">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}</div>
         </div>` : '<div class="da-li muted">Analysis recorded — open the full report for the breakdown.</div>'}
     </div>`;
 }
 
 // Recruiter screening block — verdict + parameter match score + status.
-function screeningBlock(c) {
+function screeningBlock(c: Candidate): string {
   const verdict = c.recruiterScreening;
   const score = c.recruiterScreeningScore;
   if (!verdict && score == null) return sectionEmpty('Recruiter screening', 'Not screened yet — results appear here once the candidate completes the screening stage.');
@@ -419,7 +439,7 @@ function screeningBlock(c) {
     </div>`;
 }
 
-function detailShell(candidate, functionalHTML) {
+function detailShell(candidate: Candidate, functionalHTML: string): string {
   return `
     <div class="da-detail-head">
       <button class="da-back" data-action="back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> All candidates</button>
@@ -440,7 +460,7 @@ function detailShell(candidate, functionalHTML) {
     </div>`;
 }
 
-function emptyState(apiMode) {
+function emptyState(apiMode?: boolean): string {
   const desc = 'Run resume analysis, recruiter screening or the AI interview on a candidate and they appear here — each row holds all three result blocks, ranked by score, drilling into one full evaluation report.';
   return `
   <div class="da-empty">
@@ -450,8 +470,8 @@ function emptyState(apiMode) {
   </div>`;
 }
 
-function rosterMarkup(job, reports) {
-  const dist = {};
+function rosterMarkup(job: Job, reports: any[]): string {
+  const dist: Record<string, number> = {};
   reports.forEach((r) => { dist[r.report.recommendation] = (dist[r.report.recommendation] || 0) + 1; });
   const scored = reports.map((r) => r.report.overallScore).filter((s) => Number.isFinite(s));
   const avg = scored.length ? Math.round(scored.reduce((a, s) => a + s, 0) / scored.length) : 0;
@@ -488,11 +508,11 @@ function rosterMarkup(job, reports) {
     </div>`;
 }
 
-function rosterRow({ candidate, report }, i) {
+function rosterRow({ candidate, report }: { candidate: Candidate; report: any }, i: number): string {
   const reco = RECO_META[report.recommendation] || RECO_META.hold;
   const s = report.overallScore;
   const ss = deriveStageStates(candidate);
-  const dot = (state, label) => {
+  const dot = (state: string, label: string): string => {
     const v = STAGE_STATE_STYLE[state] || STAGE_STATE_STYLE.idle;
     return `<span title="${label} — ${v.tip}" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:5px;font-size:10px;font-weight:700;background:${v.bg};color:${v.color};border:1px solid ${v.border};">${label[0]}</span>`;
   };
@@ -514,14 +534,14 @@ function rosterRow({ candidate, report }, i) {
 // The structured (aviral) report is nested under `.structured`, or is the report
 // itself when generated standalone. Holds the score breakdown (45/55 − penalty
 // formula) and the real proctoring summary. null until the engine scores it.
-function getStructuredReport(report) {
+function getStructuredReport(report: any): any {
   if (!report) return null;
   if (report.structured && report.structured.scoreBreakdown) return report.structured;
   if (report.scoreBreakdown) return report;
   return null;
 }
 
-function dlTranscriptBtn(candidate) {
+function dlTranscriptBtn(candidate?: Candidate | null): string {
   if (!candidate || !candidate.id) return '';
   return `<button class="da-dl-transcript" data-action="dl-transcript" data-cid="${escapeHTML(candidate.id)}" data-name="${escapeHTML(candidate.name || '')}" style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);color:#cfcfcf;border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;">⬇ Download transcript</button>`;
 }
@@ -530,7 +550,7 @@ function dlTranscriptBtn(candidate) {
 // real proctoring/integrity summary. This is the "Interview Analysis" content,
 // folded into Deep Analysis so there's no separate tab. Shown only when the
 // engine produced a structured report; otherwise just offers the transcript.
-function structuredAnalysisSection(report, candidate) {
+function structuredAnalysisSection(report: any, candidate?: Candidate | null): string {
   const s = getStructuredReport(report);
   const dl = dlTranscriptBtn(candidate);
   if (!s) {
@@ -540,9 +560,9 @@ function structuredAnalysisSection(report, candidate) {
   const sb = s.scoreBreakdown || {};
   const proc = s.proctoring || null;
   const finalScore = Math.round(sb.finalScore != null ? sb.finalScore : (s.overallScore || 0));
-  const penTone = (v) => ((v || 0) > 0 ? '#f87171' : '#34d399');
+  const penTone = (v: number): string => ((v || 0) > 0 ? '#f87171' : '#34d399');
 
-  const cell = (label, value, color) => `
+  const cell = (label: string, value: string | number, color?: string): string => `
     <div class="da-stat" style="align-items:flex-start;text-align:left;">
       <span class="da-stat-num"${color ? ` style="color:${color};"` : ''}>${value}</span>
       <span class="da-stat-label">${escapeHTML(label)}</span>
@@ -564,7 +584,7 @@ function structuredAnalysisSection(report, candidate) {
     <div class="da-section">
       <h3 class="da-section-title">Proctoring &amp; integrity<span class="da-dim-count" style="color:${(proc.totalEvents || violations.length) ? '#fb923c' : '#34d399'};">${proc.totalEvents != null ? proc.totalEvents : violations.length}</span></h3>
       ${violations.length
-        ? violations.map((v) => `<div class="da-flag"><span class="da-sev" style="color:${SEV_COLOR[String(v.severity || '').toLowerCase()] || '#9a9a9a'};background:${(SEV_COLOR[String(v.severity || '').toLowerCase()] || '#9a9a9a')}1a;">${escapeHTML(String(v.severity || 'flag'))}</span><span class="da-flag-text">${escapeHTML(String(v.eventType || 'Violation').replace(/_/g, ' '))}${v.detail ? ` — ${escapeHTML(v.detail)}` : ''}</span></div>`).join('')
+        ? violations.map((v: any) => `<div class="da-flag"><span class="da-sev" style="color:${SEV_COLOR[String(v.severity || '').toLowerCase()] || '#9a9a9a'};background:${(SEV_COLOR[String(v.severity || '').toLowerCase()] || '#9a9a9a')}1a;">${escapeHTML(String(v.severity || 'flag'))}</span><span class="da-flag-text">${escapeHTML(String(v.eventType || 'Violation').replace(/_/g, ' '))}${v.detail ? ` — ${escapeHTML(v.detail)}` : ''}</span></div>`).join('')
         : '<div class="da-li ok">No integrity violations logged during this interview.</div>'}
     </div>` : '';
 
@@ -577,10 +597,10 @@ function structuredAnalysisSection(report, candidate) {
     ${proctoringBlock}`;
 }
 
-function functionalReportBody(report, candidate) {
+function functionalReportBody(report: any, candidate?: Candidate | null): string {
   const reco = RECO_META[report.recommendation] || RECO_META.hold;
   const band = scoreColor(report.overallScore);
-  const critical = (report.redFlags || []).filter((f) => f.severity === 'critical');
+  const critical = (report.redFlags || []).filter((f: any) => f.severity === 'critical');
   return `
     ${critical.length ? `<div class="da-critical-banner"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Critical red flag — human review required before any decision.</div>` : ''}
 
@@ -601,29 +621,29 @@ function functionalReportBody(report, candidate) {
     <div class="da-cols">
       <div class="da-section da-half">
         <h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Strengths</h3>
-        ${report.strengths.length ? report.strengths.map((s) => `<div class="da-li ok">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}
+        ${report.strengths.length ? report.strengths.map((s: any) => `<div class="da-li ok">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}
       </div>
       <div class="da-section da-half">
         <h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/></svg> Weaknesses</h3>
-        ${report.weaknesses.length ? report.weaknesses.map((s) => `<div class="da-li warn">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}
+        ${report.weaknesses.length ? report.weaknesses.map((s: any) => `<div class="da-li warn">${escapeHTML(s)}</div>`).join('') : '<div class="da-li muted">None surfaced.</div>'}
       </div>
     </div>
 
     ${report.redFlags.length ? `
       <div class="da-section">
         <h3 class="da-section-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg> Red flags</h3>
-        ${report.redFlags.map((f) => `<div class="da-flag"><span class="da-sev" style="color:${SEV_COLOR[f.severity]};background:${SEV_COLOR[f.severity]}1a;">${f.severity}</span><span class="da-flag-text">${escapeHTML(f.label)}</span></div>`).join('')}
+        ${report.redFlags.map((f: any) => `<div class="da-flag"><span class="da-sev" style="color:${SEV_COLOR[f.severity]};background:${SEV_COLOR[f.severity]}1a;">${f.severity}</span><span class="da-flag-text">${escapeHTML(f.label)}</span></div>`).join('')}
       </div>` : ''}
 
     <div class="da-section">
       <h3 class="da-section-title">Per-question breakdown</h3>
-      ${report.questionBreakdown.map((r) => answerCard(r)).join('')}
+      ${report.questionBreakdown.map((r: any) => answerCard(r)).join('')}
     </div>
 
     ${report.suggestedNextSteps.length ? `
       <div class="da-section">
         <h3 class="da-section-title">Suggested next steps</h3>
-        ${report.suggestedNextSteps.map((s) => `<div class="da-li step">${escapeHTML(s)}</div>`).join('')}
+        ${report.suggestedNextSteps.map((s: any) => `<div class="da-li step">${escapeHTML(s)}</div>`).join('')}
       </div>` : ''}
 
     ${structuredAnalysisSection(report, candidate)}`;
@@ -632,10 +652,10 @@ function functionalReportBody(report, candidate) {
 // "Evaluation dimensions" — the engine can return 15+ raw dimensions across a
 // mixed interview. Normalise labels, rank by priority then evidence breadth then
 // score, and cap to DIM_CAP with a toggle so the list reads short and even.
-function dimensionsSection(skillScores) {
+function dimensionsSection(skillScores: any[]): string {
   const dims = (skillScores || [])
-    .filter((s) => s && Number.isFinite(s.score))
-    .map((s) => ({ key: s.skill, label: prettyDim(s.skill), score: s.score, n: (s.evidenceAnswerIds || []).length }))
+    .filter((s: any) => s && Number.isFinite(s.score))
+    .map((s: any) => ({ key: s.skill, label: prettyDim(s.skill), score: s.score, n: (s.evidenceAnswerIds || []).length }))
     .sort((a, b) => dimPriority(a.key) - dimPriority(b.key) || b.n - a.n || b.score - a.score);
   if (!dims.length) return '';
 
@@ -652,17 +672,17 @@ function dimensionsSection(skillScores) {
     </div>`;
 }
 
-function dimRow(d) {
+function dimRow(d: { label: string; score: number }): string {
   const c = scoreColor(d.score);
   return `<div class="da-dim"><span class="da-dim-name" title="${escapeHTML(d.label)}">${escapeHTML(d.label)}</span><span class="da-dim-track"><span class="da-dim-fill" style="width:${d.score}%;background:${c};"></span></span><span class="da-dim-score" style="color:${c};">${d.score}</span></div>`;
 }
 
-function answerCard(r) {
+function answerCard(r: any): string {
   const open = daUi.openAnswerId === r.answerId;
   const c = scoreColor(r.overallScore);
   const mac = r.modelAnswerComparison || {};
   const dims = Object.entries(r.dimensionScores)
-    .map(([d, v]) => ({
+    .map(([d, v]: [string, any]) => ({
       key: d, label: prettyDim(d), score: v.score, reason: v.reason || '',
       evidence: (v.evidence || []).filter(Boolean), missing: (v.missing || []).filter(Boolean),
     }))
@@ -692,8 +712,8 @@ function answerCard(r) {
         ${openDim ? dimEvidence(openDim) : ''}
         ${(mac.coveredRequiredPoints || []).length || (mac.missedRequiredPoints || []).length ? `
           <div class="da-mac">
-            ${(mac.coveredRequiredPoints || []).map((p) => `<div class="da-mac-row ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>${escapeHTML(p)}</div>`).join('')}
-            ${(mac.missedRequiredPoints || []).map((p) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(p)}</div>`).join('')}
+            ${(mac.coveredRequiredPoints || []).map((p: any) => `<div class="da-mac-row ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>${escapeHTML(p)}</div>`).join('')}
+            ${(mac.missedRequiredPoints || []).map((p: any) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(p)}</div>`).join('')}
           </div>` : ''}
         <p class="da-ans-summary">${escapeHTML(r.summary)}</p>
       </div>` : ''}
@@ -703,19 +723,19 @@ function answerCard(r) {
 // Evidence panel for one dimension: the model's reason, the transcript quote(s)
 // it cited, and any required point it found missing. This is the grounding that
 // turns a bare score into something a recruiter can audit.
-function dimEvidence(d) {
+function dimEvidence(d: { label: string; score: number; reason: string; evidence: any[]; missing: any[] }): string {
   const c = scoreColor(d.score);
   return `
   <div class="da-evidence">
     <div class="da-evidence-head"><span class="da-evidence-dim" style="border-color:${c}66;color:${c};">${escapeHTML(d.label)} · ${d.score}</span>${d.reason ? `<span class="da-evidence-reason">${escapeHTML(d.reason)}</span>` : ''}</div>
-    ${d.evidence.map((q) => `<blockquote class="da-quote">${escapeHTML(q)}</blockquote>`).join('')}
-    ${d.missing.map((m) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(m)}</div>`).join('')}
+    ${d.evidence.map((q: any) => `<blockquote class="da-quote">${escapeHTML(q)}</blockquote>`).join('')}
+    ${d.missing.map((m: any) => `<div class="da-mac-row miss"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>${escapeHTML(m)}</div>`).join('')}
     ${!d.evidence.length && !d.missing.length && !d.reason ? '<p class="da-evidence-empty">No transcript evidence was captured for this dimension.</p>' : ''}
   </div>`;
 }
 
-function bind(container, job) {
-  container.onclick = (e) => {
+function bind(container: any, job: Job): void {
+  container.onclick = (e: any) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
@@ -729,7 +749,7 @@ function bind(container, job) {
     else if (action === 'toggle-dims') { daUi.showAllDims = !daUi.showAllDims; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
     else if (action === 'toggle-dim') { const k = `${el.dataset.aid}::${el.dataset.dim}`; daUi.openDimKey = daUi.openDimKey === k ? null : k; soundEngine.playClick(); renderDeepAnalysisPane(job, container); }
   };
-  container.onkeydown = (e) => {
+  container.onkeydown = (e: any) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const t = e.target;
     if (t.classList && t.classList.contains('da-row')) {
@@ -740,7 +760,7 @@ function bind(container, job) {
   };
   // Hiring-decision filter dropdown (P8). Re-assigned each render like onclick/onkeydown,
   // so it never stacks listeners.
-  container.onchange = (e) => {
+  container.onchange = (e: any) => {
     const sel = e.target.closest && e.target.closest('.da-filter');
     if (!sel) return;
     daUi.hiringFilter = sel.value;

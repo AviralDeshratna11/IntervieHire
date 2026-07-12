@@ -1,6 +1,7 @@
 import { document, window } from './runtime';
 import { AppState } from './state';
 import { escapeHTML } from './escape';
+import type { Job } from './types';
 
 // "Jobs on your career page" — the dashboard-side record + quick-manage panel for
 // the Career view. Mirrors the dashboard's static-shell + dynamic-render
@@ -16,19 +17,19 @@ import { escapeHTML } from './escape';
 // backend public career query EXACTLY (public.py: is_job_listed==True AND
 // status=='published'), so the panel is a faithful record of what a candidate
 // actually sees at /careers/<subdomain> — it never claims a job is live that isn't.
-function careerJobs() {
-  return AppState.jobs.filter(j => j.listedOnCareer === true && j.status === 'published');
+function careerJobs(): Job[] {
+  return AppState.jobs.filter((j) => j.listedOnCareer === true && j.status === 'published');
 }
 
 // Build the panel's inner HTML: a <ul> of career-live jobs, or an empty state.
 // `careerUrl` is the public page base (https://interviehire.com/careers/<sub>);
 // it's empty when no subdomain is known yet, which renders "View live" disabled.
-export function buildCareerJobsPanel(jobs, careerUrl) {
+export function buildCareerJobsPanel(jobs: Job[], careerUrl: string): string {
   if (!jobs.length) {
     return `<div class="career-jobs-empty">No jobs are on your career page yet — publish a job to add it here.</div>`;
   }
 
-  const rows = jobs.map(job => {
+  const rows = jobs.map((job) => {
     const name = escapeHTML(job.cardName || job.roleName || 'Untitled role');
     const status = String(job.status || 'published');
     const badge = `<span class="status-badge ${escapeHTML(status)}"><span class="status-badge-dot"></span>${escapeHTML(status.charAt(0).toUpperCase() + status.slice(1))}</span>`;
@@ -58,9 +59,9 @@ export function buildCareerJobsPanel(jobs, careerUrl) {
 // existing kebab `career-page` toggle unlists it — persisting {is_job_listed:false}
 // to the backend, optimistic-updating AppState, toasting, and re-rendering both the
 // Jobs view and (via the kebab's own renderCareerJobs hook) this panel.
-export function bindCareerJobsPanel(root) {
+export function bindCareerJobsPanel(root: HTMLElement | null): void {
   if (!root) return;
-  root.querySelectorAll('.btn-remove-career').forEach(btn => {
+  root.querySelectorAll<HTMLButtonElement>('.btn-remove-career').forEach((btn) => {
     btn.addEventListener('click', () => {
       const jobId = btn.getAttribute('data-job-id');
       if (jobId && typeof window.handleJobKebab === 'function') {
@@ -74,7 +75,7 @@ export function bindCareerJobsPanel(root) {
 // (no-op if we're not on the Career view), computes the public URL from the
 // authoritative subdomain, fills the container, then ALWAYS calls the bind so the
 // Remove buttons are live (the mandatory dashboard build→bind pairing).
-export function renderCareerJobs() {
+export function renderCareerJobs(): void {
   const container = document.getElementById('career-jobs-list');
   if (!container) return; // not on the Career view — nothing to render
   const sub = (AppState.careerSubdomain || '').trim();
