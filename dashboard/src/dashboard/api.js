@@ -638,3 +638,23 @@ function mapFullReportToCandidateReport(data) {
   if (data.evaluated && report && Array.isArray(report.questionBreakdown)) return report;
   return null;
 }
+
+// ── Preferences ──────────────────────────────────────────────────────────────
+// Fetch the signed-in user's saved preferences from the backend.
+// Returns { theme: 'dark'|'light'|'system' }, or null if the request fails.
+export async function apiGetPreferences() {
+  try {
+    return await request('/settings/preferences');
+  } catch {
+    return null;
+  }
+}
+
+// Persist a preference change. Only the fields you pass are updated.
+export async function apiUpdatePreferences(data) {
+  try {
+    return await request('/settings/preferences', { method: 'PUT', body: data });
+  } catch {
+    return null;
+  }
+}

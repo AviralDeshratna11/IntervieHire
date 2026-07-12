@@ -1,0 +1,9 @@
+// --- Landing Page Sections ----------------------------------------------------
+export { HeroSection }        from './HeroSection';
+export { TheProblemSection }  from './TheProblemSection';
+export { TransitionSection }  from './TransitionSection';
+export { SolutionSection }    from './SolutionSection';
+export { HiringChaosSection } from './HiringChaosSection';
+export { BudgetCtaSection }   from './BudgetCtaSection';
+export { CalculatorSection }  from './CalculatorSection';
+export { BookDemoCtaSection } from './BookDemoCtaSection';

@@ -1,0 +1,265 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import 'locomotive-scroll/dist/locomotive-scroll.css';
+
+/* ── Palette ────────────────────────────────────────────────────
+   #000000  Black          → primary background
+   rgba(22,22,22) Dark gray → card surfaces / secondary bg
+   #d96424  Bright Yellow    → accent / CTA / glow
+   #DDDDDD  Silver Gray    → primary text / light surfaces
+──────────────────────────────────────────────────────────────── */
+
+/* intervieHire landing — base */
+.ih-landing *, .ih-landing *::before, .ih-landing *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; margin: 0; padding: 0; }
+body { background: #000000; color: #EEEEEE; font-family: 'Outfit', sans-serif; -webkit-font-smoothing: antialiased; margin: 0; padding: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .ih-landing *, .ih-landing *::before, .ih-landing *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ── Keyframes ─────────────────────────────────────────────── */
+@keyframes textReveal {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUpFade {
+  0% { opacity: 0; transform: translateY(30px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes morphShake {
+  0%, 100% { transform: scale(1) translate(0, 0) rotate(0deg); }
+  20% { transform: scale(1.02) translate(-2px, 2px) rotate(-0.5deg); }
+  40% { transform: scale(0.99) translate(1px, -1px) rotate(0.5deg); }
+  60% { transform: scale(1.01) translate(-1px, -2px) rotate(-0.2deg); }
+  80% { transform: scale(0.98) translate(2px, 1px) rotate(0.3deg); }
+}
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(217,100,36, 0.2);
+    border-color: rgba(217,100,36, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(217,100,36, 0.5);
+    border-color: rgba(217,100,36, 0.5);
+  }
+}
+@keyframes evyMorph {
+  0%   { border-radius: 70% 30% 30% 70% / 60% 40% 60% 40%; }
+  12.5%{ border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; }
+  25%  { border-radius: 50% 50% 20% 80% / 25% 80% 20% 75%; }
+  37.5%{ border-radius: 80% 20% 20% 80% / 20% 80% 20% 80%; }
+  50%  { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  62.5%{ border-radius: 40% 60% 70% 30% / 40% 70% 30% 60%; }
+  75%  { border-radius: 20% 80% 80% 20% / 80% 20% 80% 20%; }
+  87.5%{ border-radius: 90% 10% 10% 90% / 10% 90% 10% 90%; }
+  100% { border-radius: 70% 30% 30% 70% / 60% 40% 60% 40%; }
+}
+@keyframes evyMarquee {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+/* ── Marquee strip ─────────────────────────────────────────── */
+.evy-stat-marquee {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+}
+.evy-stat-track {
+  display: flex;
+  gap: 24px;
+  width: max-content;
+  will-change: transform;
+  animation: evyMarquee 35s linear infinite;
+}
+.evy-stat-marquee:hover .evy-stat-track {
+  animation-play-state: paused;
+}
+
+/* ── Utility animation classes ─────────────────────────────── */
+.reveal-text   { animation: textReveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.slide-up-fade { animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.morph-shake   { animation: morphShake 0.4s ease-in-out; }
+.pulse-glow    { animation: pulseGlow 3s infinite ease-in-out; }
+
+@media (max-width: 900px) {
+  .comparison-connector { display: none !important; }
+}
+
+/* ── Scrollytelling entrance animations ────────────────────── */
+@keyframes titlePageReveal {
+  0%   { opacity: 0; transform: translateY(72px) scale(0.97); filter: blur(6px); }
+  60%  { filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes centerBoomReveal {
+  0%   { opacity: 0; transform: scale(0.08); filter: brightness(5) blur(20px); }
+  40%  { opacity: 1; transform: scale(1.25); filter: brightness(1.8) blur(4px); }
+  65%  { transform: scale(0.92); filter: brightness(1) blur(0); }
+  82%  { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); filter: brightness(1) blur(0); }
+}
+@keyframes leftBoomReveal {
+  0%   { opacity: 0; transform: scale(0.1) translateX(-40px); filter: brightness(5) blur(20px); }
+  40%  { opacity: 1; transform: scale(1.25) translateX(6px); filter: brightness(1.8) blur(4px); }
+  65%  { transform: scale(0.92) translateX(-2px); filter: brightness(1) blur(0); }
+  82%  { transform: scale(1.06) translateX(1px); }
+  100% { opacity: 1; transform: scale(1) translateX(0); filter: brightness(1) blur(0); }
+}
+@keyframes rightCardSlide {
+  0%   { opacity: 0; transform: translateX(140px) rotate(3deg); }
+  65%  { transform: translateX(-10px) rotate(-0.4deg); }
+  100% { opacity: 1; transform: translateX(0) rotate(0deg); }
+}
+
+/* ── Awards starburst ──────────────────────────────────────── */
+@keyframes awardsBurstRotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.awards-burst-rotator {
+  animation: awardsBurstRotate 24s linear infinite;
+  transform-origin: center center;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* ── Premium range slider ──────────────────────────────────── */
+.ih-calculator-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 10px;
+  outline: none;
+  transition: background 0.15s ease;
+}
+
+.ih-calculator-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #d96424;
+  border: 2px solid #000000;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(217,100,36, 0.5);
+  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.1s ease;
+}
+.ih-calculator-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  background: #ba5520;
+  box-shadow: 0 0 20px rgba(217,100,36, 0.8);
+}
+.ih-calculator-slider::-webkit-slider-thumb:active {
+  transform: scale(1.1);
+  background: #a81c43;
+}
+
+.ih-calculator-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #d96424;
+  border: 2px solid #000000;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(217,100,36, 0.5);
+  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.1s ease;
+}
+.ih-calculator-slider::-moz-range-thumb:hover {
+  transform: scale(1.25);
+  background: #ba5520;
+  box-shadow: 0 0 20px rgba(217,100,36, 0.8);
+}
+.ih-calculator-slider::-moz-range-thumb:active {
+  transform: scale(1.1);
+  background: #a81c43;
+}
+
+/* ── Savings Marquee Banner ────────────────────────────────── */
+@keyframes calcMarquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.calc-marquee-wrap {
+  overflow: hidden;
+  width: 100vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin-left: -50vw;
+  margin-right: -50vw;
+  transform: none;
+  background: rgba(217,100,36, 0.07);
+  border-top: 1px solid rgba(217,100,36, 0.22);
+  border-bottom: 1px solid rgba(217,100,36, 0.22);
+  padding: 24px 0;
+  font-weight: 700;
+}
+
+.calc-marquee-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: calcMarquee 45s linear infinite;
+  white-space: nowrap;
+  gap: 80px;
+}
+
+.calc-marquee-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Outfit', sans-serif;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-weight: 700;
+  color: #d96424;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.calc-marquee-item em {
+  font-style: italic;
+  background: linear-gradient(90deg, #d96424, #EEEEEE);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-family: 'Outfit', sans-serif;
+  font-size: 1em;
+  margin-left: 0.2em;
+}
+
+.calc-marquee-dot {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(217,100,36, 0.45);
+  font-size: 0.5em;
+  line-height: 1;
+  font-style: normal;
+  -webkit-text-fill-color: rgba(217,100,36, 0.45);
+}
+
+/* ── Mobile overrides ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sf-grid-head { grid-template-columns: 1fr !important; gap: 20px !important; }
+  .sf-pairs { grid-template-columns: 1fr !important; }
+  .solve-pair { grid-template-columns: 1fr !important; height: auto !important; }
+  .solve-pair > div { height: 300px !important; }
+  .hc-pill { white-space: normal !important; font-size: 11px !important; padding: 8px 14px !important; }
+  .footer-right { text-align: left !important; }
+  .footer-flex { flex-direction: column !important; }
+  .ts-grid { grid-template-columns: 1fr !important; gap: 30px !important; }
+  .ts-grid > :nth-child(2) { order: -1; }
+  .morph-blob-inner { width: 200px !important; height: 200px !important; }
+  .demo-heading { padding: 0 16px !important; }
+  .sol-card-grid { grid-template-columns: 1fr !important; }
+  .sol-card-mockup { display: none !important; }
+  .ev-grid { grid-template-columns: 1fr !important; }
+  .ev-steps { padding-left: 0 !important; }
+  .calc-grid { grid-template-columns: 1fr !important; }
+}
