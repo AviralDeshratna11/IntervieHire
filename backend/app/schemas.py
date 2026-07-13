@@ -124,6 +124,7 @@ class JobOut(BaseModel):
     resume_analysis_enabled: bool = True
     recruiter_screening_enabled: bool = True
     functional_interview_enabled: bool = True
+    job_kind: Optional[str] = None
     pipeline: JobPipelineCounts
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
@@ -151,6 +152,7 @@ class JobDetailOut(BaseModel):
     description: Optional[str]
     location: Optional[str]
     job_type: Optional[str]
+    job_kind: Optional[str] = None
     experience_band: Optional[str]
     is_job_listed: bool
     resume_analysis_enabled: bool
@@ -181,6 +183,7 @@ class JobSettingsIn(BaseModel):
     status: Optional[JobStatus] = None
     screening_questions: Optional[List[str]] = None
     job_type: Optional[str] = None
+    job_kind: Optional[str] = None   # 'hiring' | 'exit'
     location: Optional[str] = None
  
 class JobCreateIn(BaseModel):
@@ -197,6 +200,7 @@ class JobCreateIn(BaseModel):
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
     screening_questions: Optional[List[str]] = None
+    job_kind: Optional[str] = "hiring"   # 'hiring' (default) | 'exit' (exit-interview template)
 
 class JobParametersIn(BaseModel):
     resume_parameters: Optional[dict] = None

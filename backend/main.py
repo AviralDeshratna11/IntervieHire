@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.websocket_routes import router as websocket_router
 from app.database import Base, engine
-from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek, auth, public, leaderboard, invites
+from app.routers import jobs, team, organisation, usage, settings as settings_router, deepseek, auth, public, leaderboard, invites, privacy
 from app.talent_finder.routes import router as talent_finder_router
 
 # Import all models so SQLAlchemy registers them before create_all
@@ -51,10 +51,26 @@ def init_db():
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS entry_method VARCHAR;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS screening_questions TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS interview_settings TEXT;"))
+        # Exit-interview feature: hiring-vs-exit job flag + leaver metadata columns.
+        # VARCHAR (not the native jobtype enum) so the ALTER never depends on the
+        # enum type pre-existing on already-deployed DBs; DEFAULT keeps old jobs 'hiring'.
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_kind VARCHAR DEFAULT 'hiring';"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS department VARCHAR;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS manager_name VARCHAR;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS tenure_months INTEGER;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS separation_type VARCHAR;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS last_working_day TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS primary_reason VARCHAR;"))
         conn.execute(text("""ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';"""))
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS career_subdomain VARCHAR;"))
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS career_intro TEXT;"))
         conn.execute(text('ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS "inviteToken" VARCHAR;'))
+        # DSAR / DPDP Act 2023: anonymisation markers on applicants + a consent-log
+        # tombstone pointer. The compliance_audit_logs and data_subject_requests tables
+        # are created by create_all (models registered in app/models/__init__.py).
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS anonymised_at TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS erasure_request_id UUID;"))
+        conn.execute(text('ALTER TABLE "ConsentLog" ADD COLUMN IF NOT EXISTS "erasedForRequestId" VARCHAR;'))
         conn.commit()
 
         # Backfill: repair legacy jobs with a NULL organisation_id by inheriting the
@@ -81,6 +97,14 @@ def init_db():
         try:
             conn.execute(text("COMMIT;"))  # ALTER TYPE cannot run inside a transaction block in PostgreSQL
             conn.execute(text("ALTER TYPE usertype ADD VALUE 'super_admin';"))
+        except Exception:
+            pass
+        conn.commit()
+
+        # Add 'exit' to applicantsource enum (exit-interview leavers)
+        try:
+            conn.execute(text("COMMIT;"))  # ALTER TYPE cannot run inside a transaction block in PostgreSQL
+            conn.execute(text("ALTER TYPE applicantsource ADD VALUE 'exit';"))
         except Exception:
             pass
         conn.commit()
@@ -184,6 +208,7 @@ app.include_router(leaderboard.router,      prefix="/api/leaderboard", tags=["Le
 app.include_router(talent_finder_router,    prefix="/api/talent-finder", tags=["Talent Finder"])
 app.include_router(invites.router,          prefix="/api/invites", tags=["Invites"])
 app.include_router(invites.public_link_router, tags=["Invites"])  # public GET /i/{token}
+app.include_router(privacy.router,          prefix="/api/privacy", tags=["Privacy / Data Rights"])
 
 
 @app.get("/")

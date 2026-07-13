@@ -14,6 +14,11 @@ class JobStatus(str, enum.Enum):
     archived = "archived"
 
 
+class JobType(str, enum.Enum):
+    hiring = "hiring"
+    exit = "exit"
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -22,6 +27,9 @@ class Job(Base):
     title = Column(String, nullable=False)               # card name shown on dashboard
     role_name = Column(String, nullable=False)           # actual role
     status = Column(Enum(JobStatus), default=JobStatus.draft)
+    # Hiring pipeline vs. exit-interview template. Distinct from `job_type` below,
+    # which is the employment type (Full-Time/Part-Time/remote) shown on careers.
+    job_kind = Column(Enum(JobType), default=JobType.hiring)
     experience_band = Column(String, nullable=True)      # e.g. "0-2 Years"
     tags = Column(String, nullable=True)
     description = Column(Text, nullable=True)            # full JD text

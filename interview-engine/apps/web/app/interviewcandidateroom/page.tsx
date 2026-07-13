@@ -837,8 +837,9 @@ export default function Interview() {
               This interview uses your <strong>camera</strong> (face &amp; gaze), your{' '}
               <strong>microphone</strong> (recorded &amp; transcribed), and records short clips if
               monitoring flags an issue. Your answers are <strong>evaluated by AI</strong> and may be
-              processed by providers <strong>outside India</strong>. You can withdraw consent or
-              request deletion afterwards.
+              processed by providers <strong>outside India</strong>. You can{' '}
+              <a href="/data-rights" style={{ textDecoration: 'underline' }}>manage your data</a>{' '}
+              (access, correct, or delete it) at any time.
             </p>
             <div className="consent-list">
               {consentItems.map((item) => (

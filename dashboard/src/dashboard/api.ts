@@ -368,6 +368,19 @@ export async function apiRemoveMember(userId) {
   return request(`/team/${userId}`, { method: 'DELETE' });
 }
 
+// ── Privacy / Data Rights (DSAR) ────────────────────────────────────────────
+// Recruiter/admin visibility into candidate data-rights requests (DPDP Act 2023),
+// backed by /api/privacy/admin/*. The active_org_id cookie rides along with
+// request(), so results are scoped to the active organisation. The panel reads the
+// snake_case response directly (like apiFetchUsageStats), so no mapper is needed.
+export async function apiListDsarRequests() {
+  const data = await request('/privacy/admin/requests');
+  return Array.isArray(data) ? data : [];
+}
+export async function apiGetDsarRequest(id: string) {
+  return request(`/privacy/admin/requests/${id}`);
+}
+
 // ── Usage / Analytics ───────────────────────────────────────────────────────
 // Backs the Usage Overview page (view-analytics). These hit the org-scoped
 // /api/usage/* endpoints — the active_org_id cookie rides along with request(),

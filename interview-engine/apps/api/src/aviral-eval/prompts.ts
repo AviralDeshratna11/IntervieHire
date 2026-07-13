@@ -1,5 +1,5 @@
 import type { CandidateResponseInput, InterviewContext, QuestionEvaluationConfig } from "./types.js";
-import { DIMENSION_KEYS, getDimensionWeights, normalizeWeights } from "./rubrics.js";
+import { DIMENSION_KEYS, EXIT_DIMENSION_KEYS, getDimensionWeights, normalizeWeights } from "./rubrics.js";
 import { inferEvaluationMode } from "./scoring.js";
 
 export function buildRubricExtractionPrompt(question: QuestionEvaluationConfig): string {
@@ -49,6 +49,12 @@ export function buildAnswerEvaluationPrompt(
   context: InterviewContext,
   input: CandidateResponseInput,
 ): string {
+  // Exit interviews are read for feedback, not scored for a hire — use a wholly
+  // different judge prompt that extracts sentiment + themes rather than correctness.
+  if (context.interviewType === "exit_interview") {
+    return buildExitAnswerPrompt(context, input);
+  }
+
   const mode = inferEvaluationMode(input.question);
 
   if (mode === "followup_contextual") {
@@ -116,6 +122,85 @@ export function buildFollowupEvaluationPrompt(
     "Required JSON shape:",
     getEvaluationJsonShape("followup_contextual"),
   ].join("\n");
+}
+
+// Exit-interview judge prompt. The employee is leaving; we do NOT grade correctness
+// or compare to a model answer. We read the emotional valence and mine the answer for
+// the theme it speaks to, what they valued, what drove them out, and any serious
+// concern. Output reuses the ResponseEvaluation JSON shape (so validation, multi-judge
+// merge, and the report renderer all work unchanged) — only the dimension keys and the
+// semantics of each field differ.
+export function buildExitAnswerPrompt(
+  context: InterviewContext,
+  input: CandidateResponseInput,
+): string {
+  const theme = (input.question.skillTags ?? []).join(", ") || "general";
+
+  return [
+    "Analyze one answer from an EXIT INTERVIEW with a departing employee.",
+    "This is feedback, not a test. Do NOT judge correctness, and do NOT compare to any model answer.",
+    "Read the answer for the employee's honest experience. Extract sentiment and themes, and preserve their voice.",
+    "Use transcript content only. Do not infer tone from audio/video — only from the words.",
+    `Score these EXACT dimension keys from 0-100: ${EXIT_DIMENSION_KEYS.join(", ")}.`,
+    "sentiment: 0 = very negative / bitter, 50 = neutral / mixed, 100 = very positive / warm.",
+    "candor: how open and honest vs guarded or diplomatic. specificity: concrete detail vs vague generalities.",
+    "constructiveness: how actionable the feedback is for the company.",
+    "For the sentiment dimension's `evidence`, include ONE short verbatim quote from the transcript that best captures their feeling.",
+    "overallScore = the overall sentiment of THIS answer (0-100), same scale as the sentiment dimension.",
+    "strengths = things the employee valued or that kept them here. weaknesses = pain points or reasons that contributed to their leaving.",
+    "redFlags = serious concerns only (harassment, discrimination, safety, legal exposure, severe burnout, unethical conduct) with severity; otherwise return an empty array. Do NOT flag ordinary dissatisfaction.",
+    "followUpRecommendations = concrete retention or process actions the company could take.",
+    "Return strict JSON only.",
+    "",
+    `Company: ${context.roleTitle}`,
+    `Theme of this question: ${theme}`,
+    "",
+    `Question: ${input.question.questionText}`,
+    `Employee transcript: ${input.response.transcript}`,
+    "",
+    "Required JSON shape:",
+    getExitEvaluationJsonShape(),
+  ].join("\n");
+}
+
+function getExitEvaluationJsonShape(): string {
+  const dimensionScores = Object.fromEntries(
+    EXIT_DIMENSION_KEYS.map((key) => [
+      key,
+      {
+        score: 0,
+        reason: "Short reason.",
+        evidence: ["Short verbatim quote from the transcript."],
+        missing: [],
+      },
+    ]),
+  );
+
+  return JSON.stringify(
+    {
+      answerId: "answer id from input",
+      questionId: "question id from input",
+      questionOrigin: "predetermined | generated_followup",
+      evaluationMode: "rubric_only",
+      overallScore: 0,
+      dimensionScores,
+      strengths: ["Something the employee valued."],
+      weaknesses: ["A pain point or reason for leaving."],
+      redFlags: [
+        {
+          label: "Serious concern label.",
+          severity: "low | medium | high | critical",
+          reason: "Why this matters.",
+        },
+      ],
+      followUpRecommendations: ["Concrete retention or process action."],
+      evaluationConfidence: "high | medium | low",
+      summary: "One-paragraph summary of what the employee conveyed.",
+      transcriptOnly: true,
+    },
+    null,
+    2,
+  );
 }
 
 function getEvaluationJsonShape(mode: string): string {

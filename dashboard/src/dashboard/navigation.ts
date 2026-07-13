@@ -19,6 +19,7 @@ import { renderKanbanBoard, resetWaveformAudio, startSwarmLogs } from './kanban-
 import { renderTalentFinderPane } from './talent-finder-panel';
 import { renderAnalyticsTable, renderJobCards, renderTeamTable, hydrateUsageAnalytics } from './render-views';
 import { renderCareerJobs } from './career-panel';
+import { renderDataRights } from './data-rights-panel';
 import { soundEngine } from './sound';
 import { syncSettingsControls } from './settings-page';
 import { AppState, generateJobId } from './state';
@@ -42,6 +43,7 @@ function navigateToTab(tabId) {
     'talent':    '/dashboard/talent',
     'team':      '/dashboard/team',
     'career':    '/dashboard/career',
+    'data-rights': '/dashboard/data-rights',
     'settings':  '/dashboard/settings/general',
   };
   const url = TAB_URLS[tabId];
@@ -137,6 +139,14 @@ function navigateToTab(tabId) {
     document.getElementById('view-career').classList.add('active-view');
     renderCareerJobs(); // refresh the record panel on open (covers edits made on the Jobs view)
     soundEngine.playChime([329.63, 392.00, 523.25], 0.12, 0.15);
+
+  } else if (tabId === 'data-rights') {
+    breadcrumb.textContent = 'Data Rights';
+    mainTitle.textContent = 'Data-Rights Requests';
+    subText.textContent = 'Candidate access, correction, and deletion requests (DPDP Act 2023)';
+    actionBtn.style.display = 'none';
+    document.getElementById('view-data-rights').classList.add('active-view');
+    renderDataRights();
   }
 }
 

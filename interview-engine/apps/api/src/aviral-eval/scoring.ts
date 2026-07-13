@@ -1,7 +1,10 @@
 import type {
+  AttritionSignal,
   CandidateReport,
   EvaluationConfidence,
   EvaluationMode,
+  ExitSentiment,
+  ExitVerbatim,
   InterviewContext,
   ProctoringSummary,
   ProctoringViolation,
@@ -282,6 +285,123 @@ export function aggregateCandidateReport(
       videoAnalysisEnabled: false,
     },
   };
+}
+
+// ── Exit-interview aggregation ─────────────────────────────────────────────────
+// Rolls up per-answer exit evaluations (overallScore = that answer's sentiment) into
+// an exit-flavoured CandidateReport. Deliberately bypasses the hire score formula and
+// recommendation thresholds: there is no pass/fail, only sentiment + themes. The
+// hiring fields are still populated for storage/render compatibility, but the exit
+// fields (attritionSignal, topReasons, verbatimHighlights) carry the real signal.
+export function aggregateExitReport(
+  context: InterviewContext,
+  evaluations: ResponseEvaluation[],
+): CandidateReport {
+  const overallScore = weightedAverage(
+    evaluations.map((evaluation) => ({ score: evaluation.overallScore, weight: 1 })),
+  );
+  const redFlags = evaluations.flatMap((evaluation) => evaluation.redFlags);
+  const recommendationConfidence = getRecommendationConfidence(evaluations);
+  const skillScores = buildSkillScores(evaluations);
+  const attritionSignal = deriveAttritionSignal(overallScore, redFlags);
+  const topReasons = topUniqueStrings(
+    evaluations.flatMap((evaluation) => evaluation.weaknesses),
+    6,
+  );
+
+  return {
+    interviewId: context.interviewId,
+    candidateId: context.candidateId,
+    roleTitle: context.roleTitle,
+    interviewType: context.interviewType,
+    overallScore,
+    // Placeholder so the shared shape stays valid; exit UI reads attritionSignal.
+    recommendation: attritionToRecommendation(attritionSignal),
+    recommendationConfidence,
+    summary: buildExitSummary(overallScore, attritionSignal),
+    strengths: topUniqueStrings(evaluations.flatMap((evaluation) => evaluation.strengths), 6),
+    weaknesses: topReasons,
+    redFlags,
+    skillScores,
+    questionBreakdown: evaluations,
+    suggestedNextSteps: topUniqueStrings(
+      evaluations.flatMap((evaluation) => evaluation.followUpRecommendations),
+      5,
+    ),
+    transcriptOnly: true,
+    futureSignalPlaceholders: {
+      audioAnalysisEnabled: false,
+      videoAnalysisEnabled: false,
+    },
+    attritionSignal,
+    topReasons,
+    verbatimHighlights: extractVerbatimHighlights(evaluations),
+  };
+}
+
+function deriveAttritionSignal(
+  overallScore: number,
+  redFlags: ResponseEvaluation["redFlags"],
+): AttritionSignal {
+  if (redFlags.some((flag) => flag.severity === "critical" || flag.severity === "high")) {
+    return "regrettable";
+  }
+
+  if (overallScore < 45) {
+    return "regrettable";
+  }
+
+  if (overallScore > 70) {
+    return "expected";
+  }
+
+  return "neutral";
+}
+
+function attritionToRecommendation(signal: AttritionSignal): Recommendation {
+  if (signal === "regrettable") return "needs_human_review";
+  if (signal === "expected") return "proceed";
+  return "hold";
+}
+
+function bucketSentiment(score: number): ExitSentiment {
+  if (score >= 66) return "positive";
+  if (score <= 40) return "negative";
+  return "neutral";
+}
+
+function extractVerbatimHighlights(evaluations: ResponseEvaluation[]): ExitVerbatim[] {
+  const highlights: ExitVerbatim[] = [];
+
+  for (const evaluation of evaluations) {
+    const sentiment = evaluation.dimensionScores?.sentiment;
+    const quote = (sentiment?.evidence ?? []).find((value) => value && value.trim());
+
+    if (!quote) {
+      continue;
+    }
+
+    highlights.push({
+      theme: (evaluation.questionText ?? "General").trim() || "General",
+      quote: quote.trim(),
+      sentiment: bucketSentiment(evaluation.overallScore),
+    });
+
+    if (highlights.length >= 6) {
+      break;
+    }
+  }
+
+  return highlights;
+}
+
+function buildExitSummary(score: number, signal: AttritionSignal): string {
+  const tone = signal === "regrettable"
+    ? "a departure the company would likely have wanted to prevent"
+    : signal === "expected"
+      ? "an amicable departure"
+      : "a mixed departure";
+  return `Departing employee left with an overall sentiment of ${score}/100 — ${tone}. Read the themes and verbatim highlights below for what drove the decision.`;
 }
 
 function getQuestionAggregationWeight(evaluation: ResponseEvaluation): number {
