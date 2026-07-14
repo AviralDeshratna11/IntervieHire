@@ -11,6 +11,12 @@ import { roomStyles } from './roomStyles';
 import { WaitingRoom } from './WaitingRoom';
 
 const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL || 'http://localhost:80';
+// Optional dynamic avatar orchestrator (per-candidate independent Lina stream).
+// When NEXT_PUBLIC_ORCHESTRATOR_URL is UNSET, the room uses the single shared
+// AVATAR_URL exactly as before — zero behavior change. When set, and the link
+// carries ?jobId=, the room requests a dedicated per-job stream instead.
+const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '').replace(/\/+$/, '');
+const DEFAULT_JOB_ID = process.env.NEXT_PUBLIC_DEFAULT_JOB_ID || '';
 
 // How early a candidate may enter the room before their scheduled slot. The
 // lobby unlocks and the engine's /start accepts a start once inside this window.
@@ -194,7 +200,9 @@ export default function Interview() {
     return () => { alive = false; clearInterval(id); };
   }, [sessionId, avatarCapture]);
 
-  const avatarSrc = useMemo(() => withPixelStreamingParams(AVATAR_URL), []);
+  // Defaults to the static shared avatar; the orchestrator effect below swaps in
+  // this session's dedicated StreamerId URL when the feature is enabled.
+  const [avatarSrc, setAvatarSrc] = useState(() => withPixelStreamingParams(AVATAR_URL));
 
   // The dashboard's "Launch test interview" opens this room with ?sessionId=…
   // (the FastAPI test-session created from the job blueprint). Use it when
@@ -214,6 +222,60 @@ export default function Interview() {
     if (hasStoredConsent(resolvedId)) setConsentGiven(true);
     setConsentChecked(true);
   }, []);
+
+  // --- Optional: dynamic per-candidate avatar instance via the orchestrator ---
+  // Backward-compatible: no-op unless NEXT_PUBLIC_ORCHESTRATOR_URL is set AND the
+  // emailed link carries ?jobId= (the backend appends it). Requests a dedicated
+  // per-job Lina stream, heartbeats it, and releases it on unmount so the exe
+  // frees immediately. On capacity/error it silently keeps the shared avatar.
+  useEffect(() => {
+    if (!ORCHESTRATOR_URL) return;
+    if (typeof window === 'undefined') return;
+    // Wait for a real session id (don't spawn an exe for the 'demo-session'
+    // placeholder before it resolves).
+    if (!sessionId || sessionId === 'demo-session') return;
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get('jobId') || params.get('job') || DEFAULT_JOB_ID;
+    if (!jobId) return;
+
+    const orchSession = sessionId;
+    let released = false;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+    (async () => {
+      try {
+        const res = await fetch(`${ORCHESTRATOR_URL}/session`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jobId, sessionId: orchSession }),
+        });
+        if (!res.ok) return; // capacity_full / error → keep the shared avatar
+        const data = await res.json();
+        if (released || !data?.playerUrl) return;
+        setAvatarSrc(withPixelStreamingParams(data.playerUrl));
+        heartbeat = setInterval(() => {
+          fetch(`${ORCHESTRATOR_URL}/session/${encodeURIComponent(orchSession)}/heartbeat`, {
+            method: 'POST',
+          }).catch(() => {});
+        }, 30000);
+      } catch {
+        /* keep the shared avatar */
+      }
+    })();
+
+    return () => {
+      released = true;
+      if (heartbeat) clearInterval(heartbeat);
+      try {
+        fetch(`${ORCHESTRATOR_URL}/session/${encodeURIComponent(orchSession)}`, {
+          method: 'DELETE',
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        /* noop */
+      }
+    };
+  }, [sessionId]);
 
   // Re-restore consent if the session id changes AFTER mount (e.g. the demo
   // bootstrap swaps in a real id). This can only reveal a prior consent — it
