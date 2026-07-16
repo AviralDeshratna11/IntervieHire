@@ -1,8 +1,7 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import { THEME, CHAOS_PAIN_PILLS, CHAOS_CARDS_DATA, CHAOS_CARD_ENTRY, CHAOS_PILL_POSITIONS } from '../../constants';
 import { useMediaQuery } from '../../hooks';
-
+import { THEME, CHAOS_PAIN_PILLS, CHAOS_CARDS_DATA, CHAOS_CARD_ENTRY, CHAOS_PILL_POSITIONS } from '../../constants';
 const THEME_LOCAL = {
   ...THEME,
   teal:  THEME.card,
@@ -64,11 +63,11 @@ function FloatingAndBurstItem({ children, position, baseRotate, seed, animIn, de
 }
 
 const cs = {
-  card:   { background:'rgba(255,255,255,0.03)', border:`1px solid ${THEME.border}`, borderRadius:14, padding:'16px 18px', width:252, boxShadow:'0 12px 40px rgba(0,0,0,0.6), 0 0 30px rgba(217,100,36,0.04)' },
+  card:   { background:'rgba(255,255,255,0.06)', border:`1px solid ${THEME.border}`, borderRadius:14, padding:'16px 18px', width:230, boxShadow:'0 12px 40px rgba(0,0,0,0.6), 0 0 30px rgba(45,212,191,0.04)' },
   label:  { fontFamily:'Outfit, sans-serif', fontSize:10, fontWeight:600, letterSpacing:'0.1em', color:THEME.gold, textTransform:'uppercase', marginBottom:10 },
   name:   { fontFamily:'Outfit, sans-serif', fontSize:13, fontWeight:600, color:THEME.white, marginBottom:4 },
   sub:    { fontFamily:'Outfit, sans-serif', fontSize:11.5, color:THEME.muted, lineHeight:1.4 },
-  divider:{ height:1, background:'rgba(217,100,36,0.08)', margin:'10px 0' },
+  divider:{ height:1, background:'rgba(45,212,191,0.08)', margin:'10px 0' },
 };
 
 const ScoreCard   = ({ card }) => (
@@ -85,7 +84,7 @@ const StatusCard  = ({ card }) => (
   <div style={cs.card}>
     <div style={cs.label}>{card.label}</div>
     <div style={cs.name}>{card.name}</div>
-    <div style={{ display:'inline-block', background:'rgba(232,53,109,0.12)', border:'1px solid rgba(232,53,109,0.3)', borderRadius:6, padding:'3px 10px', margin:'8px 0' }}>
+    <div style={{ display:'inline-block', background:'rgba(232,53,109,0.12)', border:'1px solid rgba(232,53,109,0.3)', borderRadius:6, padding:'8px', margin:'8px 0' }}>
       <span style={{ fontFamily:'Outfit, sans-serif', fontSize:11, fontWeight:700, color:THEME.pink, letterSpacing:'0.06em' }}>{card.status}</span>
     </div>
     <div style={cs.divider}/>
@@ -104,8 +103,8 @@ const CalendarCard = ({ card }) => (
         <span style={{ ...cs.sub, color:'#666660' }}>{s.day}</span>
         <span style={{ fontSize:10, fontFamily:'Outfit, sans-serif', fontWeight:600, borderRadius:4, padding:'2px 7px',
           color: s.state==='declined' ? THEME.pink : THEME.gold,
-          background: s.state==='declined' ? 'rgba(232,53,109,0.1)' : 'rgba(217,100,36,0.1)',
-          border:`1px solid ${s.state==='declined'?'rgba(232,53,109,0.3)':'rgba(217,100,36,0.3)'}`,
+          background: s.state==='declined' ? 'rgba(232,53,109,0.1)' : 'rgba(45,212,191,0.1)',
+          border:`1px solid ${s.state==='declined'?'rgba(232,53,109,0.3)':'rgba(45,212,191,0.3)'}`,
         }}>{s.state.toUpperCase()}</span>
       </div>
     ))}
@@ -120,7 +119,7 @@ const CostCard = ({ card }) => (
         <div style={{ fontFamily:'Outfit, sans-serif', fontSize:22, fontWeight:700, color:THEME.gold }}>{card.hrs}</div>
         <div style={cs.sub}>{card.hrsLabel}</div>
       </div>
-      <div style={{ width:1, background:'rgba(217,100,36,0.08)' }}/>
+      <div style={{ width:1, background:'rgba(45,212,191,0.08)' }}/>
       <div>
         <div style={{ fontFamily:'Outfit, sans-serif', fontSize:22, fontWeight:700, color:THEME.white }}>{card.cost}</div>
         <div style={cs.sub}>{card.costLabel}</div>
@@ -135,9 +134,8 @@ const RENDERERS = { score:ScoreCard, status:StatusCard, calendar:CalendarCard, c
 
 // ── Headline ───────────────────────────────────────────────────────────────────
 function AnimatedHeadline({ animIn }) {
-  const line1 = 'While your team sleeps, Lina screens,';
-  const line2 = 'scores, and ranks every applicant.';
-  const pinkLine = 'You wake up to a shortlist, not an inbox.';
+  const line1 = 'Every Open Role Costs You.';
+  const line2 = 'Every Day You Wait Costs More.';
 
   const lineStyle = (delay) => ({
     opacity: animIn ? 1 : 0,
@@ -163,30 +161,67 @@ function AnimatedHeadline({ animIn }) {
 
       <h2 style={{ fontFamily:'Outfit, sans-serif', fontSize:'clamp(1.3rem, 2.8vw, 2.2rem)', fontWeight:700, color:THEME.white, letterSpacing:'-0.03em', lineHeight:1.35, margin:0 }}>
         <div style={lineStyle(0.35)}>{line1}</div>
-        <div style={lineStyle(0.85)}>{line2}</div>
+        <div style={{...lineStyle(0.85), background:'linear-gradient(135deg,#2dd4bf,#64a0dc)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>{line2}</div>
       </h2>
 
-      <div style={{
-        ...lineStyle(1.35),
-        fontFamily:'Outfit, sans-serif',
-        fontSize:'clamp(1.3rem, 2.8vw, 2.2rem)',
-        fontWeight:700,
-        color:THEME.pink,
-        letterSpacing:'-0.03em',
-        lineHeight:1.35,
-        marginTop:12,
-      }}>
-        {pinkLine}
-      </div>
+
     </div>
   );
 }
+
+// ── Mobile fallback: the desktop layout scatters fixed-position cards/pills
+// across a 1400px canvas via % offsets, which overlaps and clips on narrow
+// viewports. Below 768px we render the same content as a simple fade-up stack.
+const MobileChaosStack = ({ animIn }) => (
+  <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(28px, 6vw, 40px)' }}>
+    <h2 style={{
+      fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(1.3rem, 6vw, 1.8rem)', fontWeight: 700,
+      color: THEME.white, letterSpacing: '-0.02em', lineHeight: 1.35, margin: 0, textAlign: 'center',
+      padding: '0 clamp(12px, 4vw, 20px)',
+      opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(20px)',
+      transition: 'opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1)',
+    }}>
+      Every Open Role Costs You.<br />
+      <span style={{ background: 'linear-gradient(135deg,#2dd4bf,#64a0dc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Every Day You Wait Costs More.</span>
+    </h2>
+
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%', maxWidth: 340, alignItems: 'center' }}>
+      {CHAOS_CARDS_DATA.map((card, i) => {
+        const Renderer = RENDERERS[card.type];
+        return (
+          <div key={`mc-${i}`} style={{
+            opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(24px)',
+            transition: `opacity 0.6s ${0.08 * i}s cubic-bezier(0.16,1,0.3,1), transform 0.6s ${0.08 * i}s cubic-bezier(0.16,1,0.3,1)`,
+            width: '100%',
+          }}>
+            <Renderer card={card} />
+          </div>
+        );
+      })}
+    </div>
+
+    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10, maxWidth: 380 }}>
+      {CHAOS_PAIN_PILLS.map((pill, i) => (
+        <div key={`mp-${i}`} style={{
+          fontFamily: 'Outfit, sans-serif', fontSize: 12.5, fontWeight: 500, color: THEME.white,
+          background: 'rgba(15,13,7,0.85)', border: '1px solid rgba(45,212,191,0.18)', borderRadius: 99,
+          padding: '8px 16px', whiteSpace: 'nowrap',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(16px)',
+          transition: `opacity 0.6s ${0.4 + 0.06 * i}s cubic-bezier(0.16,1,0.3,1), transform 0.6s ${0.4 + 0.06 * i}s cubic-bezier(0.16,1,0.3,1)`,
+        }}>
+          <span style={{ color: THEME.gold, fontWeight: 700, marginRight: 6 }}>{pill.num}</span>{pill.label}
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 // ── Section ───────────────────────────────────────────────────────────────────
 export const HiringChaosSection = () => {
   const sectionRef = useRef(null);
   const [animIn, setAnimIn] = useState(false);
-  const isMobileOrTablet = useMediaQuery('(max-width: 1024px)');
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   useEffect(() => {
     const obs = new IntersectionObserver(
@@ -197,73 +232,40 @@ export const HiringChaosSection = () => {
     return () => obs.disconnect();
   }, []);
 
-  // ── Mobile ──────────────────────────────────────────────────────────────────
-  if (isMobileOrTablet) {
-    return (
-      <section ref={sectionRef} data-scroll style={{ background:THEME.bg, padding:'clamp(60px,8vw,100px) clamp(16px,4vw,32px) clamp(80px,10vw,140px)', position:'relative', overflow:'hidden', borderTop:`1px solid ${THEME.border}`, marginBottom:'clamp(40px, 4vw, 60px)' }}>
-        <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:500, height:500, background:'radial-gradient(ellipse, rgba(217,100,36,0.05) 0%, transparent 70%)', pointerEvents:'none', zIndex:1 }}/>
-        <div style={{ maxWidth:1200, margin:'0 auto', position:'relative', zIndex:2, display:'flex', flexDirection:'column', gap:'clamp(32px,6vw,48px)', alignItems:'center' }}>
-          <div style={{ textAlign:'center' }}>
-            <h2 style={{ fontFamily:'Outfit, sans-serif', fontSize:'clamp(1.3rem,3.5vw,2rem)', fontWeight:700, color:THEME.white, letterSpacing:'-0.03em', lineHeight:1.25, margin:0,
-              opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(30px)', transition:'opacity 0.7s, transform 0.7s cubic-bezier(0.16,1,0.3,1)',
-            }}>
-              While your team sleeps, Lina screens,<br/>scores, and ranks every applicant.
-            </h2>
-            <div style={{ fontFamily:'Outfit, sans-serif', fontSize:'clamp(1.3rem,3.5vw,2rem)', fontWeight:700, color:THEME.pink, letterSpacing:'-0.03em', lineHeight:1.25, marginTop:12,
-              opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(30px)', transition:'opacity 0.7s 0.2s, transform 0.7s 0.2s cubic-bezier(0.16,1,0.3,1)',
-            }}>
-              You wake up to a shortlist, not an inbox.
-            </div>
-          </div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:10, justifyContent:'center', maxWidth:800 }}>
-            {CHAOS_PAIN_PILLS.map((pill,i) => (
-              <div key={i} style={{ fontFamily:'Outfit, sans-serif', fontSize:13, fontWeight:500, color:THEME.white,
-                background:'rgba(15,13,7,0.85)', border:'1px solid rgba(217,100,36,0.18)', borderRadius:99, padding:'8px 18px', backdropFilter:'blur(12px)',
-                opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.8)',
-                transition:`opacity 0.5s ${0.3+i*0.07}s, transform 0.6s ${0.3+i*0.07}s cubic-bezier(0.34,1.56,0.64,1)`,
-              }}>
-                <span style={{ color:THEME.gold, fontWeight:700, marginRight:6 }}>{pill.num}</span>{pill.label}
-              </div>
-            ))}
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px,1fr))', gap:20, width:'100%', maxWidth:900 }}>
-            {CHAOS_CARDS_DATA.map((card,i) => {
-              const Renderer = RENDERERS[card.type];
-              return (
-                <div key={i} style={{ display:'flex', justifyContent:'center',
-                  opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0) scale(1)' : 'translateY(40px) scale(0.9)',
-                  transition:`opacity 0.6s ${0.4+i*0.08}s, transform 0.7s ${0.4+i*0.08}s cubic-bezier(0.34,1.2,0.64,1)`,
-                }}>
-                  <Renderer card={card}/>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  // ── Desktop ─────────────────────────────────────────────────────────────────
+  // ── Section ─────────────────────────────────────────────────────────────────
   return (
-    <section ref={sectionRef} data-scroll style={{ background:THEME.bg, height:'100vh', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'clamp(40px, 4vw, 60px)', padding:'0 clamp(8px, 2vw, 24px) clamp(20px, 3vw, 40px)' }}>
-      {/* Radial glows */}
-      <div style={{ position:'absolute', top:'30%', left:'50%', transform:'translate(-50%,-50%)', width:900, height:600, background:'radial-gradient(ellipse, rgba(217,100,36,0.12) 0%, transparent 65%)', pointerEvents:'none', zIndex:1 }}/>
-      <div style={{ position:'absolute', bottom:'20%', right:'10%', width:600, height:400, background:'radial-gradient(ellipse, rgba(217,100,36,0.06) 0%, transparent 65%)', pointerEvents:'none', zIndex:1 }}/>
-      <div style={{ position:'absolute', top:'15%', left:'5%', width:400, height:400, background:'radial-gradient(ellipse, rgba(217,100,36,0.05) 0%, transparent 65%)', pointerEvents:'none', zIndex:1 }}/>
-
-      {/* Explosion shockwave ring — fires once on entry */}
+    <section ref={sectionRef} data-scroll style={{ background:THEME.bg, minHeight: isMobile ? 'auto' : '100vh', height:'auto', position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'clamp(20px, 2vw, 30px)', padding:'clamp(60px, 6vw, 80px) clamp(8px, 2vw, 24px) clamp(40px, 6vw, 80px)' }}>
+      {/* Glowing cut-line */}
       <div style={{
-        position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
-        width: animIn ? 1800 : 0, height: animIn ? 1800 : 0,
-        borderRadius:'50%',
-        border:`1px solid rgba(217,100,36,${animIn ? 0 : 0.35})`,
-        opacity: animIn ? 0 : 1,
-        transition: animIn ? 'width 3.5s cubic-bezier(0.1,0.8,0.2,1), height 3.5s cubic-bezier(0.1,0.8,0.2,1), opacity 3.5s cubic-bezier(0.1,0.8,0.2,1), border-color 3.5s' : 'none',
-        pointerEvents:'none', zIndex:5,
-      }}/>
+        position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        background: 'linear-gradient(90deg, transparent 0%, rgba(45,212,191,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(45,212,191,0.5) 80%, transparent 100%)',
+        boxShadow: '0 0 40px 2px rgba(45,212,191,0.55), 0 4px 80px rgba(45,212,191,0.18)',
+        zIndex: 20, pointerEvents: 'none',
+      }} />
+      {/* Radial glows */}
+      <div style={{ position:'absolute', top:'30%', left:'50%', transform:'translate(-50%,-50%)', width:900, height:600, background:'radial-gradient(ellipse, rgba(45,212,191,0.12) 0%, transparent 65%)', pointerEvents:'none', zIndex:1 }}/>
+      <div style={{ position:'absolute', bottom:'20%', right:'10%', width:600, height:400, background:'radial-gradient(ellipse, rgba(45,212,191,0.06) 0%, transparent 65%)', pointerEvents:'none', zIndex:1 }}/>
+      <div style={{ position:'absolute', top:'15%', left:'5%', width:400, height:400, background:'radial-gradient(ellipse, rgba(45,212,191,0.05) 0%, transparent 65%)', pointerEvents:'none', zIndex:1 }}/>
 
-      <div style={{ position:'relative', width:'100%', maxWidth:1400, height:'100vh' }}>
+      {/* Explosion shockwave ring — fires once on entry (desktop only) */}
+      {!isMobile && (
+        <div style={{
+          position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+          width: animIn ? 1800 : 0, height: animIn ? 1800 : 0,
+          borderRadius:'50%',
+          border:`1px solid rgba(45,212,191,${animIn ? 0 : 0.35})`,
+          opacity: animIn ? 0 : 1,
+          transition: animIn ? 'width 3.5s cubic-bezier(0.1,0.8,0.2,1), height 3.5s cubic-bezier(0.1,0.8,0.2,1), opacity 3.5s cubic-bezier(0.1,0.8,0.2,1), border-color 3.5s' : 'none',
+          pointerEvents:'none', zIndex:5,
+        }}/>
+      )}
+
+      {isMobile ? (
+        <div style={{ position: 'relative', width: '100%', zIndex: 2 }}>
+          <MobileChaosStack animIn={animIn} />
+        </div>
+      ) : (
+      <div style={{ position:'relative', width:'100%', maxWidth:1400, minHeight:'clamp(500px, 100vh, 900px)', height:'auto' }}>
 
         {/* Cards — burst in + float */}
         {CHAOS_CARDS_DATA.map((card, i) => {
@@ -282,9 +284,9 @@ export const HiringChaosSection = () => {
           return (
             <FloatingAndBurstItem key={`p-${i}`} position={pp} baseRotate={0} seed={i*11+1} animIn={animIn} delay={0.6+i*0.18} type="pill">
               <div style={{ fontFamily:'Outfit, sans-serif', fontSize:13.5, fontWeight:500, color:THEME.white,
-                background:'rgba(15,13,7,0.85)', border:'1px solid rgba(217,100,36,0.18)', borderRadius:99,
+                background:'rgba(15,13,7,0.85)', border:'1px solid rgba(45,212,191,0.18)', borderRadius:99,
                 padding:'10px 22px', backdropFilter:'blur(12px)', whiteSpace:'nowrap',
-                boxShadow:'0 4px 20px rgba(0,0,0,0.5), 0 0 20px rgba(217,100,36,0.04)',
+                boxShadow:'0 4px 20px rgba(0,0,0,0.5), 0 0 20px rgba(45,212,191,0.04)',
               }}>
                 <span style={{ color:THEME.gold, fontWeight:700, marginRight:6 }}>{pill.num}</span>{pill.label}
               </div>
@@ -296,6 +298,7 @@ export const HiringChaosSection = () => {
         <AnimatedHeadline animIn={animIn}/>
 
       </div>
+      )}
 
       <style dangerouslySetInnerHTML={{__html:`
         @keyframes hcRingPulse {

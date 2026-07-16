@@ -1,17 +1,17 @@
-'use client';
+﻿'use client';
 import React from 'react';
 import { PRICING_PLANS } from '../../constants';
 
 const StarIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ marginRight: 2 }}>
-    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="#d96424" />
+    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="#2dd4bf" />
   </svg>
 );
 
 const CheckIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-    <circle cx="8" cy="8" r="7" stroke="#d96424" strokeWidth="1.2" opacity="0.3" />
-    <path d="M5 8.5L7 10.5L11 6" stroke="#d96424" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="8" cy="8" r="7" stroke="#2dd4bf" strokeWidth="1.2" opacity="0.3" />
+    <path d="M5 8.5L7 10.5L11 6" stroke="#2dd4bf" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -35,7 +35,7 @@ export function PricingPlansSection() {
           <h2 className="pp-headline">
             Simple, transparent{' '}
             <span style={{
-              background: 'linear-gradient(90deg, #d96424, #ba5520)',
+              background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text'
             }}>pricing</span>
           </h2>

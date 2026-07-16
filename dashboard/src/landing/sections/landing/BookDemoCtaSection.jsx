@@ -18,7 +18,7 @@ export function BookDemoCtaSection() {
         textAlign: 'center',
         position: 'relative',
         overflow: 'hidden',
-        borderTop: '1px solid rgba(217,100,36,0.08)',
+        borderTop: '1px solid rgba(45,212,191,0.08)',
       }}
     >
       {/* Radial ambient glow */}
@@ -26,7 +26,7 @@ export function BookDemoCtaSection() {
         position: 'absolute', top: '50%', left: '50%',
         transform: 'translate(-50%,-50%)',
         width: 600, height: 400,
-        background: 'radial-gradient(ellipse, rgba(217,100,36,0.04) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, rgba(45,212,191,0.04) 0%, transparent 70%)',
         pointerEvents: 'none',
       }} />
 
@@ -41,7 +41,7 @@ export function BookDemoCtaSection() {
         <h2 className="bdcta-heading">
           Ready to{' '}
           <span style={{
-            background: 'linear-gradient(90deg, #d96424, #ba5520)',
+            background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -60,11 +60,11 @@ export function BookDemoCtaSection() {
           className="bdcta-btn"
           onMouseEnter={e => {
             e.currentTarget.style.transform = 'scale(1.04)';
-            e.currentTarget.style.boxShadow = '0 0 45px rgba(217,100,36,0.4)';
+            e.currentTarget.style.boxShadow = '0 0 45px rgba(45,212,191,0.4)';
           }}
           onMouseLeave={e => {
             e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.boxShadow = '0 0 30px rgba(217,100,36,0.25)';
+            e.currentTarget.style.boxShadow = '0 0 30px rgba(45,212,191,0.25)';
           }}
         >
           Book a Demo &rarr;
@@ -75,13 +75,13 @@ export function BookDemoCtaSection() {
         .bdcta-sparkle {
           position: absolute;
           border-radius: 50%;
-          background: #d96424;
+          background: #2dd4bf;
           pointer-events: none;
         }
-        .bdcta-sparkle--1 { top: 15%; left: 8%; width: 6px; height: 6px; box-shadow: 0 0 12px rgba(217,100,36,0.6); animation: bdctaSparkle1 3s ease-in-out infinite 0.5s; }
-        .bdcta-sparkle--2 { bottom: 20%; right: 5%; width: 8px; height: 8px; box-shadow: 0 0 10px rgba(217,100,36,0.5); animation: bdctaSparkle2 4s ease-in-out infinite 1s; }
-        .bdcta-sparkle--3 { top: 30%; right: 12%; width: 4px; height: 4px; box-shadow: 0 0 8px rgba(217,100,36,0.5); animation: bdctaSparkle1 3.5s ease-in-out infinite 0.8s; }
-        .bdcta-sparkle--4 { bottom: 40%; left: 4%; width: 5px; height: 5px; box-shadow: 0 0 10px rgba(217,100,36,0.5); animation: bdctaSparkle2 2.8s ease-in-out infinite 0.3s; }
+        .bdcta-sparkle--1 { top: 15%; left: 8%; width: 6px; height: 6px; box-shadow: 0 0 12px rgba(45,212,191,0.6); animation: bdctaSparkle1 3s ease-in-out infinite 0.5s; }
+        .bdcta-sparkle--2 { bottom: 20%; right: 5%; width: 8px; height: 8px; box-shadow: 0 0 10px rgba(45,212,191,0.5); animation: bdctaSparkle2 4s ease-in-out infinite 1s; }
+        .bdcta-sparkle--3 { top: 30%; right: 12%; width: 4px; height: 4px; box-shadow: 0 0 8px rgba(45,212,191,0.5); animation: bdctaSparkle1 3.5s ease-in-out infinite 0.8s; }
+        .bdcta-sparkle--4 { bottom: 40%; left: 4%; width: 5px; height: 5px; box-shadow: 0 0 10px rgba(45,212,191,0.5); animation: bdctaSparkle2 2.8s ease-in-out infinite 0.3s; }
 
         .bdcta-heading {
           font-family: Outfit, sans-serif;
@@ -108,13 +108,13 @@ export function BookDemoCtaSection() {
           font-family: 'Outfit', sans-serif;
           font-size: 16px;
           font-weight: 700;
-          background: linear-gradient(135deg, #d96424, #ba5520);
+          background: linear-gradient(135deg, #2dd4bf, #64a0dc);
           color: #000;
           border: none;
           border-radius: 12px;
           padding: 16px 36px;
           cursor: pointer;
-          box-shadow: 0 0 30px rgba(217,100,36,0.25);
+          box-shadow: 0 0 30px rgba(45,212,191,0.25);
           opacity: 0;
           animation: bdctaReveal 1s cubic-bezier(0.16,1,0.3,1) 0.3s forwards;
           transition: transform 0.25s ease, box-shadow 0.25s ease;

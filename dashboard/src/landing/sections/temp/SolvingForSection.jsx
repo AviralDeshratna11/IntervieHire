@@ -49,7 +49,7 @@ export const SolvingForSection = () => {
       style={{
         background: '#000000',
         padding: 'clamp(60px, 8vw, 100px) clamp(16px, 4vw, 48px)',
-        borderTop: '1px solid rgba(217,100,36,0.12)'
+        borderTop: '1px solid rgba(45,212,191,0.12)'
       }}
     >
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -65,7 +65,7 @@ export const SolvingForSection = () => {
               display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 16,
               padding: '6px 16px', borderRadius: 100, fontSize: '0.75rem', fontWeight: 700,
               textTransform: 'uppercase', letterSpacing: '0.12em',
-              background: 'rgba(217,100,36,0.1)', border: '1px solid rgba(217,100,36,0.2)', color: '#d96424'
+              background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.2)', color: '#2dd4bf'
             }}>
               Solutions
             </div>
@@ -98,7 +98,7 @@ export const SolvingForSection = () => {
         <div className="pairs-container" style={{
           display: 'flex',
           flexDirection: 'column',
-          borderTop: '1px solid rgba(217,100,36,0.15)',
+          borderTop: '1px solid rgba(45,212,191,0.15)',
           marginBottom: 80
         }}>
           {solves.map((solve, idx) => (
@@ -106,7 +106,7 @@ export const SolvingForSection = () => {
               display: 'grid',
               gridTemplateColumns: '1fr 1.2fr',
               gap: 40,
-              borderBottom: '1px solid rgba(217,100,36,0.15)',
+              borderBottom: '1px solid rgba(45,212,191,0.15)',
               padding: '40px 0',
               overflow: 'hidden'
             }}>
@@ -134,7 +134,7 @@ export const SolvingForSection = () => {
                 borderRadius: 16,
                 overflow: 'hidden',
                 maxHeight: 280,
-                border: '1px solid rgba(217,100,36,0.12)'
+                border: '1px solid rgba(45,212,191,0.12)'
               }}>
                 <img src={solve.image} alt={solve.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
@@ -163,7 +163,7 @@ export const SolvingForSection = () => {
             {[0, 1, 2].map((idx) => (
               <div key={idx} style={{
                 background: 'rgba(255, 255, 255, 0.01)',
-                border: '1px solid rgba(217,100,36,0.08)',
+                border: '1px solid rgba(45,212,191,0.08)',
                 borderRadius: 20,
                 overflow: 'hidden',
                 display: 'flex',

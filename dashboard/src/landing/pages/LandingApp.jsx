@@ -18,7 +18,7 @@ import { SmoothScrollProvider } from '../providers';
 export default function LandingApp() {
   return (
     <SmoothScrollProvider>
-      <div className="ih-landing">
+      <div className="ih-landing" style={{ padding: '0 clamp(16px, 3vw, 48px)' }}>
         <Navbar />
 
         {/* Hero — sticky until TheProblem slides over it */}
@@ -37,12 +37,7 @@ export default function LandingApp() {
         <SolutionSection />
         <HiringChaosSection />
 
-        {/* BudgetCta — sticky so Calculator can slide over it */}
-        <div style={{ position: 'relative', height: '200vh' }}>
-          <div style={{ position: 'sticky', top: 0, height: '100vh', zIndex: 1 }}>
-            <BudgetCtaSection />
-          </div>
-        </div>
+        <BudgetCtaSection />
 
         {/* CalculatorSection slides over BudgetCta */}
         <div style={{ position: 'relative', zIndex: 3, marginTop: '-100vh' }}>

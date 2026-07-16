@@ -34,7 +34,7 @@ export const CalculatorSection = () => {
   React.useEffect(() => {
     if (!hasEntered || !isAnimating) return;
 
-    const duration = 6500;
+    const duration = 3000;
     const startTime = performance.now();
     let animFrame;
 
@@ -104,9 +104,11 @@ export const CalculatorSection = () => {
         padding: 'clamp(40px, 6vw, 80px) clamp(16px, 4vw, 48px) clamp(80px, 10vw, 140px)', 
         position: 'relative', 
         overflow: 'hidden',
-        borderTop: '1px solid rgba(217,100,36, 0.08)',
+        borderTop: '1px solid rgba(45,212,191, 0.08)',
         borderBottom: 'none',
         zIndex: 2,
+        width: '100vw',
+        marginLeft: 'calc(-50vw + 50%)',
       }}
     >
       {/* Glowing cut-line — visible as this section slides over the explainer video */}
@@ -116,8 +118,8 @@ export const CalculatorSection = () => {
         left: 0,
         right: 0,
         height: 1,
-        background: 'linear-gradient(90deg, transparent 0%, rgba(217,100,36,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(217,100,36,0.5) 80%, transparent 100%)',
-        boxShadow: '0 0 40px 2px rgba(217,100,36, 0.55), 0 4px 80px rgba(217,100,36, 0.18)',
+        background: 'linear-gradient(90deg, transparent 0%, rgba(45,212,191,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(45,212,191,0.5) 80%, transparent 100%)',
+        boxShadow: '0 0 40px 2px rgba(45,212,191, 0.55), 0 4px 80px rgba(45,212,191, 0.18)',
         zIndex: 20,
         pointerEvents: 'none',
       }} />
@@ -130,7 +132,7 @@ export const CalculatorSection = () => {
         transform: 'translate(-50%, -50%)',
         width: 1000,
         height: 600,
-        background: 'radial-gradient(ellipse, rgba(217,100,36,0.06) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, rgba(45,212,191,0.06) 0%, transparent 70%)',
         pointerEvents: 'none',
         opacity: hasEntered ? 1 : 0,
         transition: 'opacity 2.5s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -144,16 +146,20 @@ export const CalculatorSection = () => {
           </div>
         </FadeUpOnScroll>
 
-        {/* ── Scrolling heading ── */}
-        <h2 className="calc-marquee-wrap" style={{ marginBottom: 32 }}>
-          <div className="calc-marquee-track">
-            {[...Array(6)].map((_, i) => (
-              <span key={i} className="calc-marquee-item">
-                Measure Your <em>Savings.</em>
-                <span className="calc-marquee-dot">✦</span>
-              </span>
-            ))}
-          </div>
+        {/* ── Static heading ── */}
+        <h2 style={{
+          fontFamily:'Outfit, sans-serif',
+          fontSize:'clamp(2.4rem, 5.5vw, 4rem)',
+          fontWeight:700, color:'#EEEEEE',
+          letterSpacing:'-0.02em', lineHeight:1.15,
+          margin:'0 0 32px', textAlign:'center',
+        }}>
+          Measure Your{' '}
+          <span style={{
+            background:'linear-gradient(135deg,#2dd4bf,#64a0dc)',
+            WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
+            backgroundClip:'text',
+          }}>Savings.</span>
         </h2>
 
         <FadeUpOnScroll delay={0.15} y={20}>
@@ -182,7 +188,7 @@ export const CalculatorSection = () => {
           <FadeUpOnScroll delay={0.1} y={30}>
             <div style={{
               background: 'rgba(15, 15, 18, 0.6)',
-              border: '1px solid rgba(217,100,36, 0.1)',
+              border: '1px solid rgba(45,212,191, 0.1)',
               borderRadius: 20,
               padding: 'clamp(20px, 3vw, 28px) clamp(16px, 3vw, 24px)',
               boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)'
@@ -191,7 +197,7 @@ export const CalculatorSection = () => {
               <div style={{ marginBottom: 28 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                   <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 600, color: '#EEEEEE', fontSize: 'clamp(12px, 2vw, 14px)' }}>Hires Planned Per Year</span>
-                  <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, color: '#d96424', fontSize: 16 }}>{hires}</span>
+                  <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, color: '#2dd4bf', fontSize: 16 }}>{hires}</span>
                 </div>
                 <input
                   type="range"
@@ -201,7 +207,7 @@ export const CalculatorSection = () => {
                   onChange={handleHiresChange}
                   className="ih-calculator-slider"
                   style={{
-                    background: `linear-gradient(to right, #d96424 0%, #d96424 ${hiresPercent}%, rgba(255,255,255,0.1) ${hiresPercent}%, rgba(255,255,255,0.1) 100%)`
+                    background: `linear-gradient(to right, #2dd4bf 0%, #2dd4bf ${hiresPercent}%, rgba(255,255,255,0.1) ${hiresPercent}%, rgba(255,255,255,0.1) 100%)`
                   }}
                 />
               </div>
@@ -210,7 +216,7 @@ export const CalculatorSection = () => {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                   <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 600, color: '#EEEEEE', fontSize: 'clamp(12px, 2vw, 14px)' }}>Average Annual Role Salary</span>
-                  <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, color: '#d96424', fontSize: 16 }}>{formatCurrency(salary)}</span>
+                  <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, color: '#2dd4bf', fontSize: 16 }}>{formatCurrency(salary)}</span>
                 </div>
                 <input
                   type="range"
@@ -221,7 +227,7 @@ export const CalculatorSection = () => {
                   onChange={handleSalaryChange}
                   className="ih-calculator-slider"
                   style={{
-                    background: `linear-gradient(to right, #d96424 0%, #d96424 ${salaryPercent}%, rgba(255,255,255,0.1) ${salaryPercent}%, rgba(255,255,255,0.1) 100%)`
+                    background: `linear-gradient(to right, #2dd4bf 0%, #2dd4bf ${salaryPercent}%, rgba(255,255,255,0.1) ${salaryPercent}%, rgba(255,255,255,0.1) 100%)`
                   }}
                 />
               </div>
@@ -239,8 +245,8 @@ export const CalculatorSection = () => {
             }}>
               {/* Money Saved */}
               <div style={{
-                background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.08) 0%, rgba(217,100,36, 0.08) 100%)',
-              border: '1px solid rgba(255, 107, 53, 0.2)',
+                background: 'linear-gradient(135deg, rgba(45, 212, 191, 0.08) 0%, rgba(45,212,191, 0.08) 100%)',
+              border: '1px solid rgba(45, 212, 191, 0.2)',
               borderRadius: 20,
               padding: 'clamp(16px, 3vw, 24px)',
                 boxShadow: '0 15px 30px rgba(0, 0, 0, 0.4)'
@@ -262,7 +268,7 @@ export const CalculatorSection = () => {
               {/* Hours Saved */}
               <div style={{
                 background: 'rgba(15, 15, 18, 0.6)',
-              border: '1px solid rgba(217,100,36, 0.1)',
+              border: '1px solid rgba(45,212,191, 0.1)',
               borderRadius: 20,
               padding: 'clamp(16px, 3vw, 24px)',
                 boxShadow: '0 15px 30px rgba(0, 0, 0, 0.4)'
@@ -291,8 +297,8 @@ export const CalculatorSection = () => {
         left: 0,
         right: 0,
         height: 1,
-        background: 'linear-gradient(90deg, transparent 0%, rgba(217,100,36,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(217,100,36,0.5) 80%, transparent 100%)',
-        boxShadow: '0 0 40px 2px rgba(217,100,36, 0.55), 0 4px 80px rgba(217,100,36, 0.18)',
+        background: 'linear-gradient(90deg, transparent 0%, rgba(45,212,191,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(45,212,191,0.5) 80%, transparent 100%)',
+        boxShadow: '0 0 40px 2px rgba(45,212,191, 0.55), 0 4px 80px rgba(45,212,191, 0.18)',
         pointerEvents: 'none',
       }} />
     </section>

@@ -85,7 +85,7 @@ function ParticleField() {
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(201,168,76,${alpha * 0.55})`;
+        ctx.fillStyle = `rgba(45,212,191,${alpha * 0.55})`;
         ctx.fill();
       });
       raf = requestAnimationFrame(tick);

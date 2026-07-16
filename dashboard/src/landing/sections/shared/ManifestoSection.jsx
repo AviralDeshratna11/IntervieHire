@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useEffect, useRef } from 'react';
 import { MANIFESTO_LINES } from '../../constants';
 
@@ -46,7 +46,7 @@ export const ManifestoSection = () => {
   let idx = 0;
 
   return (
-    <div ref={wrapRef} style={{ height: '200vh', background: '#000', position: 'relative' }}>
+    <div ref={wrapRef} style={{ height: '200vh', background: '#000', position: 'relative', overflowX: 'hidden' }}>
       <div style={{
         position: 'sticky', top: 0, height: '100vh',
         display: 'flex', flexDirection: 'column',
@@ -71,7 +71,7 @@ export const ManifestoSection = () => {
                     fontWeight: 700,
                     fontStyle: 'italic',
                     fontSize: 'clamp(1.5rem, 5vw, 4rem)',
-                    color: '#d96424',
+                    color: li === 0 ? '#F5F0E8' : '#2dd4bf',
                     letterSpacing: '-0.02em',
                     lineHeight: 1.2,
                     opacity: 0,

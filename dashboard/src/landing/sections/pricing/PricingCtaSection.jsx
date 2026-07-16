@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import React, { useRef, useState, useEffect } from 'react';
 
 /**
@@ -31,7 +31,7 @@ export function PricingCtaSection() {
       }}>
         <h2 className="pp-headline">
           Ready to{' '}
-          <span style={{ background: 'linear-gradient(90deg, #d96424, #ba5520)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>join us?</span>
+          <span style={{ background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>join us?</span>
         </h2>
         <p style={{ fontSize: 'clamp(14px, 1.6vw, 16px)', color: '#888880', maxWidth: 480, margin: '0 auto 32px', lineHeight: 1.6 }}>
           Start hiring smarter with AI-powered interviews and built-in integrity checks.
@@ -41,10 +41,10 @@ export function PricingCtaSection() {
           onClick={() => window.location.href = '/book-demo'}
           className="pp-cta pp-cta--primary"
           style={{ width: 'auto', padding: '16px 36px' }}
-          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 0 45px rgba(217,100,36,0.4)'; }}
-          onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 30px rgba(217,100,36,0.25)'; }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 0 45px rgba(45,212,191,0.4)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 30px rgba(45,212,191,0.25)'; }}
         >
-          Book a Demo →
+          Book a Demo â†’
         </button>
       </div>
     </div>

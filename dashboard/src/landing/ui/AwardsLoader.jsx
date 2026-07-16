@@ -98,20 +98,20 @@ export const AwardsLoader = () => (
       }
 
       .al-ring--outer {
-        border-image: linear-gradient(135deg, rgba(217,100,36,0.15), rgba(217,100,36,0.08), rgba(217,100,36,0.15)) 1;
+        border-image: linear-gradient(135deg, rgba(45,212,191,0.15), rgba(45,212,191,0.08), rgba(45,212,191,0.15)) 1;
         animation-duration: 12s;
       }
 
       .al-ring--mid {
         inset: 40px;
-        border-image: linear-gradient(225deg, rgba(217,100,36,0.1), rgba(217,100,36,0.05), rgba(217,100,36,0.1)) 1;
+        border-image: linear-gradient(225deg, rgba(45,212,191,0.1), rgba(45,212,191,0.05), rgba(45,212,191,0.1)) 1;
         animation-duration: 8s;
         animation-direction: reverse;
       }
 
       .al-ring--inner {
         inset: 80px;
-        border-image: linear-gradient(45deg, rgba(217,100,36,0.12), rgba(217,100,36,0.06), rgba(217,100,36,0.12)) 1;
+        border-image: linear-gradient(45deg, rgba(45,212,191,0.12), rgba(45,212,191,0.06), rgba(45,212,191,0.12)) 1;
         animation-duration: 6s;
       }
 
@@ -127,7 +127,7 @@ export const AwardsLoader = () => (
       .al-orb--1 {
         width: 300px;
         height: 300px;
-        background: rgba(217,100,36,0.06);
+        background: rgba(45,212,191,0.06);
         top: -10%;
         left: -5%;
         animation-delay: 0s;
@@ -136,7 +136,7 @@ export const AwardsLoader = () => (
       .al-orb--2 {
         width: 250px;
         height: 250px;
-        background: rgba(217,100,36,0.04);
+        background: rgba(45,212,191,0.04);
         bottom: -5%;
         right: -5%;
         animation-delay: 2s;
@@ -145,7 +145,7 @@ export const AwardsLoader = () => (
       .al-orb--3 {
         width: 200px;
         height: 200px;
-        background: rgba(217,100,36,0.03);
+        background: rgba(45,212,191,0.03);
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
@@ -174,7 +174,7 @@ export const AwardsLoader = () => (
       }
       .al-logo--light { color: #F5F0E8; }
       .al-logo--accent {
-        color: #d96424;
+        color: #2dd4bf;
         background: none;
         -webkit-background-clip: unset;
         -webkit-text-fill-color: unset;
@@ -196,7 +196,7 @@ export const AwardsLoader = () => (
       .al-bar-fill {
         height: 100%;
         width: 0;
-        background: linear-gradient(90deg, #d96424, #d96424, #d96424);
+        background: linear-gradient(90deg, #2dd4bf, #2dd4bf, #2dd4bf);
         background-size: 200% 100%;
         border-radius: 2px;
         animation: alBarFill 2.4s cubic-bezier(0.25,0.46,0.45,0.94) 0.8s forwards,
@@ -231,8 +231,8 @@ export const AwardsLoader = () => (
         width: 3px;
         height: 3px;
         border-radius: 50%;
-        background: rgba(217,100,36,0.7);
-        box-shadow: 0 0 8px rgba(217,100,36,0.5), 0 0 20px rgba(217,100,36,0.2);
+        background: rgba(45,212,191,0.7);
+        box-shadow: 0 0 8px rgba(45,212,191,0.5), 0 0 20px rgba(45,212,191,0.2);
         pointer-events: none;
         animation: alDotDance 5s ease-in-out infinite;
       }

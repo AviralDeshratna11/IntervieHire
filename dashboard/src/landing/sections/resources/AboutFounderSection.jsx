@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import { COLORS, FOUNDER_TEAM, FOUNDER_GALLERY } from '../../constants';
+import { COLORS, FOUNDER_TEAM } from '../../constants';
 
 const T = {
   bg:     COLORS.dark,
@@ -35,7 +35,7 @@ const FounderCard = ({ name, role, bio, image, delay }) => {
     }}>
       <div style={{
         aspectRatio: '1/1', borderRadius: 20, overflow: 'hidden',
-        border: '1px solid rgba(217,100,36,0.15)',
+        border: '1px solid rgba(45,212,191,0.15)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
         position: 'relative'
       }}>
@@ -67,7 +67,7 @@ const TeamCard = ({ name, role, img, idx }) => {
 
   return (
     <div ref={ref} style={{
-      background: T.card, borderRadius: 16, border: '1px solid rgba(217,100,36,0.06)',
+      background: T.card, borderRadius: 16, border: '1px solid rgba(45,212,191,0.06)',
       overflow: 'hidden', cursor: 'pointer',
       opacity: visible ? 1 : 0,
       transform: visible ? 'translateY(0)' : 'translateY(30px)',
@@ -81,36 +81,9 @@ const TeamCard = ({ name, role, img, idx }) => {
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%)' }} />
       </div>
       <div style={{ padding: '14px 16px 18px' }}>
-        <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 15, fontWeight: 700, color: T.white }}>{name}</div>
-        <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 12, color: T.muted, marginTop: 2 }}>{role}</div>
+        <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(14px,1.8vw,15px)', fontWeight: 700, color: T.white }}>{name}</div>
+        <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(11px,1.6vw,12px)', color: T.muted, marginTop: 2 }}>{role}</div>
       </div>
-    </div>
-  );
-};
-
-const GalleryItem = ({ src, idx }) => {
-  const ref = useRef(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVisible(true); obs.unobserve(el); } }, { threshold: 0.15 });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  return (
-    <div ref={ref} style={{
-      borderRadius: 14, overflow: 'hidden',
-      border: '1px solid rgba(217,100,36,0.08)',
-      opacity: visible ? 1 : 0,
-      transform: visible ? 'translateY(0) scale(1)' : 'translateY(40px) scale(0.95)',
-      transition: `all 0.9s cubic-bezier(0.16,1,0.3,1) ${idx * 0.1}s`
-    }}>
-      <img src={src} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transition: 'transform 0.6s ease' }}
-        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.06)'}
-        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-      />
     </div>
   );
 };
@@ -121,43 +94,67 @@ export const AboutFounderSection = () => {
       {/* Golden cut-line top */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 1, zIndex: 20,
-        background: 'linear-gradient(90deg, transparent 0%, rgba(217,100,36,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(217,100,36,0.5) 80%, transparent 100%)',
-        boxShadow: '0 0 40px 2px rgba(217,100,36,0.55), 0 4px 80px rgba(217,100,36,0.18)',
+        background: 'linear-gradient(90deg, transparent 0%, rgba(45,212,191,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(45,212,191,0.5) 80%, transparent 100%)',
+        boxShadow: '0 0 40px 2px rgba(45,212,191,0.55), 0 4px 80px rgba(45,212,191,0.18)',
       }} />
 
-      {/* ── Section 1: Hero ── */}
-      <section data-scroll style={{ background: T.bg, padding: 'clamp(140px,18vh,220px) clamp(16px,4vw,48px) clamp(60px,8vw,100px)', borderTop: '1px solid rgba(217,100,36,0.08)' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 24,
-            padding: '6px 16px', borderRadius: 100, fontSize: '0.75rem', fontWeight: 700,
-            textTransform: 'uppercase', letterSpacing: '0.12em',
-            background: 'rgba(217,100,36,0.1)', border: '1px solid rgba(217,100,36,0.2)', color: T.gold
-          }}>
-            About Us
+
+
+      {/* â”€â”€ Section 2: Letter from the Founders â”€â”€ */}
+      <section data-scroll style={{ background: T.bg, padding: 'clamp(80px,10vw,140px) clamp(16px,4vw,48px)' }}>
+        <div style={{ maxWidth: 800, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 16,
+              padding: '10px 24px', borderRadius: 100, fontSize: '0.75rem', fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.12em',
+              background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.2)', color: T.gold
+            }}>
+              <span style={{ color: T.white }}>A Letter from the Founders</span>
+            </div>
+            <div style={{ height: 16 }} />
+            <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(2rem,4.5vw,3rem)', fontWeight: 700, color: T.white, letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0 }}>
+              Why We Built{' '}
+              <span style={{
+                background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}>IntervieHire.</span>
+            </h2>
           </div>
-          <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(2.4rem,5.5vw,4rem)', fontWeight: 700, color: T.white, letterSpacing: '-0.02em', lineHeight: 1.08, margin: 0 }}>
-            The Story Behind{' '}
-            <span style={{ background: 'linear-gradient(90deg, #d96424, #8a3a10)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>intervieHire.</span>
-          </h2>
-          <p style={{ fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(15px,2vw,18px)', color: T.muted, lineHeight: 1.7, maxWidth: 650, margin: '48px auto 0' }}>
-            Hiring technical candidates requires immense time from your engineering leads, often pulling them away from building core product. We observed this friction firsthand and set out to automate evaluations without sacrificing quality or candidate experience.
-          </p>
-          <p style={{ fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(14px,1.8vw,16px)', color: '#aaa8a0', lineHeight: 1.7, maxWidth: 650, margin: '16px auto 0' }}>
-            By pairing state-of-the-art AI screening with a network of vetted, highly-calibrated industry experts, IntervieHire delivers a complete, secure, and standardized evaluation pipeline that scales with your growth.
-          </p>
+          <div style={{ textAlign: 'center', fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(15px,2vw,17px)', color: T.muted, lineHeight: 1.8, display: 'flex', flexDirection: 'column', gap: 24, alignItems: 'center' }}>
+            <p style={{ margin: 0, textAlign: 'center' }}>
+              We&rsquo;re Devasri Bali and Aditya Pratap Rana, and IntervieHire wasn&rsquo;t born in a boardroom. It started at BITS Pilani, where we met as students and worked together across multiple projects. One of our biggest responsibilities was hiring for the Society of Student Mess Services (SSMS), where we experienced firsthand how exhausting recruitment could be. Later, during our internships at fast-growing startups, hiring became part of our everyday work again. No matter where we were, the challenges remained the same. Hundreds of resumes to review, endless screening calls, interview scheduling, inconsistent evaluations, and great candidates getting lost before they even had a chance to speak.
+            </p>
+            <p style={{ margin: 0, textAlign: 'center' }}>
+              The more we hired, the more we realized the problem wasn&rsquo;t a lack of talent. It was the hiring process itself. Devasri brought an analytical approach shaped by product building and quantitative trading at Futures First, while Aditya brought years of operational experience and a systems-first mindset. Having worked together throughout college, we knew we complemented each other well, and we decided to solve one of the biggest problems we had repeatedly faced ourselves.
+            </p>
+            <p style={{ margin: 0, textAlign: 'center' }}>
+              We don&rsquo;t believe AI should replace recruiters. We believe it should eliminate the repetitive work that keeps recruiters away from what actually matters. Reading hundreds of resumes, asking the same screening questions, coordinating interviews, and manually comparing candidates shouldn&rsquo;t consume the hiring process. Recruiters should spend their time building relationships, understanding people, and making confident hiring decisions.
+            </p>
+            <p style={{ margin: 0, textAlign: 'center' }}>
+              That&rsquo;s why we built IntervieHire. A platform that sources candidates, shortlists resumes, conducts AI-powered interviews, prevents cheating, and delivers structured hiring insights, helping companies hire faster, reduce costs, and never miss exceptional talent because of manual screening. We believe every qualified candidate deserves a fair opportunity, every recruiter deserves their time back, and every hiring decision should be backed by meaningful insights instead of guesswork.
+            </p>
+            <p style={{ margin: 0, textAlign: 'center' }}>
+              Thank you for being part of our journey.
+            </p>
+            <div style={{ marginTop: 8, textAlign: 'center' }}>
+              <p style={{ margin: '0 0 2px', fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(15px,2vw,17px)', fontWeight: 700, color: T.white }}>Devasri Bali &amp; Aditya Pratap Rana</p>
+              <p style={{ margin: 0, fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(13px,1.6vw,14px)', color: T.gold, letterSpacing: '0.02em' }}>Co-founders, IntervieHire</p>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── Section 2: Meet the Founders ── */}
-      <section data-scroll style={{ background: T.bg, padding: 'clamp(60px,8vw,100px) clamp(16px,4vw,48px)' }}>
+      {/* â”€â”€ Section 3: Meet the Founders â”€â”€ */}
+      <section data-scroll style={{ background: T.bg, padding: 'clamp(30px,4vw,50px) clamp(16px,4vw,48px) clamp(60px,8vw,100px)' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 'clamp(40px,6vw,64px)' }}>
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 16,
               padding: '6px 16px', borderRadius: 100, fontSize: '0.75rem', fontWeight: 700,
               textTransform: 'uppercase', letterSpacing: '0.12em',
-              background: 'rgba(217,100,36,0.1)', border: '1px solid rgba(217,100,36,0.2)', color: T.gold
+              background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.2)', color: T.gold
             }}>
               Meet the Founders
             </div>
@@ -165,31 +162,20 @@ export const AboutFounderSection = () => {
               The People Behind the Mission.
             </h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'clamp(32px,4vw,60px)' }}>
-            <FounderCard
-              name="Devasri Bali"
-              role="Co-Founder & CEO"
-              bio="Devasri brings deep expertise in AI product strategy and go-to-market execution. She spent the last decade building intelligent hiring systems and saw firsthand how broken the technical interview process really is."
-              image="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=500&q=80"
-              delay={0}
-            />
-            <FounderCard
-              name="Aditya Rana"
-              role="Co-Founder & CTO"
-              bio="Aditya architected large-scale ML pipelines at multiple hyper-growth startups. He believes hiring should be as rigorous as the product you build — and that AI can make it fair, fast, and fraud-proof."
-              image="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=500&q=80"
-              delay={0.15}
-            />
+          <div style={{ textAlign: 'center' }}>
+            <img src="/about.jpeg" alt="Devasri Bali & Aditya Pratap Rana" style={{ width: '100%', maxWidth: 400, borderRadius: 20, border: '1px solid rgba(45,212,191,0.15)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }} />
+            <p style={{ margin: '16px 0 0', fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(16px,2.2vw,20px)', fontWeight: 700, color: T.white }}>Devasri Bali &amp; Aditya Pratap Rana</p>
+            <p style={{ margin: '2px 0 0', fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(13px,1.6vw,14px)', color: T.gold, letterSpacing: '0.02em' }}>Co-founders, IntervieHire</p>
           </div>
           <div style={{ textAlign: 'center', marginTop: 'clamp(32px,5vw,48px)' }}>
             <p style={{ fontFamily: 'Outfit,sans-serif', fontSize: 'clamp(14px,1.8vw,16px)', color: T.muted, lineHeight: 1.6, fontStyle: 'italic', maxWidth: 600, margin: '0 auto' }}>
-              "We started IntervieHire to build the autonomous hiring layer of the web — eliminating bias and saving thousands of engineering hours."
+              "We started IntervieHire to build the autonomous hiring layer of the web â€” eliminating bias and saving thousands of engineering hours."
             </p>
           </div>
         </div>
       </section>
 
-      {/* ── Section 3: Meet the Team ── */}
+      {/* â”€â”€ Section 3: Meet the Team â”€â”€ */}
       <section data-scroll style={{ background: T.bg, padding: 'clamp(60px,8vw,100px) clamp(16px,4vw,48px)' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 'clamp(32px,5vw,56px)' }}>
@@ -197,7 +183,7 @@ export const AboutFounderSection = () => {
               display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 16,
               padding: '6px 16px', borderRadius: 100, fontSize: '0.75rem', fontWeight: 700,
               textTransform: 'uppercase', letterSpacing: '0.12em',
-              background: 'rgba(217,100,36,0.1)', border: '1px solid rgba(217,100,36,0.2)', color: T.gold
+              background: 'rgba(45,212,191,0.1)', border: '1px solid rgba(45,212,191,0.2)', color: T.gold
             }}>
               Our Team
             </div>
@@ -205,33 +191,13 @@ export const AboutFounderSection = () => {
               Meet the People Who Build It.
             </h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 'clamp(12px,2vw,20px)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(170px, 100%), 1fr))', gap: 'clamp(12px,2vw,20px)' }}>
             {FOUNDER_TEAM.map((m, i) => <TeamCard key={i} {...m} idx={i} />)}
           </div>
         </div>
       </section>
 
-      {/* ── Section 4: Gallery ── */}
-      <section data-scroll style={{ background: T.bg, padding: 'clamp(60px,8vw,100px) clamp(16px,4vw,48px)', borderBottom: '1px solid rgba(217,100,36,0.08)' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 'clamp(32px,5vw,56px)' }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 16,
-              padding: '6px 16px', borderRadius: 100, fontSize: '0.75rem', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: '0.12em',
-              background: 'rgba(217,100,36,0.1)', border: '1px solid rgba(217,100,36,0.2)', color: T.gold
-            }}>
-              Life at IntervieHire
-            </div>
-            <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(2rem,4.5vw,3rem)', fontWeight: 700, color: T.white, letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0 }}>
-              Moments That Matter.
-            </h2>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'clamp(12px,2vw,18px)' }}>
-            {FOUNDER_GALLERY.map((src, i) => <GalleryItem key={i} src={src} idx={i} />)}
-          </div>
-        </div>
-      </section>
+
     </div>
   );
 };

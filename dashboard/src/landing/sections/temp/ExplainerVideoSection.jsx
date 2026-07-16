@@ -35,7 +35,7 @@ export const ExplainerVideoSection = () => {
         marginBottom: '60vh',
         position: 'relative', 
         overflow: 'hidden',
-        borderTop: '1px solid rgba(217,100,36,0.08)',
+        borderTop: '1px solid rgba(45,212,191,0.08)',
       }}
     >
       {/* Black overlay that fades in as section scrolls past */}
@@ -59,7 +59,7 @@ export const ExplainerVideoSection = () => {
               lineHeight: 1.15
             }}>
               See IntervieHire in <span style={{
-                background: 'linear-gradient(90deg, #d96424, #8a3a10)',
+                background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text'
@@ -81,7 +81,7 @@ export const ExplainerVideoSection = () => {
             <div style={{
               position: 'relative',
               background: '#000',
-              border: '1px solid rgba(217,100,36, 0.15)',
+              border: '1px solid rgba(45,212,191, 0.15)',
               borderRadius: 24,
               aspectRatio: '16/9',
               overflow: 'hidden',
@@ -106,7 +106,7 @@ export const ExplainerVideoSection = () => {
               top: 20, 
               bottom: 20,
               width: 2, 
-              background: 'rgba(217,100,36, 0.15)',
+              background: 'rgba(45,212,191, 0.15)',
               zIndex: 1,
             }} />
 
@@ -124,8 +124,8 @@ export const ExplainerVideoSection = () => {
                     width: 'clamp(20px, 4vw, 24px)', 
                     height: 'clamp(20px, 4vw, 24px)', 
                     borderRadius: '50%',
-                    background: '#d96424',
-                    border: '2px solid #d96424',
+                    background: '#2dd4bf',
+                    border: '2px solid #2dd4bf',
                     color: '#050505',
                     fontFamily: 'Outfit, sans-serif',
                     fontSize: 12, 
@@ -133,7 +133,7 @@ export const ExplainerVideoSection = () => {
                     display: 'flex', 
                     alignItems: 'center', 
                     justifyContent: 'center',
-                    boxShadow: '0 0 15px rgba(217,100,36, 0.3)',
+                    boxShadow: '0 0 15px rgba(45,212,191, 0.3)',
                   }}>
                     {idx + 1}
                   </div>

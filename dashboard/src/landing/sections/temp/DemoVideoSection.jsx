@@ -103,9 +103,9 @@ export const DemoVideoSection = () => {
             borderRadius: radius,
             overflow: 'hidden',
             background: '#000000',
-            border: t < 0.1 || t > 0.9 ? '1px solid rgba(217,100,36,0.1)' : 'none',
+            border: t < 0.1 || t > 0.9 ? '1px solid rgba(45,212,191,0.1)' : 'none',
             boxShadow: t >= 0.2 && t <= 0.8
-              ? '0 0 100px rgba(217,100,36,0.08)'
+              ? '0 0 100px rgba(45,212,191,0.08)'
               : '0 20px 60px rgba(0,0,0,0.6)',
             transform: `scale(${scale})`,
             willChange: 'transform',

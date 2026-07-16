@@ -1,7 +1,7 @@
 export const metadata = {
   title: 'intervieHire | AI-Screening & Expert Human Interviews',
   description: 'intervieHire is an AI-powered talent acquisition platform replacing the fragmented hiring stack with screening and vetted human expert interviews.',
-  icons: { icon: '/1logo-removebg-preview.png' },
+
 };
 
 export default function RootLayout({ children }) {

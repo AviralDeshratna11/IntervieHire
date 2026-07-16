@@ -1,10 +1,10 @@
-'use client';
+﻿'use client';
 import React, { useRef, useState, useEffect } from 'react';
 import { INCLUDED_FEATURES } from '../../constants';
 
 /**
  * PricingIncludedSection
- * "Included in Every Plan" feature grid — animated on scroll.
+ * "Included in Every Plan" feature grid â€” animated on scroll.
  */
 export function PricingIncludedSection() {
   const ref = useRef(null);
@@ -34,15 +34,15 @@ export function PricingIncludedSection() {
       }}>
         <div className="pp-eyebrow">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="#d96424" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <polyline points="22 4 12 14.01 9 11.01" stroke="#d96424" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="#2dd4bf" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <polyline points="22 4 12 14.01 9 11.01" stroke="#2dd4bf" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Included in Every Plan
         </div>
         <h2 className="pp-headline">
           The full{' '}
-          <span style={{ background: 'linear-gradient(90deg, #d96424, #ba5520)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Lina</span>{' '}
-          experience — no feature gating
+          <span style={{ background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Lina</span>{' '}
+          experience â€” no feature gating
         </h2>
       </div>
 
@@ -53,7 +53,7 @@ export function PricingIncludedSection() {
             animation: visible ? `ppFeatIn 0.7s cubic-bezier(0.16,1,0.3,1) ${0.1 + i * 0.08}s forwards` : 'none',
           }}>
             <div className="pp-feat-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d96424" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d={feat.icon} />
               </svg>
             </div>

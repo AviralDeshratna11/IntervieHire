@@ -12,7 +12,7 @@ gsap.registerPlugin(ScrollTrigger);
 const T = {
   ...THEME,
   card:   'rgba(255,255,255,0.025)',
-  border: 'rgba(217,100,36,0.12)',
+  border: 'rgba(45,212,191,0.12)',
 };
 
 
@@ -143,13 +143,13 @@ const CtaButton = ({ children, primary, onClick }) => {
         padding: 'clamp(11px, 1.6vh, 14px) clamp(22px, 2.8vw, 34px)',
         borderRadius: 10, cursor: 'pointer',
         transition: 'all 0.25s cubic-bezier(0.34,1.56,0.64,1)',
-        background: primary ? 'linear-gradient(90deg, #d96424, #8a3a10)' : 'transparent',
-        color: primary ? '#fff' : '#d96424',
-        border: primary ? 'none' : '1px solid #d96424',
+        background: primary ? 'linear-gradient(135deg, #2dd4bf, #64a0dc)' : 'transparent',
+        color: primary ? '#fff' : '#2dd4bf',
+        border: primary ? 'none' : '1px solid #2dd4bf',
         filter: primary && hov ? 'brightness(1.1) saturate(1.2)' : 'none',
         boxShadow: primary && hov
-          ? '0 8px 30px rgba(217,100,36,0.35)'
-          : !primary && hov ? '0 0 24px rgba(217,100,36,0.3)' : 'none',
+          ? '0 8px 30px rgba(45,212,191,0.35)'
+          : !primary && hov ? '0 0 24px rgba(45,212,191,0.3)' : 'none',
         transform: hov ? 'translateY(-2px) scale(1.02)' : 'translateY(0) scale(1)',
       }}
     >
@@ -265,7 +265,7 @@ export const TheProblemSection = () => {
         background: '#000000',
         overflowX: 'clip',
         paddingTop: 'clamp(30px, 5vw, 60px)',
-        paddingBottom: 'clamp(20px, 4vw, 40px)',
+        paddingBottom: 'clamp(60px, 8vw, 100px)',
         position: 'relative',
       }}
     >
@@ -290,15 +290,15 @@ export const TheProblemSection = () => {
       {/* ── Glowing cut-line (same as TransitionSection) ─────────────────── */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-        background: 'linear-gradient(90deg, transparent 0%, rgba(217,100,36,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(217,100,36,0.5) 80%, transparent 100%)',
-        boxShadow: '0 0 40px 2px rgba(217,100,36,0.55), 0 4px 80px rgba(217,100,36,0.18)',
+        background: 'linear-gradient(90deg, transparent 0%, rgba(45,212,191,0.5) 20%, rgba(255,255,255,0.95) 50%, rgba(45,212,191,0.5) 80%, transparent 100%)',
+        boxShadow: '0 0 40px 2px rgba(45,212,191,0.55), 0 4px 80px rgba(45,212,191,0.18)',
         zIndex: 20, pointerEvents: 'none',
       }} />
 
       {/* Background glows */}
-      <div style={{ position: 'absolute', top: '25%', left: '50%', width: 900, height: 600, background: 'radial-gradient(ellipse, rgba(217,100,36,0.06) 0%, transparent 65%)', transform: 'translateX(-50%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', bottom: '20%', right: '5%', width: 500, height: 500, background: 'radial-gradient(ellipse, rgba(217,100,36,0.05) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', top: '10%', left: '3%', width: 400, height: 400, background: 'radial-gradient(ellipse, rgba(255,107,53,0.04) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: '25%', left: '50%', width: 900, height: 600, background: 'radial-gradient(ellipse, rgba(45,212,191,0.06) 0%, transparent 65%)', transform: 'translateX(-50%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', bottom: '20%', right: '5%', width: 500, height: 500, background: 'radial-gradient(ellipse, rgba(45,212,191,0.05) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: '10%', left: '3%', width: 400, height: 400, background: 'radial-gradient(ellipse, rgba(45,212,191,0.04) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
 
       <div style={{ position: 'relative', zIndex: 1 }}>
 
@@ -307,7 +307,7 @@ export const TheProblemSection = () => {
           className={`tp-header-wrap${inView ? ' boom' : ''}`}
           style={{
             padding: '0 clamp(20px, 5vw, 80px)',
-            marginBottom: 'clamp(52px, 7vw, 80px)',
+            marginBottom: 'clamp(24px, 3vw, 40px)',
             textAlign: 'center',
           }}
         >
@@ -321,7 +321,7 @@ export const TheProblemSection = () => {
           }}>
             The{' '}
             <span style={{
-              background: 'linear-gradient(90deg, #d96424, #8a3a10)',
+              background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
             }}>
               Problem.
@@ -348,10 +348,10 @@ export const TheProblemSection = () => {
           opacity: inView ? 1 : 0,
           transition: 'opacity 0.6s ease 0.4s',
         }}>
-          <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(217,100,36,0.45)' }}>
+          <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(45,212,191,0.45)' }}>
             ← The hiring crisis
           </span>
-          <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(217,100,36,0.45)' }}>
+          <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(45,212,191,0.45)' }}>
             Identity & fraud risk →
           </span>
         </div>
@@ -422,7 +422,7 @@ export const TheProblemSection = () => {
             textAlign: 'center',
           }}>
             Your next hire could be a ghost.{' '}
-            <span style={{ background: 'linear-gradient(90deg, #d96424, #8a3a10)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+            <span style={{ background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               intervieHire stops them before they start.
             </span>
           </p>

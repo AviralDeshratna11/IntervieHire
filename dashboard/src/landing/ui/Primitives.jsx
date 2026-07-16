@@ -10,13 +10,13 @@ export const GlassCard = ({ children, style = {} }) => {
       onMouseLeave={() => setHov(false)}
       style={{
         background: 'rgba(255,255,255,0.03)',
-        border: `1px solid ${hov ? 'rgba(217,100,36,0.35)' : 'rgba(217,100,36,0.15)'}`,
+        border: `1px solid ${hov ? 'rgba(45,212,191,0.35)' : 'rgba(45,212,191,0.15)'}`,
         borderRadius: 12,
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
         padding: 'clamp(20px, 3vw, 28px)',
         transform: hov ? 'translateY(-2px)' : 'translateY(0)',
-        boxShadow: hov ? '0 8px 32px rgba(217,100,36,0.07)' : 'none',
+        boxShadow: hov ? '0 8px 32px rgba(45,212,191,0.07)' : 'none',
         transition: 'border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease',
         ...style,
       }}
@@ -26,7 +26,7 @@ export const GlassCard = ({ children, style = {} }) => {
 
 // ─── Eyebrow ──────────────────────────────────────────────────────────────────
 export const Eyebrow = ({ children, style = {} }) => {
-  const finalColor = style.color || '#d96424';
+  const finalColor = style.color || '#2dd4bf';
   return (
     <div style={{
       fontFamily: 'Outfit, sans-serif', fontSize: 11, fontWeight: 500,

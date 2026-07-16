@@ -26,10 +26,10 @@ export const ContactSection = () => {
       padding: 'clamp(60px, 8vw, 120px) clamp(16px, 4vw, 48px)', 
       position: 'relative', 
       overflow: 'hidden',
-      borderTop: '1px solid rgba(217,100,36, 0.08)'
+      borderTop: '1px solid rgba(45,212,191, 0.08)'
     }}>
       {/* Background Radial Glow */}
-      <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 800, height: 500, background: 'radial-gradient(ellipse, rgba(217,100,36,0.04) 0%, transparent 70%)', pointerEvents: 'none' }}/>
+      <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 800, height: 500, background: 'radial-gradient(ellipse, rgba(45,212,191,0.04) 0%, transparent 70%)', pointerEvents: 'none' }}/>
 
       <div style={{ maxWidth: 1200, margin: '0 auto', position: 'relative', zIndex: 2 }}>
         <div style={{
@@ -48,9 +48,9 @@ export const ContactSection = () => {
               fontSize: '0.8rem',
               fontWeight: 700,
               textTransform: 'uppercase',
-              background: 'rgba(217,100,36, 0.1)',
-              border: '1px solid rgba(217,100,36, 0.2)',
-              color: '#d96424',
+              background: 'rgba(45,212,191, 0.1)',
+              border: '1px solid rgba(45,212,191, 0.2)',
+              color: '#2dd4bf',
               marginBottom: 20
             }}>
               Join the Pilot
@@ -65,7 +65,7 @@ export const ContactSection = () => {
               marginBottom: 24
             }}>
               Ready to Hire <span style={{
-                background: 'linear-gradient(90deg, #d96424, #8a3a10)',
+                background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text'
@@ -86,21 +86,21 @@ export const ContactSection = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {/* Detail 1 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ color: '#d96424', display: 'flex', alignItems: 'center' }}>
+                <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                 </div>
                 <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)', color: '#EEEEEE', fontWeight: 500 }}>interviehire@gmail.com</span>
               </div>
               {/* Detail 2 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ color: '#d96424', display: 'flex', alignItems: 'center' }}>
+                <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                 </div>
                 <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)', color: '#EEEEEE', fontWeight: 500 }}>interviehire.com</span>
               </div>
               {/* Detail 3 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div style={{ color: '#d96424', display: 'flex', alignItems: 'center' }}>
+                <div style={{ color: '#2dd4bf', display: 'flex', alignItems: 'center' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 </div>
                 <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)', color: '#EEEEEE', fontWeight: 500 }}>Co-Founders: Devasri Bali & Aditya Rana</span>
@@ -111,7 +111,7 @@ export const ContactSection = () => {
           {/* Right Side: Form (Glass Card) */}
           <div style={{
             background: 'rgba(15, 15, 18, 0.6)',
-            border: '1px solid rgba(217,100,36, 0.1)',
+            border: '1px solid rgba(45,212,191, 0.1)',
             borderRadius: 24,
             padding: 'clamp(24px, 4vw, 40px)',
             boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)'
@@ -128,12 +128,12 @@ export const ContactSection = () => {
                   required
                   style={{
                     fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)',
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(217,100,36,0.15)',
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(45,212,191,0.15)',
                     borderRadius: 12, padding: 'clamp(12px, 2vw, 14px) clamp(14px, 2.5vw, 18px)', color: '#EEEEEE', outline: 'none',
                     transition: 'border-color 0.2s'
                   }}
-                  onFocus={(e) => e.target.style.borderColor = '#d96424'}
-                  onBlur={(e) => e.target.style.borderColor = 'rgba(217,100,36,0.15)'}
+                  onFocus={(e) => e.target.style.borderColor = '#2dd4bf'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(45,212,191,0.15)'}
                 />
               </div>
 
@@ -148,12 +148,12 @@ export const ContactSection = () => {
                   required
                   style={{
                     fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)',
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(217,100,36,0.15)',
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(45,212,191,0.15)',
                     borderRadius: 12, padding: 'clamp(12px, 2vw, 14px) clamp(14px, 2.5vw, 18px)', color: '#EEEEEE', outline: 'none',
                     transition: 'border-color 0.2s'
                   }}
-                  onFocus={(e) => e.target.style.borderColor = '#d96424'}
-                  onBlur={(e) => e.target.style.borderColor = 'rgba(217,100,36,0.15)'}
+                  onFocus={(e) => e.target.style.borderColor = '#2dd4bf'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(45,212,191,0.15)'}
                 />
               </div>
 
@@ -168,12 +168,12 @@ export const ContactSection = () => {
                   required
                   style={{
                     fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)',
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(217,100,36,0.15)',
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(45,212,191,0.15)',
                     borderRadius: 12, padding: 'clamp(12px, 2vw, 14px) clamp(14px, 2.5vw, 18px)', color: '#EEEEEE', outline: 'none',
                     transition: 'border-color 0.2s'
                   }}
-                  onFocus={(e) => e.target.style.borderColor = '#d96424'}
-                  onBlur={(e) => e.target.style.borderColor = 'rgba(217,100,36,0.15)'}
+                  onFocus={(e) => e.target.style.borderColor = '#2dd4bf'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(45,212,191,0.15)'}
                 />
               </div>
 
@@ -187,12 +187,12 @@ export const ContactSection = () => {
                   onChange={(e) => setNotes(e.target.value)}
                   style={{
                     fontFamily: 'Outfit, sans-serif', fontSize: 'clamp(13px, 2vw, 15px)',
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(217,100,36,0.15)',
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(45,212,191,0.15)',
                     borderRadius: 12, padding: 'clamp(12px, 2vw, 14px) clamp(14px, 2.5vw, 18px)', color: '#EEEEEE', outline: 'none',
                     resize: 'none', transition: 'border-color 0.2s'
                   }}
-                  onFocus={(e) => e.target.style.borderColor = '#d96424'}
-                  onBlur={(e) => e.target.style.borderColor = 'rgba(217,100,36,0.15)'}
+                  onFocus={(e) => e.target.style.borderColor = '#2dd4bf'}
+                  onBlur={(e) => e.target.style.borderColor = 'rgba(45,212,191,0.15)'}
                 />
               </div>
 
@@ -201,7 +201,7 @@ export const ContactSection = () => {
                 type="submit"
                 style={{
                   fontFamily: 'Outfit, sans-serif', fontSize: 16, fontWeight: 700,
-                  background: 'linear-gradient(90deg, #d96424, #8a3a10)', color: '#fff',
+                  background: 'linear-gradient(135deg, #2dd4bf, #64a0dc)', color: '#fff',
                   border: 'none', borderRadius: 12, padding: 'clamp(14px, 2.5vw, 16px) clamp(20px, 4vw, 24px)', cursor: 'pointer',
                   transition: 'opacity 0.2s'
                 }}

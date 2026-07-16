@@ -1,15 +1,16 @@
 export const COLORS = {
-  gold:       '#d96424',
-  goldLight:  '#ba5520',
-  goldFaint:  'rgba(217,100,36, 0.1)',
-  goldBorder: 'rgba(217,100,36, 0.15)',
-  pink:       '#d96424',
-  orange:     '#d96424',
+  gold:       '#2dd4bf',
+  goldLight:  '#5eead4',
+  goldFaint:  'rgba(45,212,191, 0.1)',
+  goldBorder: 'rgba(45,212,191, 0.15)',
+  pink:       '#2dd4bf',
+  orange:     '#2dd4bf',
   white:      '#EEEEEE',
   muted:      '#888888',
   dark:       '#000000',
   darkAlt:    '#121212',
   darkWarm:   '#090909',
+  accent:     '#64a0dc',
 };
 
 export const FONTS = {
@@ -104,9 +105,9 @@ export const CONTACT_INFO = {
 // ─── Features Page Steps ──────────────────────────────────────────────────────
 export const FEATURE_STEPS = [
   { title: "Create an Interview", desc: "Define the role, upload a job description, set skill weights, and configure culture-fit criteria. Lina uses this to build a custom scoring rubric.", features: ["AI rubric builder", "Skill weighting", "Culture fit config"], time: "5 min setup" },
-  { title: "Invite Candidates", desc: "Send automated email invitations with calendar scheduling. Candidates pick a slot — no back-and-forth coordination needed.", features: ["Auto email", "Calendar sync", "Reminders"], time: "1 click" },
-  { title: "Screen Resumes Beyond Keywords", desc: "Lina reads resumes for actual capability signals — not just keyword matches. She spots transferable skills, project complexity, and growth trajectory.", features: ["Semantic parsing", "Skill signal detection", "Growth scoring"], time: "Real-time" },
-  { title: "Candidates Take Interviews", desc: "Candidates enter a conversational AI interview that adapts in real time. Lina asks follow-ups, probes depth, and evaluates responses — 24/7, no human needed.", features: ["Adaptive questioning", "Real-time scoring", "24/7 availability"], time: "30–45 min" },
+  { title: "Invite Candidates", desc: "Send automated email invitations with calendar scheduling. Candidates pick a slot - no back-and-forth coordination needed.", features: ["Auto email", "Calendar sync", "Reminders"], time: "1 click" },
+  { title: "Screen Resumes Beyond Keywords", desc: "Lina reads resumes for actual capability signals - not just keyword matches. She spots transferable skills, project complexity, and growth trajectory.", features: ["Semantic parsing", "Skill signal detection", "Growth scoring"], time: "Real-time" },
+  { title: "Candidates Take Interviews", desc: "Candidates enter a conversational AI interview that adapts in real time. Lina asks follow-ups, probes depth, and evaluates responses - 24/7, no human needed.", features: ["Adaptive questioning", "Real-time scoring", "24/7 availability"], time: "30–45 min" },
   { title: "See Results & Hire Faster", desc: "Review full transcripts, skill scores, red flags, and a ranked shortlist. Make data-driven decisions in hours, not weeks.", features: ["Transcripts", "Scorecards", "Ranked shortlist"], time: "Instant" },
 ];
 
@@ -145,7 +146,7 @@ export const PRICING_PLANS = [
     ],
     cta: 'Subscribe Now',
     badge: 'Most Popular',
-    color: '#d96424',
+    color: '#2dd4bf',
   },
   {
     name: 'Enterprise',
@@ -164,12 +165,12 @@ export const PRICING_PLANS = [
     ],
     cta: 'Subscribe Now',
     badge: null,
-    color: '#d96424',
+    color: '#64a0dc',
   },
 ];
 
 export const INCLUDED_FEATURES = [
-  { icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', title: 'Conversational AI Interviews', desc: 'Follow-up questions, 24/7 — just like a real interviewer' },
+  { icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', title: 'Conversational AI Interviews', desc: 'Follow-up questions, 24/7 - just like a real interviewer' },
   { icon: 'M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z', title: 'Skill-Based Scoring', desc: 'Resume + interview combined into one standardized score' },
   { icon: 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z', title: 'Eye Tracking & Integrity', desc: 'Real-time gaze monitoring & anti-cheat integrity checks' },
   { icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8', title: 'Full Transcripts & Video', desc: 'Every interview recorded with timestamped transcripts' },
@@ -212,7 +213,7 @@ export const PRICING_SECTION_PLANS = [
     ],
     cta: 'Start Free Trial',
     badge: 'Most Popular',
-    color: '#d96424',
+    color: '#2dd4bf',
   },
   {
     name: 'Enterprise',
@@ -229,7 +230,7 @@ export const PRICING_SECTION_PLANS = [
     ],
     cta: 'Contact Sales',
     badge: null,
-    color: '#d96424',
+    color: '#64a0dc',
   },
 ];
 
@@ -317,12 +318,12 @@ export const PAIN_PILLS = [
 ];
 
 export const CHAOS_CARDS = [
-  { type:'score',    label:'Candidate Score',   name:'Priya Sharma — Backend Eng.',  score:'61 / 100', scoreColor:'#d96424', note1:'Manually reviewed by 3 people',  note2:'No decision after 2 weeks' },
-  { type:'status',   label:'Interview Status',  name:'Marcus T. — Final Round',      status:'DROPPED',  reason:'Interviewer no-showed',         time:'3 days ago' },
-  { type:'calendar', label:'Scheduling',        candidate:'Arjun M. — 4th reschedule', slots:[{day:'Mon · 10:00 AM',state:'declined'},{day:'Tue · 2:30 PM',state:'declined'},{day:'Wed · 4:00 PM',state:'pending'}] },
+  { type:'score',    label:'Candidate Score',   name:'Priya Sharma - Backend Eng.',  score:'61 / 100', scoreColor:'#2dd4bf', note1:'Manually reviewed by 3 people',  note2:'No decision after 2 weeks' },
+  { type:'status',   label:'Interview Status',  name:'Marcus T. - Final Round',      status:'DROPPED',  reason:'Interviewer no-showed',         time:'3 days ago' },
+  { type:'calendar', label:'Scheduling',        candidate:'Arjun M. - 4th reschedule', slots:[{day:'Mon · 10:00 AM',state:'declined'},{day:'Tue · 2:30 PM',state:'declined'},{day:'Wed · 4:00 PM',state:'pending'}] },
   { type:'cost',     label:'Recruiter Cost',    line:'Manual screening',              hrs:'38 hrs',      hrsLabel:'this week',                   cost:'$2,660',   costLabel:'recruiter cost', flag:'Zero AI assistance used' },
-  { type:'score',    label:'Panel Evaluation',  name:'Kevin L. — Data Engineer',      score:'78 / 100', scoreColor:'#d96424', note1:'Conflicting feedback from panel', note2:'No structured rubric applied' },
-  { type:'status',   label:'Offer Status',      name:'Neha R. — Product Manager',     status:'OFFER DECLINED', reason:'Process took 6 weeks',    time:'Yesterday' },
+  { type:'score',    label:'Panel Evaluation',  name:'Kevin L. - Data Engineer',      score:'78 / 100', scoreColor:'#2dd4bf', note1:'Conflicting feedback from panel', note2:'No structured rubric applied' },
+  { type:'status',   label:'Offer Status',      name:'Neha R. - Product Manager',     status:'OFFER DECLINED', reason:'Process took 6 weeks',    time:'Yesterday' },
 ];
 
 // ─── Problem facts ────────────────────────────────────────────────────────────
@@ -336,17 +337,17 @@ export const ROW1_CARDS = [
   },
   {
     type: 'quote',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     quote: '"We spent 6 weeks interviewing a candidate who had never actually worked at the companies on their CV."',
     author: 'VP of Engineering, Fintech Unicorn',
     via: 'SHARED AT TECHCRUNCH DISRUPT 2024',
   },
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '40–60',
     source: 'SHRM HIRING BENCHMARK REPORT',
-    body: 'Days. The average time-to-hire for a mid-level tech role — and most of that time is pure scheduling overhead.',
+    body: 'Days. The average time-to-hire for a mid-level tech role - and most of that time is pure scheduling overhead.',
   },
   {
     type: 'stat',
@@ -357,14 +358,14 @@ export const ROW1_CARDS = [
   },
   {
     type: 'quote',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     quote: '"Our panel gave wildly different scores to the same candidate. We had no idea who to believe."',
     author: 'Head of Talent, B2B SaaS Company',
     via: 'GLASSDOOR EMPLOYER STUDY 2025',
   },
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '35%',
     source: 'HARVARD BUSINESS REVIEW',
     body: 'Of engineering managers\' time is consumed by screening calls that could be fully automated.',
@@ -374,11 +375,11 @@ export const ROW1_CARDS = [
     accent: '#DDDDDD',
     stat: '46%',
     source: 'ROBERT HALF STAFFING SURVEY',
-    body: 'Of new hires fail within 18 months — not due to skill gaps, but misaligned expectations set during rushed interviews.',
+    body: 'Of new hires fail within 18 months - not due to skill gaps, but misaligned expectations set during rushed interviews.',
   },
   {
     type: 'quote',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     quote: '"I interviewed the same person twice before realising they had two completely different LinkedIn profiles."',
     author: 'Engineering Lead, Series C Startup',
     via: 'HACKER NEWS THREAD, 2025',
@@ -388,7 +389,7 @@ export const ROW1_CARDS = [
 export const ROW2_CARDS = [
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '600%',
     source: 'IDENTITY THEFT RESOURCE CENTER 2024',
     body: 'Increase in synthetic identity fraud targeting HR and onboarding systems since 2020.',
@@ -402,35 +403,35 @@ export const ROW2_CARDS = [
   },
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '1 in 3',
     source: 'WORKSTREAM HIRING REPORT 2025',
-    body: 'Remote job offers are now accepted by someone other than the person who interviewed — ghost employment is mainstream.',
+    body: 'Remote job offers are now accepted by someone other than the person who interviewed - ghost employment is mainstream.',
   },
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '$220B',
     source: 'WORLD ECONOMIC FORUM 2024',
-    body: 'Lost globally each year to occupational fraud — insider threats now start at the hiring stage.',
+    body: 'Lost globally each year to occupational fraud - insider threats now start at the hiring stage.',
   },
   {
     type: 'quote',
     accent: '#DDDDDD',
-    quote: '"The developer we hired for $140k/year was outsourcing their entire job to someone in another country — for years."',
+    quote: '"The developer we hired for $140k/year was outsourcing their entire job to someone in another country - for years."',
     author: 'Engineering Director, Public SaaS Company',
     via: 'THE VERGE, JANUARY 2025',
   },
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '88%',
     source: 'GARTNER TALENT SURVEY 2024',
     body: 'Of CHROs admit their current vetting process would not catch a sophisticated identity spoof or proxy interview.',
   },
   {
     type: 'stat',
-    accent: '#d96424',
+    accent: '#2dd4bf',
     stat: '3.2×',
     source: 'MCKINSEY FUTURE OF WORK REPORT',
     body: 'More likely to make a bad hire when interviews are rushed and unstructured versus AI-assisted evaluations.',
@@ -448,47 +449,75 @@ export const ROW2_CARDS = [
 export const SOLUTION_CARDS = [
   {
     num: "01",
-    label: "AI Resume Filter",
-    title: "AI Resume Parsing & Match Rating",
-    body: "Upload resumes in bulk. Our AI automatically extracts candidates' experience, skills, and match rating against your job description constraints before the first call.",
-    pills: ["AI Resume Parsing", "Semantic Skill Match", "Job Constraints Check", "Recruiter Dashboard", "Bulk Actions"],
-    uiType: "parsing",
-    accent: "#d96424",
-    bgGradient: "linear-gradient(135deg, rgba(217,100,36, 0.12) 0%, transparent 60%)",
-    border: "rgba(217,100,36, 0.25)"
+    label: "Candidate Sourcing",
+    variant: "sourcing",
+    badge: "SOURCING",
+    titleAccent: "AI Powered",
+    titleRest: "Candidate Sourcing",
+    title: "AI Powered Candidate Sourcing",
+    body: "Find the right talent, faster. Our AI scans multiple channels to source relevant candidates who match your requirements and company culture.",
+    features: [
+      { icon: "search", title: "Intelligent Search",        desc: "AI understands your requirements and finds the best matches." },
+      { icon: "globe",  title: "Multi-Channel Sourcing",    desc: "We scan 15+ platforms including LinkedIn, Naukri, Wellfound & more." },
+      { icon: "people", title: "Passive Talent Discovery",  desc: "Engage with passive candidates who aren't actively looking." },
+      { icon: "star",   title: "Smart Recommendations",     desc: "AI ranks and recommends the most relevant talent for you." },
+    ],
+    uiType: "sourcing",
+    accent: "#2dd4bf",
+    bgGradient: "linear-gradient(135deg, rgba(45,212,191, 0.12) 0%, transparent 60%)",
+    border: "rgba(45,212,191, 0.25)"
   },
   {
     num: "02",
-    label: "AI Voice Agent",
-    title: "Interactive Voice & Behavioral Agent",
-    body: "An automated voice-first AI agent conducts structured, conversational pre-screens, assessing candidates on communication, presentation, and situational judgment.",
-    pills: ["Conversational Voice Agent", "Tone & Fluency Analysis", "Anti-Cheating Verification", "24/7 Auto-Scheduling"],
-    uiType: "voice",
-    accent: "#DDDDDD",
-    bgGradient: "linear-gradient(135deg, rgba(221, 221, 221, 0.08) 0%, transparent 60%)",
-    border: "rgba(221, 221, 221, 0.22)"
+    label: "AI Resume Parsing",
+    title: "AI Resume Parsing & Match Rating",
+    body: "Upload resumes in bulk. Our AI automatically extracts candidates' experience, skills, and match rating against your job description constraints before the first call.",
+    pills: ["AI Resume Parsing", "Semantic Skill Match", "Job Constraints Check", "Recruiter Dashboard", "Bulk Actions"],
+    uiType: "resume",
+    accent: "#2dd4bf",
+    bgGradient: "linear-gradient(135deg, rgba(45,212,191, 0.12) 0%, transparent 60%)",
+    border: "rgba(45,212,191, 0.25)"
   },
   {
     num: "03",
-    label: "IDE Sandboxes",
-    title: "Technical Tasks & Coding Playgrounds",
-    body: "Candidates solve real-world problems and write code in secure, proctored environments with support for proctored multi-language IDEs and task sandboxes.",
-    pills: ["Interactive IDE", "Multi-Language Support", "AI-Powered Proctoring", "Plagiarism Detection", "Auto-Run Test Cases"],
-    uiType: "code",
-    accent: "#d96424",
-    bgGradient: "linear-gradient(135deg, rgba(217,100,36, 0.12) 0%, transparent 60%)",
-    border: "rgba(217,100,36, 0.25)"
+    label: "AI Recruiter",
+    variant: "screening",
+    badge: "RECRUITER SCREENING",
+    titleAccent: "AI Recruiter",
+    titleRest: "Screening",
+    body: "Our AI interviewer, Lina, conducts intelligent screening calls and gathers key information to help you shortlist the right candidates faster.",
+    features: [
+      { icon: "phone", title: "Automated Screening Calls" },
+      { icon: "chat", title: "Smart Questioning" },
+      { icon: "doc", title: "Real-time Transcription" },
+      { icon: "chart", title: "Candidate Insights" },
+      { icon: "link", title: "Seamless ATS Integration" }
+    ],
+    uiType: "screening",
+    accent: "#2dd4bf",
+    bgGradient: "linear-gradient(135deg, rgba(45,212,191, 0.12) 0%, transparent 60%)",
+    border: "rgba(45,212,191, 0.25)"
   },
   {
     num: "04",
-    label: "Expert Panels",
-    title: "Global Human Expert Interviews",
-    body: "Shortlisted candidates are paired with certified industry professionals (ex-Google tech leads, ex-Stripe engineers) who run calibrated 1-on-1 technical rounds.",
-    pills: ["Verified Expert Network", "Live Coding Collab", "1-on-1 Deep Technical", "Calibrated Evaluation"],
-    uiType: "expert",
-    accent: "#EEEEEE",
-    bgGradient: "linear-gradient(135deg, rgba(238, 238, 238, 0.08) 0%, transparent 60%)",
-    border: "rgba(238, 238, 238, 0.22)"
+    label: "Functional Interviews",
+    variant: "functional",
+    badge: "FUNCTIONAL INTERVIEW",
+    titleAccent: "AI Powered",
+    titleRest: "Functional Interviews",
+    body: "Our AI interviewer, Lina, conducts in-depth functional interviews with role-specific, scenario-based and follow-up questions to assess real-world problem solving, critical thinking and domain expertise.",
+    features: [
+      { icon: "search", title: "In-depth Questioning", desc: "Deep dive into experience, approach, and decisions." },
+      { icon: "brief", title: "Role-Specific Interviews", desc: "Tailored interviews aligned to job functions and seniority." },
+      { icon: "target", title: "Scenario & Case Based", desc: "Real-world scenarios and problem solving questions." },
+      { icon: "chat", title: "Follow-up Probing", desc: "AI asks smart follow-ups to evaluate depth of thinking." },
+      { icon: "chart", title: "Real-time Evaluation", desc: "Live scoring on key competencies and functional skills." },
+      { icon: "doc", title: "Interview Analytics", desc: "Detailed reports and insights to help you hire with confidence." }
+    ],
+    uiType: "functional",
+    accent: "#2dd4bf",
+    bgGradient: "linear-gradient(135deg, rgba(45,212,191, 0.12) 0%, transparent 60%)",
+    border: "rgba(45,212,191, 0.25)"
   },
   {
     num: "05",
@@ -497,13 +526,13 @@ export const SOLUTION_CARDS = [
     body: "Get standardized reports, verified credentials, interview recordings, and cheating logs. Hire candidate shortlists with complete confidence.",
     pills: ["Standardized Scoring", "Radar Skill Chart", "Cheating Detection Logs", "Structured Feedback Reports", "One-Click Hire"],
     uiType: "dashboard",
-    accent: "#d96424",
-    bgGradient: "linear-gradient(135deg, rgba(217,100,36, 0.12) 0%, transparent 60%)",
-    border: "rgba(217,100,36, 0.25)"
+    accent: "#2dd4bf",
+    bgGradient: "linear-gradient(135deg, rgba(45,212,191, 0.12) 0%, transparent 60%)",
+    border: "rgba(45,212,191, 0.25)"
   }
 ];
 
-// ─── HiringChaosSection — animated pills & floating cards ────────────────────
+// ─── HiringChaosSection - animated pills & floating cards ────────────────────
 export const CHAOS_PAIN_PILLS = [
   { num: '50%+',        label: 'Reduction in cost-per-hire' },
   { num: '100s of hrs', label: 'Saved per hire cycle' },
@@ -515,19 +544,19 @@ export const CHAOS_PAIN_PILLS = [
 ];
 
 export const CHAOS_CARDS_DATA = [
-  { type: 'score',    label: 'Candidate Score',  name: 'Priya Sharma — Backend Eng.',    score: '61 / 100', scoreColor: '#d96424', note1: 'Manually reviewed by 3 people',  note2: 'No decision after 2 weeks' },
-  { type: 'status',   label: 'Interview Status', name: 'Marcus T. — Final Round',         status: 'DROPPED',        reason: 'Interviewer no-showed',         time: '3 days ago' },
-  { type: 'calendar', label: 'Scheduling',       candidate: 'Arjun M. — 4th reschedule', slots: [{ day: 'Mon · 10:00 AM', state: 'declined' }, { day: 'Tue · 2:30 PM', state: 'declined' }, { day: 'Wed · 4:00 PM', state: 'pending' }] },
+  { type: 'score',    label: 'Candidate Score',  name: 'Priya Sharma - Backend Eng.',    score: '61 / 100', scoreColor: '#2dd4bf', note1: 'Manually reviewed by 3 people',  note2: 'No decision after 2 weeks' },
+  { type: 'status',   label: 'Interview Status', name: 'Marcus T. - Final Round',         status: 'DROPPED',        reason: 'Interviewer no-showed',         time: '3 days ago' },
+  { type: 'calendar', label: 'Scheduling',       candidate: 'Arjun M. - 4th reschedule', slots: [{ day: 'Mon · 10:00 AM', state: 'declined' }, { day: 'Tue · 2:30 PM', state: 'declined' }, { day: 'Wed · 4:00 PM', state: 'pending' }] },
   { type: 'cost',     label: 'Recruiter Cost',   line: 'Manual screening',                hrs: '38 hrs', hrsLabel: 'this week', cost: '$2,660', costLabel: 'recruiter cost', flag: 'Zero AI assistance used' },
-  { type: 'score',    label: 'Panel Evaluation', name: 'Kevin L. — Data Engineer',        score: '78 / 100', scoreColor: '#d96424', note1: 'Conflicting feedback from panel', note2: 'No structured rubric applied' },
-  { type: 'status',   label: 'Offer Status',     name: 'Neha R. — Product Manager',       status: 'OFFER DECLINED', reason: 'Process took 6 weeks',          time: 'Yesterday' },
+  { type: 'score',    label: 'Panel Evaluation', name: 'Kevin L. - Data Engineer',        score: '78 / 100', scoreColor: '#2dd4bf', note1: 'Conflicting feedback from panel', note2: 'No structured rubric applied' },
+  { type: 'status',   label: 'Offer Status',     name: 'Neha R. - Product Manager',       status: 'OFFER DECLINED', reason: 'Process took 6 weeks',          time: 'Yesterday' },
 ];
 
 export const CHAOS_CARD_ENTRY = [
   { top: '4%',  left: '1%',  rotate: -5, fromX: '-140%', fromY: '-80%', fromR: -30 },
   { top: '40%', left: '-1%', rotate:  3, fromX: '-160%', fromY:  '20%', fromR:  18 },
   { top: '5%',  right: '2%', rotate:  4, fromX:  '140%', fromY: '-80%', fromR:  28 },
-  { top: '44%', right: '1%', rotate: -3, fromX:  '160%', fromY:  '20%', fromR: -20 },
+  { top: '40%', right: '1%', rotate: -3, fromX:  '160%', fromY:  '20%', fromR: -20 },
   { top: '70%', right: '3%', rotate:  2, fromX:  '130%', fromY:  '80%', fromR:  22 },
   { top: '70%', left: '1%',  rotate: -4, fromX: '-130%', fromY:  '80%', fromR: -25 },
 ];
@@ -544,10 +573,10 @@ export const CHAOS_PILL_POSITIONS = [
 
 // ─── LinaInterviewerSection ───────────────────────────────────────────────────
 export const LINA_FEATURES = [
-  { label: 'Conversational, not scripted',     body: 'Lina runs a real dialogue, not a fixed question list — she reacts to what a candidate actually says.' },
+  { label: 'Conversational, not scripted',     body: 'Lina runs a real dialogue, not a fixed question list - she reacts to what a candidate actually says.' },
   { label: 'Resume + live response scoring',   body: 'Every candidate is scored on a blend of verified background and how they actually perform in the room.' },
   { label: 'Built-in integrity layer',         body: 'Proctoring, gaze tracking and answer-pattern detection run quietly in the background of every interview.' },
-  { label: 'Follow-up questions in real time', body: 'When an answer is thin, Lina probes deeper — the way a sharp human interviewer would.' },
+  { label: 'Follow-up questions in real time', body: 'When an answer is thin, Lina probes deeper - the way a sharp human interviewer would.' },
   { label: 'Gets sharper with every hire',     body: 'Every hire and pass your team logs feeds back into how Lina scores the next candidate.' },
 ];
 
@@ -586,7 +615,8 @@ export const BUDGET_CTA_STATS = [
 // ─── ManifestoSection ─────────────────────────────────────────────────────────
 export const MANIFESTO_LINES = [
   ["We", "didn't", "build", "another", "tool."],
-  ["We", "built", "the", "hiring", "layer", "your", "team", "never", "had."]
+  ["We", "built", "the", "hiring", "layer"],
+  ["your", "team", "never", "had."]
 ];
 
 // ─── HeroSection ──────────────────────────────────────────────────────────────
