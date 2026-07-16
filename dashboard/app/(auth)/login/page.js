@@ -1,6 +1,9 @@
 'use client';
 
-import { AuthShell } from '../AuthShell';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { AuthShell, ErrorBanner, SubmitButton } from '../AuthShell';
+import { apiLogin, apiMe, isAuthed } from '../../../src/auth-client.js';
 
 export default function LoginPage() {
   return <AuthShell initialMode="login" />;
