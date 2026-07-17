@@ -165,6 +165,20 @@ export const TheProblemSection = () => {
   const row2Ref    = useRef(null);
   const ctaRef     = useRef(null);
 
+  // Wait for Lenis + scrollWrapper to be ready before creating ScrollTrigger animations
+  const [scrollReady, setScrollReady] = useState(false);
+
+  useEffect(() => {
+    if (window.__lenis && window.__scrollWrapper) { setScrollReady(true); return; }
+    const id = setInterval(() => {
+      if (window.__lenis && window.__scrollWrapper) {
+        clearInterval(id);
+        setScrollReady(true);
+      }
+    }, 50);
+    return () => clearInterval(id);
+  }, []);
+
   // IntersectionObserver — same pattern as TransitionSection
   const [inView, setInView]         = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
@@ -187,8 +201,9 @@ export const TheProblemSection = () => {
     return () => observer.disconnect();
   }, [hasEntered]);
 
-  // GSAP scrub — runs on top of CSS boom-in anims
+  // GSAP scrub — only after scrollReady so the scroller target is guaranteed
   useGSAP(() => {
+    if (!scrollReady) return;
     const wrapper = window.__scrollWrapper || window;
 
     // Row 1 → scrubs LEFT as user scrolls down
@@ -245,16 +260,9 @@ export const TheProblemSection = () => {
         }
       );
     }
-  }, { scope: sectionRef });
 
-  // Lenis readiness refresh
-  useEffect(() => {
-    if (window.__lenis) { ScrollTrigger.refresh(); return; }
-    const id = setInterval(() => {
-      if (window.__lenis) { clearInterval(id); ScrollTrigger.refresh(); }
-    }, 80);
-    return () => clearInterval(id);
-  }, []);
+    ScrollTrigger.refresh();
+  }, { scope: sectionRef, dependencies: [scrollReady] });
 
   return (
     <section
