@@ -144,3 +144,4 @@ app.include_router(invites.public_link_router, tags=["Invites"])  # public GET /
 @app.get("/")
 def root():
     return {"status": "ok", "app": settings.APP_NAME}
+ 
