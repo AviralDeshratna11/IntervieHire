@@ -12,7 +12,18 @@ import {
 import type { ProctoringPayload, Severity } from '@interviehire/shared';
 import type { CalibrationResult } from './useGazeCalibration';
 import { buildSafeEightDotCalibration, type SafeEightDotCalibration } from './eightDotCalibrationGuardV3';
-import { FALLBACK_GAZE_THRESHOLD_X, FALLBACK_GAZE_THRESHOLD_Y } from './proctoringGazeThresholdsV3';
+import {
+  FALLBACK_GAZE_THRESHOLD_X,
+  FALLBACK_GAZE_THRESHOLD_Y,
+  V_MARGIN_UP,
+  V_MARGIN_DOWN,
+} from './proctoringGazeThresholdsV3';
+import {
+  classifyVertical,
+  combineGazeDirection,
+  noseEyePitchDeg,
+  DEFAULT_VERTICAL_BAND,
+} from './gazeVerticalMath';
 
 type ProctoringEvent = {
   eventType: string;
@@ -88,6 +99,9 @@ type DetectionState = {
   foreignObjectLabel: string;
   gazeAwayDetected: boolean;
   gazeDirection: string;
+  // Compact live vertical-gaze readout for the debug panel (direction, compensated Y offset,
+  // up/down blendshape scores). Optional so the many state resets don't need to set it.
+  gazeDebug?: string;
   headMovementDetected: boolean;
   headPoseDeviationDegrees: number;
   tabSwitchDetected: boolean;
@@ -139,21 +153,13 @@ const HEAD_POSE_AXIS_THRESHOLD_DEG = 23;
 const HEAD_POSE_GAZE_COMPENSATION_START_DEG = 2.5;
 const HEAD_POSE_GAZE_COMPENSATION_MAX_DEG = 16;
 const HEAD_YAW_TO_GAZE_X_FACTOR = 0.01;
-const HEAD_PITCH_TO_GAZE_Y_FACTOR = 0.01;
-const GAZE_BLENDSHAPE_THRESHOLD = 0.8; // more sensitive blendshape threshold
-// Blendshapes are used only to correct vertical direction when geometry already says gaze is away.
-// Looking down can make the iris partially occluded by the eyelid, which sometimes makes raw iris geometry look like "up".
-const VERTICAL_BLENDSHAPE_DIRECTION_THRESHOLD = 0.33;
-const VERTICAL_BLENDSHAPE_MARGIN = 0.08;
-// Downward gaze is usually weaker in iris geometry because the eyelids partially cover the iris.
-// Keep normal up/left/right sensitivity unchanged, but make positive-Y/downward movement easier to trigger.
-const DOWNWARD_GAZE_THRESHOLD_FACTOR = 1.6;
-const MIN_DOWNWARD_GAZE_THRESHOLD = 0.065;
-const DOWNWARD_BLENDSHAPE_AWAY_THRESHOLD = 0.4;
-const DOWNWARD_BLENDSHAPE_MARGIN = 0.1;
-const DOWNWARD_GEOMETRY_SUPPORT_FACTOR = 0.4;
-const MIN_DOWNWARD_GEOMETRY_SUPPORT = 0.03;
-// Fallback geometry thresholds used when no calibration has been run
+const GAZE_BLENDSHAPE_THRESHOLD = 0.8; // no-landmark liveness fallback (left/right from blendshapes)
+// Vertical (up/down) gaze is handled entirely by the world-vertical BAND model in gazeVerticalMath.ts:
+// one signal — head-pitch-compensated (eyeLookDown − eyeLookUp) — compared against the calibrated
+// [vBandTop, vBandBottom] band. The old iris-offsetY geometry path and its blendshape-correction
+// constants were removed: they could never flag "above the screen", false-fired "down" on chin-up,
+// and had no single workable sensitivity (see the redesign notes).
+// Fallback horizontal threshold used when no calibration has been run. thresholdY is legacy/debug only.
 const DEFAULT_GAZE_THRESHOLD_X = FALLBACK_GAZE_THRESHOLD_X;
 const DEFAULT_GAZE_THRESHOLD_Y = FALLBACK_GAZE_THRESHOLD_Y;
 const DEFAULT_VIOLATION_SCREEN_CLIP_MS = 8000;
@@ -162,6 +168,15 @@ const MAX_VIOLATION_SCREEN_CLIP_MS = 30000;
 const VIOLATION_SCREEN_RECORDING_TIMESLICE_MS = 1000;
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Violation screen recorder — captures a short clip of the candidate's ENTIRE
+// screen around each integrity violation (tab switch, fullscreen exit, phone,
+// clipboard shortcut, etc.). One long-lived getDisplayMedia share is reused for
+// every clip so the candidate is prompted only once; audio siphoned off the same
+// share feeds the transcript hook (no second prompt).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Unique clip id, preferring crypto.randomUUID with a timestamp+random fallback. */
 function makeViolationRecordingId(prefix = 'violation-recording') {
   const cryptoObj = globalThis.crypto;
   if (cryptoObj && 'randomUUID' in cryptoObj) {
@@ -171,6 +186,7 @@ function makeViolationRecordingId(prefix = 'violation-recording') {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/** Pick the best-supported MediaRecorder container/codec (VP9→VP8→webm→mp4), or '' if none. */
 export function getBestViolationRecordingMimeType() {
   if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) {
     return '';
@@ -186,20 +202,29 @@ export function getBestViolationRecordingMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
 
+/** True when the screen-share stream still has at least one live video track. */
 function isScreenShareStreamActive(stream: MediaStream | null) {
   return Boolean(stream && stream.getVideoTracks().some((track) => track.readyState === 'live'));
 }
 
+/** Feature-detect getDisplayMedia + MediaRecorder. Defaults true during SSR (no navigator). */
 function isScreenShareRecordingSupported() {
   if (typeof navigator === 'undefined') return true;
   return typeof navigator.mediaDevices?.getDisplayMedia === 'function' && typeof MediaRecorder !== 'undefined';
 }
 
+/** Feature-detect getUserMedia for the microphone. Defaults true during SSR. */
 function isMicrophoneCaptureSupported() {
   if (typeof navigator === 'undefined') return true;
   return typeof navigator.mediaDevices?.getUserMedia === 'function';
 }
 
+/**
+ * Hook owning the whole-screen violation recorder. Holds the persistent share
+ * stream + a single MediaRecorder, and exposes start/stop/one-shot-clip helpers.
+ * Clips have enforced min/max durations (short violations still yield a usable
+ * clip; runaway recordings auto-stop) and are handed back via onClipReady.
+ */
 function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions = {}) {
   const {
     defaultClipMs = DEFAULT_VIOLATION_SCREEN_CLIP_MS,
@@ -242,6 +267,7 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     [onError],
   );
 
+  /** Tear down both the video and the siphoned-audio share tracks and drop the permission flag. */
   const stopScreenShare = useCallback(() => {
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     screenStreamRef.current = null;
@@ -250,6 +276,12 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     setHasScreenSharePermission(false);
   }, []);
 
+  /**
+   * Prompt for (or reuse) a whole-screen share. ENFORCES Entire-Screen selection
+   * (rejects tab/window — fail-closed) and splits the granted stream into a
+   * video-only proctoring stream plus a separate audio stream for transcription.
+   * Returns true on success; surfaces failures through emitRecorderError.
+   */
   const requestScreenShare = useCallback(async () => {
     try {
       setScreenShareError(null);
@@ -270,6 +302,12 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
           height: { ideal: 720 },
           displaySurface: 'monitor',
         } as MediaTrackConstraints,
+        // Prefer the whole-screen option in the picker and drop the "this tab"
+        // choice so candidates are nudged toward Entire Screen. These are hints
+        // only — the actual selection is enforced below.
+        monitorTypeSurfaces: 'include',
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'exclude',
         // Also request audio on this SAME prompt so a single share can capture
         // the interviewer's voice (avatar audio routes through the tab/system)
         // for transcription — eliminating a second getDisplayMedia prompt. Clean
@@ -277,7 +315,24 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
         // audio", no audio track arrives and we simply fall back to a dedicated
         // prompt later (nothing here breaks).
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } as any,
-      });
+      } as DisplayMediaStreamOptions);
+
+      // ENFORCE whole-screen sharing. `displaySurface: 'monitor'` above is only a
+      // hint — Chromium still lets the candidate pick a single tab or window, and
+      // there's no way to remove those from the picker. So we inspect what they
+      // actually chose: getSettings().displaySurface is 'monitor' for "Entire
+      // Screen", 'window' for an app window, 'browser' for a tab. Reject anything
+      // but a monitor (fail-closed). The candidate room already requires a
+      // Chromium browser (Chrome/Edge), which reports displaySurface reliably;
+      // Firefox/Safari — which don't — are blocked before they reach this point.
+      const [selectedVideoTrack] = stream.getVideoTracks();
+      const selectedSurface = selectedVideoTrack?.getSettings?.().displaySurface;
+      if (selectedSurface !== 'monitor') {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error(
+          'Please share your ENTIRE SCREEN, not a browser tab or a single window. In the share dialog pick "Entire Screen", then try again.',
+        );
+      }
 
       stopScreenShare();
 
@@ -307,6 +362,11 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     }
   }, [emitRecorderError, onScreenShareStopped, stopScreenShare]);
 
+  /**
+   * MediaRecorder.onstop handler: assemble the buffered chunks into a Blob + object
+   * URL, stamp the clip metadata (duration, violation types, event list), reset the
+   * recorder state, and hand the finished clip to onClipReady.
+   */
   const finalizeRecording = useCallback(() => {
     const meta = activeMetaRef.current;
     const recorder = recorderRef.current;
@@ -339,6 +399,11 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     void onClipReady?.(clip);
   }, [onClipReady]);
 
+  /**
+   * Stop the active recording, but never before minClipMs has elapsed: if the
+   * violation ends too soon the stop is deferred so every clip is long enough to
+   * be reviewable. Also clears the auto-stop safety timer.
+   */
   const stopViolationRecording = useCallback(() => {
     const recorder = recorderRef.current;
     const meta = activeMetaRef.current;
@@ -363,6 +428,12 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     stopNow();
   }, [clearTimer, minClipMs]);
 
+  /**
+   * Begin (or extend) a violation recording. If a recording is already running,
+   * the new violation type/event is merged into the active clip instead of
+   * starting a second recorder — overlapping violations share one clip. Arms a
+   * maxClipMs auto-stop so a recording can never run away. Requires an active share.
+   */
   const startViolationRecording = useCallback(
     (type: ProctoringViolationType, details?: Record<string, unknown>) => {
       try {
@@ -434,6 +505,11 @@ function useViolationScreenRecorder(options: UseViolationScreenRecorderOptions =
     [clearTimer, emitRecorderError, finalizeRecording, maxClipMs, stopViolationRecording, timesliceMs],
   );
 
+  /**
+   * One-shot convenience: start a recording and schedule its stop after clipMs
+   * (clamped to [minClipMs, maxClipMs]). Used for point-in-time violations that
+   * have no natural "returned" event to close the clip (phone, no-face, clipboard).
+   */
   const recordViolationClip = useCallback(
     (type: ProctoringViolationType, details?: Record<string, unknown>, clipMs = defaultClipMs) => {
       const started = startViolationRecording(type, details);
@@ -763,6 +839,7 @@ function createInitialProctoringData(): ProctoringData {
 // Phone-detection helpers (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Lowercased label for an EfficientDet category, tolerating the various field names it uses. */
 function getPhoneCategoryName(category: any): string {
   return (
     (category.categoryName || category.displayName || category.label || '')
@@ -771,6 +848,7 @@ function getPhoneCategoryName(category: any): string {
   );
 }
 
+/** Map a box's frame-area fraction to a coarse distance bucket (bigger box ⇒ closer). */
 function getProximity(areaRatio: number): PhoneProximity {
   if (areaRatio >= AREA_ONSCREEN) return 'onscreen';
   if (areaRatio >= AREA_CLOSE)    return 'close';
@@ -778,6 +856,7 @@ function getProximity(areaRatio: number): PhoneProximity {
   return 'far';
 }
 
+/** Classify a box's width/height aspect ratio as a phone-shaped portrait/landscape/diagonal. */
 function getPhoneOrientation(ar: number): PhoneOrientation {
   if (ar >= PORTRAIT_AR.min  && ar <= PORTRAIT_AR.max)  return 'portrait';
   if (ar >= LANDSCAPE_AR.min && ar <= LANDSCAPE_AR.max) return 'landscape';
@@ -785,6 +864,7 @@ function getPhoneOrientation(ar: number): PhoneOrientation {
   return 'unknown';
 }
 
+/** Linearly recency-weighted mean of a score buffer (newest sample weighted highest). */
 function rollingScore(buffer: number[]): number {
   if (!buffer.length) return 0;
   let wSum = 0, wTotal = 0;
@@ -800,12 +880,14 @@ function createPhoneState(): PhoneState {
   return { scoreBuffer: [], confirmedSince: null };
 }
 
+/** Sustained-confirmation window before a phone alert fires: shorter when the signal is strong/close. */
 function getPhoneConfirmMs(confidence: number, proximity: PhoneProximity): number {
   if (confidence >= 0.55 || proximity === 'close' || proximity === 'onscreen') return CONFIRM_MS_HIGH;
   if (confidence >= 0.35 || proximity === 'mid') return CONFIRM_MS_MED;
   return CONFIRM_MS_LOW;
 }
 
+/** True when the box hugs any frame edge (within `margin`), a strong cue for a hand-held phone. */
 function isEdgeTouching(
   box: { originX: number; originY: number; width: number; height: number },
   videoWidth: number,
@@ -819,6 +901,18 @@ function isEdgeTouching(
   return x1 <= margin || y1 <= margin || x2 >= (1 - margin) || y2 >= (1 - margin);
 }
 
+/**
+ * Per-frame phone analysis fusing four independent strategies, because EfficientDet
+ * rarely labels a phone reliably on a webcam feed:
+ *   1. ML label      — a categories match against PHONE_KEYWORDS, edge-boosted.
+ *   2. aspect heuristic — a phone-shaped box (portrait/landscape/diagonal) not on the
+ *                         blocklist, scored by size and phone-adjacency.
+ *   3. combined bonus — two+ strategies agreeing adds COMBINED_BONUS confidence.
+ *   4. edge-touch standalone — a large phone-shaped box clipping an edge, even unlabeled.
+ * The frame's raw confidence is pushed into a recency-weighted rolling buffer so a
+ * single noisy frame cannot trip (or clear) detection. Also reports the closest
+ * proximity/orientation seen and the per-strategy confirm window.
+ */
 function analyzePhoneDetection(
   result: ObjectDetectorResult,
   videoWidth: number,
@@ -966,6 +1060,10 @@ function analyzePhoneDetection(
   };
 }
 
+/**
+ * Edge-triggered gate: returns true once the phone has stayed detected for its full
+ * confirmMs window, then resets so the next alert requires a fresh sustained streak.
+ */
 function consumePhoneAlert(phone: PhoneAnalysis, state: PhoneState): boolean {
   if (!phone.detected) { state.confirmedSince = null; return false; }
   if (state.confirmedSince === null) state.confirmedSince = Date.now();
@@ -1164,6 +1262,16 @@ function consumeForeignObjectAlert(
   return false;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Head-pose estimation
+// Head yaw/pitch/roll are tracked as DELTAS from a per-session baseline (the first
+// clean face frame or the calibration pose). A large sustained deviation fires
+// HEAD_MOVEMENT; a small yaw/pitch also feeds the gaze-compensation math so a tilt
+// isn't misread as looking away. Preferred source is MediaPipe's transformation
+// matrix, falling back to a landmark-geometry proxy.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Safe indexed access into a single face's landmark array (undefined-tolerant). */
 function getFacePoint(landmarks: FaceLandmarkerResult['faceLandmarks'][number] | undefined, index: number) {
   return landmarks?.[index];
 }
@@ -1189,6 +1297,7 @@ function radiansToDegrees(value: number) {
   return (value * 180) / Math.PI;
 }
 
+/** Signed current−baseline angle difference wrapped into (−180°, 180°]. */
 function normalizeAngleDelta(current: number, baseline: number) {
   let delta = current - baseline;
   while (delta > 180) delta -= 360;
@@ -1196,6 +1305,10 @@ function normalizeAngleDelta(current: number, baseline: number) {
   return delta;
 }
 
+/**
+ * Preferred head pose: decompose MediaPipe's 4×4 facial transformation matrix into
+ * Euler yaw/pitch/roll (degrees). Returns null when the matrix is absent or singular.
+ */
 function getHeadPoseFromMatrix(result: FaceLandmarkerResult | null): HeadPose | null {
   const matrix = (result as any)?.facialTransformationMatrixes?.[0];
   const data = matrix?.data ?? matrix?.matrix ?? matrix;
@@ -1221,6 +1334,11 @@ function getHeadPoseFromMatrix(result: FaceLandmarkerResult | null): HeadPose | 
   return { yaw, pitch, roll, source: 'matrix' };
 }
 
+/**
+ * Fallback head pose from raw landmark geometry: nose offset from the eye-midpoint
+ * (normalised by face width/height) gives yaw/pitch, eye-line slope gives roll.
+ * Used when the transformation matrix is unavailable.
+ */
 function getHeadPoseFromLandmarks(result: FaceLandmarkerResult | null): HeadPose | null {
   const landmarks = result?.faceLandmarks?.[0];
   const leftEyeOuter = getFacePoint(landmarks, 33);
@@ -1246,10 +1364,16 @@ function getHeadPoseFromLandmarks(result: FaceLandmarkerResult | null): HeadPose
   return { yaw, pitch, roll, source: 'landmarks' };
 }
 
+/** Head pose from the matrix when available, else the landmark-geometry fallback. */
 function estimateHeadPose(result: FaceLandmarkerResult | null): HeadPose | null {
   return getHeadPoseFromMatrix(result) ?? getHeadPoseFromLandmarks(result);
 }
 
+/**
+ * Per-axis deltas from the calibration baseline plus the combined magnitude and the
+ * single worst axis. `tooMuch` trips when either the vector magnitude or any single
+ * axis crosses the ~23° threshold — the HEAD_MOVEMENT alarm condition.
+ */
 function calculateHeadPoseDeviation(current: HeadPose, baseline: HeadPose): HeadPoseDeviation {
   const yaw = normalizeAngleDelta(current.yaw, baseline.yaw);
   const pitch = normalizeAngleDelta(current.pitch, baseline.pitch);
@@ -1267,6 +1391,8 @@ function calculateHeadPoseDeviation(current: HeadPose, baseline: HeadPose): Head
   };
 }
 
+/** Deadzoned, capped head-pitch/yaw delta used to compensate gaze: ignore jitter below
+ *  START, saturate at MAX (beyond which the head-movement alarm owns it). */
 function clampHeadPoseForGazeCompensation(deltaDegrees: number) {
   if (!Number.isFinite(deltaDegrees)) return 0;
   const absDelta = Math.abs(deltaDegrees);
@@ -1276,6 +1402,8 @@ function clampHeadPoseForGazeCompensation(deltaDegrees: number) {
   return Math.sign(deltaDegrees) * (clampedAbsDelta - HEAD_POSE_GAZE_COMPENSATION_START_DEG);
 }
 
+/** Sign-preserving shrink of `value` toward 0 by the head-pose contribution — the
+ *  conservative fallback when signed compensation would be device-convention-wrong. */
 function reduceMagnitudeByHeadPose(value: number, deltaDegrees: number, factor: number) {
   const reduction = Math.abs(clampHeadPoseForGazeCompensation(deltaDegrees)) * factor;
   if (reduction <= 0) return value;
@@ -1283,6 +1411,12 @@ function reduceMagnitudeByHeadPose(value: number, deltaDegrees: number, factor: 
   return Math.sign(value) * remainingMagnitude;
 }
 
+/**
+ * Remove the face-relative gaze shift a head tilt induces (horizontal axis). Tries
+ * signed compensation; if the device's coordinate convention makes that worsen the
+ * reading, falls back to a magnitude-only reduction so compensation can never
+ * manufacture a false gaze-away.
+ */
 function compensateGazeWithHeadPose(value: number, deltaDegrees: number, factor: number) {
   const clampedDelta = clampHeadPoseForGazeCompensation(deltaDegrees);
   if (clampedDelta === 0) return value;
@@ -1295,16 +1429,52 @@ function compensateGazeWithHeadPose(value: number, deltaDegrees: number, factor:
   return reduceMagnitudeByHeadPose(value, deltaDegrees, factor);
 }
 
+// Deterministic head pitch (chin-down positive, degrees) from face landmarks — the SAME signal
+// calibration records (noseEyePitchDeg), so the calibrated band and the live world-vertical gaze
+// share one vertical frame. Returns null when the needed landmarks are missing.
+function gazePitchDegLive(result: FaceLandmarkerResult | null): number | null {
+  const lm = result?.faceLandmarks?.[0];
+  return noseEyePitchDeg(
+    getFacePoint(lm, 33),
+    getFacePoint(lm, 263),
+    getFacePoint(lm, 1),
+    getFacePoint(lm, 10),
+    getFacePoint(lm, 152),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gaze detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-frame gaze verdict on two independent axes:
+ *   • HORIZONTAL — iris-in-socket offsetX vs the calibrated thresholdX. Eye corners
+ *     are rigid under head rotation, so this is the reliable axis; optionally
+ *     exponentially smoothed and head-yaw-compensated.
+ *   • VERTICAL   — the world-vertical BAND model (classifyVertical): one signal,
+ *     head-pitch-folded (eyeLookDown − eyeLookUp), compared against the per-person
+ *     [vBandTop, vBandBottom] band. See gazeVerticalMath.ts.
+ * The two are merged by combineGazeDirection (OR to fire, stronger axis names it).
+ * When iris landmarks are missing it degrades to a raw blendshape liveness fallback.
+ * thresholdY/neutralY are legacy debug plumbing and do not affect the verdict.
+ */
 function detectGazeAway(
   result: FaceLandmarkerResult | null,
   thresholdX = DEFAULT_GAZE_THRESHOLD_X,
+  // thresholdY/neutralY are legacy plumbing (debug only) — vertical detection uses the band below.
   thresholdY = DEFAULT_GAZE_THRESHOLD_Y,
   neutralX = 0,
   neutralY = 0,
   headPoseDeviation?: HeadPoseDeviation | null,
-  // optional smoothing ref to reduce jitter / sensitivity
+  // optional smoothing ref to reduce jitter / sensitivity (horizontal only)
   filterRef?: { current: { x: number; y: number; initialized: boolean } } | null,
   smoothingAlpha = 0.25,
+  // Personalised on-screen vertical band (signed world-vertical units) from calibration, and the
+  // head-pitch delta (degrees, chin-down positive) vs the session baseline. Defaults = zero-config.
+  vBandTop = DEFAULT_VERTICAL_BAND.vBandTop,
+  vBandBottom = DEFAULT_VERTICAL_BAND.vBandBottom,
+  gazePitchDeltaDeg = 0,
 ) {
   const faceLandmarks = result?.faceLandmarks?.[0];
   const faceBlendshapes = result?.faceBlendshapes?.[0]?.categories ?? [];
@@ -1353,6 +1523,9 @@ function detectGazeAway(
         uncompensatedY: 0,
         compensatedX: 0,
         compensatedY: 0,
+        upBlendshape: Math.min(upLeft, upRight),
+        downBlendshape: Math.min(downLeft, downRight),
+        verticalWorld: Math.min(downLeft, downRight) - Math.min(upLeft, upRight),
         yawDelta: headPoseDeviation?.yaw ?? 0,
         pitchDelta: headPoseDeviation?.pitch ?? 0,
       };
@@ -1367,168 +1540,109 @@ function detectGazeAway(
       uncompensatedY: 0,
       compensatedX: 0,
       compensatedY: 0,
+      upBlendshape: Math.min(upLeft, upRight),
+      downBlendshape: Math.min(downLeft, downRight),
+      verticalWorld: Math.min(downLeft, downRight) - Math.min(upLeft, upRight),
       yawDelta: headPoseDeviation?.yaw ?? 0,
       pitchDelta: headPoseDeviation?.pitch ?? 0,
     };
   }
 
+  // ── Horizontal gaze (unchanged): iris-in-socket offsetX vs the calibrated threshold ───────────
+  // The eye corners are rigid under head rotation, so offsetX is a clean horizontal-gaze signal.
   const leftW  = Math.max(Math.abs(leftEyeOuter.x  - leftEyeInner.x),  0.0001);
   const rightW = Math.max(Math.abs(rightEyeOuter.x - rightEyeInner.x), 0.0001);
-  const lUp    = getFacePoint(faceLandmarks, 159);
-  const lDown  = getFacePoint(faceLandmarks, 145);
-  const rUp    = getFacePoint(faceLandmarks, 386);
-  const rDown  = getFacePoint(faceLandmarks, 374);
-  const leftH  = Math.max(Math.abs((lUp?.y ?? leftIris.y)  - (lDown?.y ?? leftIris.y)),  0.0001);
-  const rightH = Math.max(Math.abs((rUp?.y ?? rightIris.y) - (rDown?.y ?? rightIris.y)), 0.0001);
-
   const leftMidX  = (leftEyeOuter.x  + leftEyeInner.x)  / 2;
   const rightMidX = (rightEyeOuter.x + rightEyeInner.x) / 2;
-  const leftMidY  = ((lUp?.y ?? leftIris.y) + (lDown?.y ?? leftIris.y)) / 2;
-  const rightMidY = ((rUp?.y ?? rightIris.y) + (rDown?.y ?? rightIris.y)) / 2;
-
   const rawOffsetX = ((leftIris.x - leftMidX) / (leftW / 2) + (rightIris.x - rightMidX) / (rightW / 2)) / 2;
-  const rawOffsetY = ((leftIris.y - leftMidY) / (leftH / 2) + (rightIris.y - rightMidY) / (rightH / 2)) / 2;
 
-  // Subtract the calibrated neutral so eyes-forward is always (0,0)
+  // Subtract the calibrated neutral so eyes-forward is 0. Thresholds are sanitized by
+  // eightDotCalibrationGuardV3; do not expand them here (fake calibration must not widen the zone).
   const adjOffsetX = rawOffsetX - neutralX;
-  const adjOffsetY = rawOffsetY - neutralY;
-
-  // Thresholds are sanitized by eightDotCalibrationGuardV3 before live monitoring uses them.
-  // Do not expand them here using calibration extremes; that would allow fake calibration to enlarge the safe zone.
   const effectiveThresholdX = thresholdX;
-  const effectiveThresholdUp = thresholdY * 0.975;
-  const effectiveThresholdDown = Math.max(
-    thresholdY * DOWNWARD_GAZE_THRESHOLD_FACTOR,
-    MIN_DOWNWARD_GAZE_THRESHOLD,
-  );
 
-  // Apply optional exponential smoothing to reduce spurious detections from jitter.
+  // Optional exponential smoothing on the horizontal offset to reduce jitter (vertical uses the band).
   let useX = adjOffsetX;
-  let useY = adjOffsetY;
   if (filterRef) {
     const f = filterRef.current;
     if (!f.initialized) {
       f.x = adjOffsetX;
-      f.y = adjOffsetY;
       f.initialized = true;
       useX = adjOffsetX;
-      useY = adjOffsetY;
     } else {
-      // low-pass: new = old*(1-a) + current*a
-      f.x = f.x * (1 - smoothingAlpha) + adjOffsetX * smoothingAlpha;
-      f.y = f.y * (1 - smoothingAlpha) + adjOffsetY * smoothingAlpha;
+      f.x = f.x * (1 - smoothingAlpha) + adjOffsetX * smoothingAlpha; // low-pass
       useX = f.x;
-      useY = f.y;
     }
   }
 
   const uncompensatedX = useX;
-  const uncompensatedY = useY;
   const compensatedX = headPoseDeviation
     ? compensateGazeWithHeadPose(uncompensatedX, headPoseDeviation.yaw, HEAD_YAW_TO_GAZE_X_FACTOR)
     : uncompensatedX;
-  const compensatedY = headPoseDeviation
-    ? compensateGazeWithHeadPose(uncompensatedY, headPoseDeviation.pitch, HEAD_PITCH_TO_GAZE_Y_FACTOR)
-    : uncompensatedY;
-  const headPoseCompensated =
-    Math.abs(compensatedX - uncompensatedX) > 0.0001 ||
-    Math.abs(compensatedY - uncompensatedY) > 0.0001;
-
+  const headPoseCompensated = Math.abs(compensatedX - uncompensatedX) > 0.0001;
   useX = compensatedX;
-  useY = compensatedY;
 
+  const horizontalGazeAway = Math.abs(useX) >= effectiveThresholdX;
+  const horizontalDir: 'left' | 'right' = useX > 0 ? 'left' : 'right';
+  const horizontalStrength = Math.abs(useX) / Math.max(effectiveThresholdX, 0.0001);
+
+  // ── Vertical gaze: ONE world-vertical signal vs the personalised band (see gazeVerticalMath) ───
+  // v = (eyeLookDown − eyeLookUp) folded with the deterministic head pitch (chin-down positive), so
+  // a chin-up hold subtracts (kills the old false "down"), a chin-down look-down adds (catches it),
+  // and the on-screen range is bounded by the per-person band with no sign assumptions.
   const upBlendshapeScore = Math.min(upLeft, upRight);
   const downBlendshapeScore = Math.min(downLeft, downRight);
-  const horizontalGazeAway = Math.abs(useX) >= effectiveThresholdX;
-  const upwardGazeAway = useY <= -effectiveThresholdUp;
-  const downwardGazeAway = useY >= effectiveThresholdDown;
-  const downwardGeometrySupport = Math.max(
-    effectiveThresholdDown * DOWNWARD_GEOMETRY_SUPPORT_FACTOR,
-    MIN_DOWNWARD_GEOMETRY_SUPPORT,
-  );
-  const headPoseExplainsVerticalCompensation = Boolean(
-    headPoseDeviation &&
-    Math.abs(headPoseDeviation.pitch) > HEAD_POSE_GAZE_COMPENSATION_START_DEG &&
-    Math.sign(uncompensatedY) !== 0 &&
-    Math.abs(useY) < Math.abs(uncompensatedY) &&
-    !upwardGazeAway &&
-    !downwardGazeAway,
-  );
-  const downwardBlendshapeAway =
-    !headPoseExplainsVerticalCompensation &&
-    downBlendshapeScore >= DOWNWARD_BLENDSHAPE_AWAY_THRESHOLD &&
-    downBlendshapeScore > upBlendshapeScore + DOWNWARD_BLENDSHAPE_MARGIN &&
-    // Avoid triggering "down" from tiny positive-Y jitter. Blendshape can still help,
-    // but it now needs either mild geometry support or a very strong down score.
-    (
-      useY >= downwardGeometrySupport ||
-      downBlendshapeScore >= DOWNWARD_BLENDSHAPE_AWAY_THRESHOLD + 0.22
-    );
+  const eyeInHeadVertical = downBlendshapeScore - upBlendshapeScore;
+  const vertical = classifyVertical({
+    eyeInHeadV: eyeInHeadVertical,
+    gazePitchDeltaDeg,
+    vBandTop,
+    vBandBottom,
+    downBlend: downBlendshapeScore,
+    upBlend: upBlendshapeScore,
+  });
 
-  if (horizontalGazeAway || upwardGazeAway || downwardGazeAway || downwardBlendshapeAway) {
-    const horizontal = useX > 0 ? 'left' : 'right';
-
-    // Geometry is still the primary signal, but MediaPipe's eyeLookUp/Down blendshapes
-    // are more reliable for distinguishing vertical direction when the eyelid hides the iris.
-    let vertical = useY > 0 || downwardBlendshapeAway ? 'down' : 'up';
-    let verticalSource: 'geometry' | 'blendshape' = downwardBlendshapeAway ? 'blendshape' : 'geometry';
-
-    if (
-      downBlendshapeScore >= VERTICAL_BLENDSHAPE_DIRECTION_THRESHOLD &&
-      downBlendshapeScore > upBlendshapeScore + VERTICAL_BLENDSHAPE_MARGIN
-    ) {
-      vertical = 'down';
-      verticalSource = 'blendshape';
-    } else if (
-      upBlendshapeScore >= VERTICAL_BLENDSHAPE_DIRECTION_THRESHOLD &&
-      upBlendshapeScore > downBlendshapeScore + VERTICAL_BLENDSHAPE_MARGIN
-    ) {
-      vertical = 'up';
-      verticalSource = 'blendshape';
-    }
-
-    // Use normalized strength so the lower downward threshold actually affects direction choice.
-    // Without this, small X jitter could still beat a real downward gaze.
-    const horizontalStrength = Math.abs(useX) / Math.max(effectiveThresholdX, 0.0001);
-    const verticalThreshold = useY > 0 || downwardBlendshapeAway ? effectiveThresholdDown : effectiveThresholdUp;
-    const verticalStrength = Math.abs(useY) / Math.max(verticalThreshold, 0.0001);
-    const horizontalDeadzoneMargin = 1.15;
-    const direction = horizontalStrength * horizontalDeadzoneMargin > verticalStrength && !downwardBlendshapeAway ? horizontal : vertical;
-
-    return {
-      away: true,
-      direction,
-      confidence: Math.max(Math.abs(useX), Math.abs(useY), downwardBlendshapeAway ? downBlendshapeScore : 0),
-      source: direction === vertical ? verticalSource : 'geometry',
-      headPoseCompensated,
-      uncompensatedX,
-      uncompensatedY,
-      compensatedX: useX,
-      compensatedY: useY,
-      yawDelta: headPoseDeviation?.yaw ?? 0,
-      pitchDelta: headPoseDeviation?.pitch ?? 0,
-    };
-  }
+  // Combine into one direction (stronger axis wins, slight horizontal bias). Firing is the OR.
+  const combined = combineGazeDirection({
+    horizontalAway: horizontalGazeAway,
+    horizontalDir,
+    horizontalStrength,
+    vertical,
+  });
+  const verticalIsDir = combined.direction === 'up' || combined.direction === 'down';
 
   return {
-    away: false,
-    direction: 'center',
-    confidence: 0,
-    source: 'geometry' as const,
+    away: combined.away,
+    direction: combined.direction,
+    confidence: Math.max(Math.abs(useX), Math.abs(vertical.worldVertical)),
+    source: (verticalIsDir ? 'blendshape' : 'geometry') as 'geometry' | 'blendshape',
     headPoseCompensated,
     uncompensatedX,
-    uncompensatedY,
+    uncompensatedY: 0,
     compensatedX: useX,
-    compensatedY: useY,
+    compensatedY: 0,
+    upBlendshape: upBlendshapeScore,
+    downBlendshape: downBlendshapeScore,
+    verticalWorld: vertical.worldVertical,
     yawDelta: headPoseDeviation?.yaw ?? 0,
-    pitchDelta: headPoseDeviation?.pitch ?? 0,
+    pitchDelta: gazePitchDeltaDeg,
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Camera / fullscreen helpers (vendor-prefixed, SSR-safe)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** First video track of a stream, or null. */
 function getVideoTrack(stream: MediaStream | null | undefined): MediaStreamTrack | null {
   return stream?.getVideoTracks?.()[0] ?? null;
 }
 
+/**
+ * Return a human-readable reason the camera feed is unhealthy (track ended/muted/
+ * disabled, element detached, no frames yet, zero dimensions), or null when the feed
+ * is fully live. Drives CAMERA_OFF detection — a candidate covering/killing the camera.
+ */
 function getCameraHealthIssue(video: HTMLVideoElement | null, stream: MediaStream | null | undefined) {
   const track = getVideoTrack(stream);
 
@@ -1547,6 +1661,7 @@ function getCameraHealthIssue(video: HTMLVideoElement | null, stream: MediaStrea
   return null;
 }
 
+/** Current fullscreen element across standard + webkit/ms prefixes, or null. */
 function getFullscreenElement() {
   if (typeof document === 'undefined') return null;
   const doc = document as Document & {
@@ -1557,6 +1672,7 @@ function getFullscreenElement() {
   return document.fullscreenElement ?? doc.webkitFullscreenElement ?? doc.msFullscreenElement ?? null;
 }
 
+/** True when the browser both allows fullscreen and exposes a requestFullscreen method. */
 function isFullscreenSupported() {
   if (typeof document === 'undefined') return false;
   const doc = document as Document & {
@@ -1574,6 +1690,7 @@ function isFullscreenSupported() {
   return Boolean(fullscreenEnabled && requestFullscreen);
 }
 
+/** The documentElement's requestFullscreen method across vendor prefixes, or null. */
 function getRequestFullscreen() {
   if (typeof document === 'undefined') return null;
   const element = document.documentElement as HTMLElement & {
@@ -1584,7 +1701,16 @@ function getRequestFullscreen() {
   return element.requestFullscreen ?? element.webkitRequestFullscreen ?? element.msRequestFullscreen ?? null;
 }
 
-export function useProctoring(sessionId: string, socket?: WebSocket | null, calibration?: CalibrationResult | null) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Main useProctoring hook
+// Owns the camera + MediaPipe models, the per-frame detection loop, all the
+// browser-integrity event listeners (tab switch, fullscreen, clipboard, screen
+// share, camera health), the violation screen recorder, and the running
+// proctoring-score counters. Streams events to the interview WebSocket via emit()
+// and returns live state plus the pre-interview permission/fullscreen flow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useProctoring(sessionId: string, socket?: WebSocket | null, calibration?: CalibrationResult | null, proctoringEnabled: boolean = true) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [events, setEvents] = useState<ProctoringEvent[]>([]);
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -1677,6 +1803,10 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
   const phoneStateRef = useRef<PhoneState>(createPhoneState());
   const foreignObjectStateRef = useRef<ForeignObjectState>(createForeignObjectState());
   const headPoseBaselineRef = useRef<HeadPose | null>(null);
+  // Baseline for the vertical gaze pitch (deterministic nose-vs-eye, chin-down positive). Seeded from
+  // calibration.headPitchDeg when available so live world-vertical shares the band's frame; otherwise
+  // from the first live face frame. Distinct from headPoseBaselineRef (matrix pose for head-movement).
+  const gazePitchBaselineRef = useRef<number | null>(null);
   const proctoringDataRef = useRef<ProctoringData>(createInitialProctoringData());
   const prevFaceCountRef = useRef<number>(1);
   const sessionStartedRef = useRef(false);
@@ -1689,9 +1819,12 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     safeCalibrationRef.current = buildSafeEightDotCalibration(calibration);
     gazeFilterRef.current = { x: 0, y: 0, initialized: false };
     headPoseBaselineRef.current = null;
+    gazePitchBaselineRef.current = null;
     headPoseSince.current = null;
   }, [calibration]);
 
+  /** Send one proctoring event to the interview WebSocket and prepend it to the local
+   *  ring buffer (last 10). No-ops until the session has actually started. */
   const emit = useCallback((eventType: string, severity: Severity, metadata: Record<string, unknown> = {}) => {
     if (!sessionStartedRef.current) return;
 
@@ -1701,6 +1834,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     setEvents((current) => [{ eventType, severity, timestamp: now, metadata }, ...current].slice(0, 10));
   }, [sessionId, socket]);
 
+  /** emit() guarded by a per-event-type cooldown ref (ALERT_COOLDOWN_MS) so a sustained
+   *  violation doesn't spam identical alerts. Returns whether it actually fired. */
   function emitWithCooldown(ref: { current: number }, eventType: string, severity: Severity, metadata: Record<string, unknown> = {}) {
     const now = Date.now();
     if (now - ref.current < ALERT_COOLDOWN_MS) return false;
@@ -1709,6 +1844,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     return true;
   }
 
+  /** Tab-switch alert with its own short cooldown (transitions are already debounced upstream). */
   function emitTabSwitchWithCooldown(metadata: Record<string, unknown> = {}) {
     const now = Date.now();
     if (now - tabSwitchAlertAt.current < TAB_SWITCH_ALERT_COOLDOWN_MS) return false;
@@ -1717,6 +1853,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     return true;
   }
 
+  /** Fullscreen-family alerts sharing one cooldown ref so exit/restore churn stays quiet. */
   function emitFullscreenWithCooldown(eventType: string, severity: Severity, metadata: Record<string, unknown> = {}) {
     const now = Date.now();
     if (now - fullscreenAlertAt.current < FULLSCREEN_ALERT_COOLDOWN_MS) return false;
@@ -1726,6 +1863,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
   }
 
 
+  /** Recorder onClipReady: store the finished clip (last 20) and emit a metadata event.
+   *  If the session already ended, revoke the object URL and drop it. */
   const handleViolationRecordingReady = useCallback(
     (clip: ViolationRecordingClip) => {
       if (!sessionStartedRef.current) {
@@ -1748,6 +1887,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     [emit],
   );
 
+  /** Recorder onError: emit a throttled error event (screen share likely missing). */
   const handleViolationRecordingError = useCallback(
     (error: Error) => {
       const now = Date.now();
@@ -1762,6 +1902,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     [emit],
   );
 
+  /** Fired when the candidate ends the screen share mid-interview: count it as a
+   *  session-control violation, mark it not-restored, and emit SCREEN_SHARE_STOPPED. */
   const handleScreenShareStopped = useCallback(() => {
     const now = Date.now();
     if (sessionStartedRef.current) {
@@ -1796,6 +1938,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     onScreenShareStopped: handleScreenShareStopped,
   });
 
+  // Mirror the recorder's screen-share permission into the hook's state flags and the
+  // synchronous ref the gesture handlers read.
   useEffect(() => {
     const now = Date.now();
     screenShareGrantedRef.current = violationScreenRecorder.hasScreenSharePermission;
@@ -1810,6 +1954,13 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     }));
   }, [violationScreenRecorder.hasScreenSharePermission]);
 
+  /**
+   * Collapse the raw session counters into the final 0–100 ProctoringScore. Each axis
+   * is scored independently (higher = cleaner), hard-capped for severe patterns (long
+   * phone streak, ≥10s camera-off, screen share never restored), then blended with fixed
+   * weights (tab/phone/session-control weigh most). Also builds the human-readable flags
+   * and the risk band. Pure over the counters — safe to call for a live preview.
+   */
   function computeProctoringScore(): ProctoringScore {
     const pd = proctoringDataRef.current;
 
@@ -1908,6 +2059,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     };
   }
 
+  /** Zero every counter, incident flag, confirmation timer, and detection state field so a
+   *  fresh session starts clean. Called at session start. */
   function resetSessionTracking() {
     proctoringDataRef.current = createInitialProctoringData();
     prevFaceCountRef.current = 1;
@@ -1954,6 +2107,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     }));
   }
 
+  /** Begin scoring: reset counters, flip the started flag (which un-gates emit()), and
+   *  announce PROCTORING_SESSION_STARTED. No-op if already running or already ended. */
   function startProctoringSession() {
     if (sessionStartedRef.current || proctoringSessionEnded) return false;
 
@@ -1964,6 +2119,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     return true;
   }
 
+  /** Tear down all live resources: stop the frame loop, recorder, screen share, camera
+   *  tracks, and MediaPipe models, and clear every incident timer/flag. Best-effort. */
   function stopLiveProctoringResources() {
     aliveRef.current = false;
 
@@ -2011,6 +2168,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     screenShareGrantedRef.current = false;
   }
 
+  /** Freeze the score, stop all live resources, emit PROCTORING_SCORE_FINALIZED, and
+   *  return the final score. This is the End-Interview entry point. */
   function endProctoringSession(): ProctoringScore {
     const score = computeProctoringScore();
     const endedAt = Date.now();
@@ -2057,6 +2216,9 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     return score;
   }
 
+  /** Put the exam into fullscreen (must be called from a user gesture). Handles the
+   *  unsupported/already-fullscreen/needs-request cases and keeps the state flags in sync;
+   *  emits FULLSCREEN_UNAVAILABLE / _REQUEST_FAILED on failure. */
   async function requestExamFullscreen(trigger = 'manual') {
     if (typeof window === 'undefined' || typeof document === 'undefined') return false;
 
@@ -2158,6 +2320,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     }
   }
 
+  /** Pre-interview gate: ensure a whole-screen share is granted (reusing an existing one),
+   *  syncing the readiness flags and emitting CONFIRMED/FAILED. Returns whether share is ready. */
   async function requestScreenShareBeforeInterview(trigger = 'pre_interview_start_button') {
     const supported = isScreenShareRecordingSupported();
     const now = Date.now();
@@ -2237,6 +2401,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     }
   }
 
+  /** Full pre-interview readiness step: require screen share FIRST, then enter fullscreen.
+   *  Returns true only when both are satisfied — the gate the Start button waits on. */
   async function enterFullscreenBeforeInterview(trigger = 'pre_interview_fullscreen_button') {
     const screenShareReady = await requestScreenShareBeforeInterview(trigger);
     if (!screenShareReady) return false;
@@ -2279,10 +2445,12 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     return entered && active;
   }
 
+  /** Alias used by the Start-Interview button; runs the share+fullscreen readiness flow. */
   async function prepareInterviewStart() {
     return enterFullscreenBeforeInterview('start_interview_button');
   }
 
+  /** Clear the tab-away duration interval plus the pending tab-switch and camera-off confirm timers. */
   function clearTabSwitchDurationTimer() {
     if (tabSwitchDurationTimerRef.current !== null && typeof window !== 'undefined') {
       window.clearInterval(tabSwitchDurationTimerRef.current);
@@ -2299,6 +2467,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     }
   }
 
+  /** While the candidate is away from the tab, tick the live away-duration into state once
+   *  per second for the UI. Single-instance guarded. */
   function startTabSwitchDurationTimer() {
     if (!sessionStartedRef.current || typeof window === 'undefined' || tabSwitchDurationTimerRef.current !== null) return;
 
@@ -2316,6 +2486,8 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     }, 1000);
   }
 
+  // Clipboard-shortcut watcher: capture-phase keydown catches Ctrl/Cmd+C / +V anywhere,
+  // emits COPY/PASTE alerts (paste is HIGH — pasted answers) and records a violation clip.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -2359,6 +2531,10 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     };
   }, [emit, violationScreenRecorder.recordViolationClip]);
 
+  // Tab/window-switch watcher. visibilitychange/blur/focus/pagehide/pageshow are folded
+  // into markTabAway/markTabReturned. An away requires a TAB_SWITCH_CONFIRM_MS confirmation
+  // window before it counts (transient blurs are ignored), the away duration is ticked live,
+  // and return closes the incident with a TAB_RETURNED event and stops the clip.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -2520,9 +2696,18 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
     };
   }, [emit, violationScreenRecorder.startViolationRecording, violationScreenRecorder.stopViolationRecording]);
 
+  // Fullscreen watcher + first-gesture permission bootstrap. Tracks enter/exit across
+  // vendor-prefixed events, counts each exit as a session-control violation and records a
+  // clip, and — because browsers only grant fullscreen/getDisplayMedia from a real user
+  // gesture — runs the full share+fullscreen flow on the first pointerdown/keydown.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    // Consent gate: do not attach fullscreen / screen-share gesture listeners
+    // until the candidate has given informed consent. Re-runs when consent flips.
+    if (!proctoringEnabled) return;
 
+    // Fullscreen (re)entered: close any open exit incident with FULLSCREEN_RESTORED (and stop
+    // its clip), else just note FULLSCREEN_ENTERED, and mark readiness.
     const markFullscreenEntered = (trigger: string) => {
       const now = Date.now();
       const durationMs = fullscreenExitSince.current ? now - fullscreenExitSince.current : 0;
@@ -2558,6 +2743,9 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
       }));
     };
 
+    // Fullscreen exited: ignored before the session or if fullscreen was never entered
+    // (initial state); otherwise opens an exit incident (counted once), emits a HIGH alert,
+    // and starts a violation clip.
     const markFullscreenExited = (trigger: string, reason = 'fullscreen_exited') => {
       const now = Date.now();
       if (!sessionStartedRef.current) {
@@ -2688,9 +2876,17 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
       screenShareRequestInFlightRef.current = false;
       screenShareGrantedRef.current = false;
     };
-  }, [emit, violationScreenRecorder.startViolationRecording, violationScreenRecorder.stopViolationRecording]);
+  }, [emit, proctoringEnabled, violationScreenRecorder.startViolationRecording, violationScreenRecorder.stopViolationRecording]);
 
+  // Main detection loop. Acquires the camera, loads the MediaPipe FaceLandmarker +
+  // ObjectDetector, then polls a tick() every LIVE_INTERVAL_MS that runs both models on the
+  // current frame and drives face-count / phone / foreign-object / gaze / head-pose detection
+  // plus camera-health tracking. Emits alerts (each behind a sustained-confirmation window +
+  // cooldown) and updates both the running score counters and the live UI state.
   useEffect(() => {
+    // Consent gate: do not acquire the camera or load the face/object models
+    // until the candidate has given informed consent. Re-runs when it flips true.
+    if (!proctoringEnabled) return;
     aliveRef.current = true;
 
     async function start() {
@@ -2817,6 +3013,9 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
         objectDetectorActive: true,
       }));
 
+      // One detection frame. Self-reschedules via setTimeout(tick, LIVE_INTERVAL_MS). Early
+      // branches handle camera-off and not-yet-ready feeds; the main body runs the models,
+      // updates counters, refreshes state, then applies each detector's confirm/cooldown gate.
       const tick = () => {
         if (!aliveRef.current) return;
         const currentVideo = videoRef.current;
@@ -3003,6 +3202,23 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
         const headMovementDetected = Boolean(headPoseDeviation?.tooMuch);
 
         const safeCalibration = safeCalibrationRef.current;
+
+        // Vertical head-pitch delta vs the baseline (seeded from the calibration pose so the band and
+        // the live reading share one frame; else from the first live face frame). Chin-down positive.
+        const gazePitchNow = faceCount === 1 ? gazePitchDegLive(faceResult) : null;
+        if (gazePitchNow != null && gazePitchBaselineRef.current == null) {
+          // Trusted calibration → anchor to the calibration pose (band was measured there). Skipped /
+          // default / untrusted calibration → anchor to the first live frame (no real calibration pose).
+          gazePitchBaselineRef.current =
+            safeCalibration.trusted && safeCalibration.headPitchDeg != null
+              ? safeCalibration.headPitchDeg
+              : gazePitchNow;
+        }
+        const gazePitchDelta =
+          gazePitchNow != null && gazePitchBaselineRef.current != null
+            ? gazePitchNow - gazePitchBaselineRef.current
+            : 0;
+
         const gaze = detectGazeAway(
           faceResult,
           safeCalibration.thresholdX ?? DEFAULT_GAZE_THRESHOLD_X,
@@ -3012,8 +3228,14 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
           headPoseDeviation,
           gazeFilterRef,
           0.18, // reduced from 0.28 for better filtering of false positives
+          safeCalibration.vBandTop ?? DEFAULT_VERTICAL_BAND.vBandTop,
+          safeCalibration.vBandBottom ?? DEFAULT_VERTICAL_BAND.vBandBottom,
+          gazePitchDelta,
         );
 
+        // Before the session starts we still run the models (to show a live camera preview
+        // and keep the loop warm) but must not accumulate counters or fire alerts, so reset
+        // all confirmation timers/state and report a neutral "ready" frame.
         if (!sessionStartedRef.current) {
           missingSince.current = null;
           multiFaceSince.current = null;
@@ -3104,6 +3326,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
           foreignObjectLabel: foreignObject?.label ?? '',
           gazeAwayDetected: gaze.away,
           gazeDirection: gaze.direction,
+          gazeDebug: `${gaze.direction} · v ${gaze.verticalWorld.toFixed(2)} · band [${safeCalibration.vBandTop.toFixed(2)},${safeCalibration.vBandBottom.toFixed(2)}] · up<${(safeCalibration.vBandTop - V_MARGIN_UP).toFixed(2)} dn>${(safeCalibration.vBandBottom + V_MARGIN_DOWN).toFixed(2)} · Δpitch ${gazePitchDelta.toFixed(1)}° · ${safeCalibration.trusted ? 'cal' : 'default'}`,
           headMovementDetected,
           headPoseDeviationDegrees: Math.round(headPoseDeviation?.magnitude ?? 0),
           lastObservationAt: Date.now(),
@@ -3322,7 +3545,7 @@ export function useProctoring(sessionId: string, socket?: WebSocket | null, cali
       objectDetectorRef.current = null;
       streamRef.current = null;
     };
-  }, [emit, violationScreenRecorder.recordViolationClip]);
+  }, [emit, proctoringEnabled, violationScreenRecorder.recordViolationClip]);
 
   return {
     videoRef,

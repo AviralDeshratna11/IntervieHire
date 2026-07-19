@@ -7,6 +7,13 @@
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
 - **2026-07-20** — Recruiter screening is now a distinct AI-avatar interview stage instead of just "the same room with different questions". `backend/app/utils/ai_sync.py` (`sync_applicant_to_ai`) now stamps `interview_settings['stage'] = 'screening' | 'functional'` into `InterviewSession.settings` (no schema change — reuses the existing free-form JSON column) so the candidate room can tell the two apart. Added **POST /api/public/interview-session/{session_id}/screening-outcome** (`backend/app/routers/public.py`, webhook-secret gated like the existing recording-upload route) — reads the already-persisted engine evaluation, writes the real verdict onto `Applicant.recruiter_screening`/`recruiter_screening_score`/`screening_status`/`screening_score` (which `report-page.js` and `deep-analysis.js` already render), and on a "Good fit" mapping calls the existing `_provision_invite_for_applicant(stage="functional")` to auto-mint + email the next-stage invite. Added **POST /api/interviews/{sessionId}/screening-outcome** (`interview-engine/apps/api/src/routes/transcript.routes.ts`) as a thin server-to-server relay to the backend route above. Candidate room (`interviewcandidateroom/page.tsx`) now: shows a "Recruiter Screening" header + 5:00 countdown that force-ends the call at 0:00 when the session's stage is `screening`; calls the new screening-outcome route after `/report` resolves; and replaces the end-of-call report card with either a "Continue to Functional Interview" link (fit) or a polite close-out message (not a fit) — the functional-interview experience itself, and every manual recruiter-driven invite/schedule action, are unchanged.
+- **2026-07-20** — Full-interview recordings now get forwarded to Google Drive. Engine (`interview-engine/apps/api/src/routes/interview.routes.ts`) forwards each recording upload to the backend after saving it locally (fire-and-forget), calling the new `uploadRecordingToDrive` (`drive-upload.service.ts`, POSTs to the backend's existing `POST /api/public/interview-session/{session_id}/recording` webhook-secret-gated route) and persists the returned `driveFileId`/`driveUrl` onto two new `InterviewSession` columns `recordingDriveFileId`/`recordingDriveUrl` (Prisma migration `20260720000000_add_recording_drive_fields`) — kept separate from the transcript JSON since `finalizeTranscript()` rewrites that field and would otherwise silently drop a merged `driveUrl`. Also raised Fastify's body/multipart size limit from the 1 MiB default to 500 MiB (`server.ts`) so a full video+audio recording upload doesn't get rejected, and exported `getScreenVideoStream` from `useProctoring.ts` so the recorder can reuse the existing screen-share stream instead of a second `getDisplayMedia` prompt. New backend setting `GOOGLE_DRIVE_FOLDER_NAME` (default `"Recordings"`, `backend/app/config.py`). No new/changed HTTP routes — the recording upload endpoint's request/response shape is unchanged.
+- **2026-07-15** — Team-member email invitations. **POST /api/team/invite** (`backend/app/routers/team.py`) now, after creating the `invited` user, **sends an invitation email** (new `send_team_invite_email` in `backend/app/utils/email_sender.py`) with an accept link `{FRONTEND_URL}/signup?email=…&name=…&invited=1`. Auth, request body (`InviteMemberIn`: `name`, `email`, `designation?`, `user_type`), and success response (`UserOut`) are UNCHANGED; the email is a best-effort side effect (wrapped in try/except, logged on failure — a mail error never fails the invite). Delivery uses the shared `send_html_email` transport (Resend when `RESEND_API_KEY` is set; note Railway blocks direct SMTP, so Resend is required for real delivery there — otherwise it runs in simulation/log mode). The dashboard signup page (`dashboard/app/(auth)/signup/page.js`) now prefills name/email from those query params so the invitee only sets a password; **POST /api/auth/signup** then activates the invited account (status `invited`→`active`) into its org with the role assigned at invite time (existing behavior, unchanged).
+- **2026-07-15** — Dynamic per-candidate avatar routing (multi-instance Pixel Streaming). **NO request/response schema change to any endpoint** — all changes are to emitted link/redirect URLs plus one opt-in client behavior. Emailed interview-room links now carry an optional **`jobId`** query param so an external avatar orchestrator can launch that job's dedicated Lina build as an independent, parallel stream. **GET /i/{token}** (`backend/app/routers/invites.py`) — the 302 redirect `Location` gains `&jobId={invite.job_id}` (omitted when the invite has no `job_id`); `sessionId`/`ih_invite` unchanged. The scheduled + reschedule calendar-invite `interview_link` built in **`backend/app/routers/public.py`** (×2) and **`backend/app/routers/jobs.py`** (×1) likewise gains `&jobId={applicant.job_id}` (omitted when null). **Candidate room** (`interview-engine/apps/web/app/interviewcandidateroom/page.tsx`) reads `?jobId=` and — ONLY when the new build-time env `NEXT_PUBLIC_ORCHESTRATOR_URL` is set — POSTs `{ jobId, sessionId }` to that external orchestrator's `/session` to obtain a per-session Pixel Streaming StreamerId (then 30s heartbeat + DELETE on unmount); unset (default) → the room keeps using the single shared `NEXT_PUBLIC_AVATAR_URL` exactly as before. No new HTTP routes on any of the three services; the orchestrator is a separate self-hosted service outside this API contract.
+- **2026-07-11** — Security hardening: auth requirement, rate limiting, and a typed schedule body (`backend/`). **POST /api/deepseek** (`app/routers/deepseek.py`) now **REQUIRES authentication** — it gained `current_user: User = Depends(get_current_user)`, so it returns **401** if no valid `token` cookie / `Authorization: Bearer <jwt>` is present (previously fully public). Request body (`{ messages, jsonMode? }`) and success response (LLM proxy JSON) are UNCHANGED. **POST /api/auth/login** and **POST /api/auth/signup** (`app/routers/auth.py`) are now **rate-limited** via an in-process fixed-window limiter (login: ~20/60s per IP AND ~8/300s per email; signup: ~10/300s per IP) — they can now return **429 Too Many Requests** ("Too many requests. Please slow down and try again shortly."); request/response bodies are otherwise UNCHANGED. **POST /api/jobs/applicants/{applicant_id}/schedule** (`app/routers/jobs.py`, `schedule_interview`) — the request body changed from an untyped `dict` to the typed Pydantic model **`ScheduleInterviewIn`** (`app/schemas.py`): `scheduled_at: str` (required, ISO-8601, trailing 'Z' accepted) and `stage: str = "functional"` (`'screening'` → recruiter-screening stage, any other value → functional interview stage). Auth (session + `_verify_applicant_access` org ownership) and the success response (`ApplicantOut`) are UNCHANGED; malformed/missing `scheduled_at` → 400, schema-validation failure → 422. **Public endpoints now rate-limited** (`app/routers/public.py`, ~per-IP fixed window; 429 added, bodies/responses UNCHANGED): **GET /api/public/schedule/{token}** (~60/60s), **GET /api/public/interview-session/{session_id}** (~60/60s), **GET /api/public/confirm/{token}** (~30/60s), and **POST /api/public/reschedule/{token}** (~30/60s).
+- **2026-07-05** — Auto-provision a unique public career-page `career_subdomain` for every organisation (`backend/app/utils/career.py` new `slugify`/`unique_career_subdomain`; `backend/app/routers/auth.py`, `backend/app/routers/organisation.py`, `backend/main.py`). Behavior-only change — NO request/response schema fields added, removed, or renamed, and NO routes added/removed. The slug is a URL-safe slug of the org name, made unique by appending `-2`, `-3`, … on collision (re-provisioning an existing org keeps its own slug via the `org_id` exclusion). **POST /api/auth/onboarding** — the created org now always gets a system-assigned `career_subdomain` (`unique_career_subdomain(db, data.org_name)`), so its careers page is addressable the moment it's created. **PUT /api/organisation** and **POST /api/organisation** — on create (both the no-org-id onboarding branch and the create-with-known-id branch) AND on any save where the org still lacks a subdomain, one is auto-assigned; the request body may still include `career_subdomain` (`OrganisationIn` UNCHANGED — all fields Optional), but the dashboard no longer sends it. Net effect: `OrganisationOut.career_subdomain` is now effectively always non-null for any created org (still typed `Optional[str]`). Existing NULL-subdomain orgs are backfilled at startup in `main.py:init_db()` (query orgs with `career_subdomain IS NULL`, assign one each, flush-per-row so successive uniqueness checks see prior slugs). `PATCH /api/jobs/{id}/settings` and `GET /api/public/careers/{subdomain}` are UNCHANGED.
+- **2026-07-01** — Added candidate consent audit log ("security log"): new `ConsentLog` table (Prisma model in `interview-engine/apps/api` + mirrored SQLAlchemy model in `backend/app/models/ai_integration.py`) and two new Fastify routes on the interview engine (`interview-engine/apps/api/src/routes/interview.routes.ts`, prefix `/api/interview`) — **POST /api/interview/consent** (public, rate-limited; records one grant/decline for a session — body `sessionId`+`consentVersion` required, `action` default 'granted', optional `scopes`/`candidateEmail`/`candidateName`/`inviteToken`/`userAgeGnt`/`locale`; `ipAddress` captured server-side from X-Forwarded-For/`req.ip`, never accepted from the body; returns `{ ok, id, createdAt }`; 400 when `sessionId`/`consentVersion` missing) and **GET /api/interview/consent/:sessionId** (public, rate-limited; returns `{ sessionId, count, records: ConsentLog[] }`, newest-first, max 20). The candidate room's informed-consent gate (18+, recording+AI, biometric, privacy policy, cookies) now persists each grant/decline server-side. New table `ConsentLog` (id cuid PK, sessionId string [indexed], action string, consentVersion string, scopes jsonb default `{}`, candidateEmail/candidateName/inviteToken/userAgent/ipAddress/locale nullable strings, createdAt timestamp default now; composite index on (sessionId, createdAt); intentionally NO foreign key to InterviewSession so the audit log survives session deletion).
+- **2026-07-01** — Scheduled-slot barrier ("waiting room" lobby). **Interview Engine** (Fastify `interview.routes.ts`): **POST /api/interview/sessions/:id/start** gained a new `TOO_EARLY` gate — request/response schema UNCHANGED, one new 403 error code. When the session has a `scheduledAt` and `Date.now() < scheduledAt − 10min` (`EARLY_ENTRY_MS`), start is rejected with 403 `{ "error": "This interview has not opened yet. Please return at your scheduled time.", "code": "TOO_EARLY" }`. The guard is UNCONDITIONAL on any scheduled session (not gated behind a setting), and runs after the token/INVITE and the existing INTERVIEW_DISABLED/NO_REATTEMPT/LATE_ATTEMPT checks; sessions with no `scheduledAt` (plain link / demo) are unaffected. **Candidate room** (`interview-engine/apps/web/app/interviewcandidateroom/page.tsx` + new `WaitingRoom.tsx`): reads `scheduledAt` from **GET /api/interview/sessions/:id** and, when it is more than `EARLY_ENTRY_MS` in the future, renders a countdown lobby + auto-advancing UI-guide slideshow instead of the permission gate, auto-unlocking at `scheduledAt − 10min` (kept in sync with the server constant). No new HTTP routes; documented for the new `/start` error code.
 - **2026-07-01** — Made every field of `OrganisationIn` optional on **PUT /api/organisation** and **POST /api/organisation** (`backend/app/schemas.py`): `org_name` changed from required `str` to `Optional[str] = None` (all other fields were already optional). Auth, response schema (`OrganisationOut`), and handler logic are UNCHANGED. Fixes the Career Page settings save (`apiUpdateOrganisation({ career_subdomain, career_intro })` in `dashboard/src/dashboard/api.js`), which sends only the two career fields and previously got **422 "org_name field required"**; the upsert's update branch already applies `model_dump(exclude_unset=True)`, so omitted fields (incl. `org_name`) are left untouched. Onboarding's separate `OnboardingIn` (POST /api/auth/onboarding) still requires `org_name`, so org creation is unaffected.
 - **2026-06-30** — Added **POST /api/jobs/{job_id}/duplicate** (`backend/app/routers/jobs.py`) — auth required; no request body; path param `job_id`:UUID; gated by `_verify_job_access` (404 if the job is not found or not in the caller's active org). Deep-copies the source job's config into a NEW independent job that is `status=draft` and `is_job_listed=false`, with `custom_job_id` reset to null and title suffixed " (Copy)"; also snapshots EVERY applicant (name/email/phone, resume data, all stage flags, screening/functional status+score, decision, report_url, scores) EXCEPT each copy's `scheduling_token` and `calendar_event_id` are reset to null (live single-use handles). The creator is added as a `JobCollaborator`. Returns 200 with a `JobDetailOut` body (same schema as **GET /api/jobs/{job_id}**). Also (NO schema change): **PATCH /api/jobs/{job_id}/settings** (`JobSettingsIn`) is now invoked by the dashboard "Edit Posting" flow to persist `title` / `custom_job_id` / `tags`.
 - **2026-06-30** — Durable super_admin active-organisation memory via the new internal `users.last_active_org_id` column (`backend/app/routers/auth.py`, `backend/app/utils/auth.py` `get_active_org_id`). **NO request/response schema fields changed** — `last_active_org_id` is internal only and appears in NO `*Out` Pydantic model; only the behavior/prose of four `/api/auth` routes changed. **POST /api/auth/login** no longer clobbers an existing super_admin `active_org_id` selection: the cookie is set only when a target resolves, by precedence (1) the `active_org_id` cookie already on the request, else (2) the user's stored `users.last_active_org_id`, else (3) a deterministic first org `ORDER BY created_at ASC, id ASC` (previously it unconditionally overwrote the cookie with an arbitrary `Organisation.first()` on every login, which made the wrong org reappear). **POST /api/auth/switch-context** now ALSO persists the chosen org to `users.last_active_org_id` (server-side `db.commit()`) so the selection survives cookie loss and future logins. **GET /api/auth/organisations** now returns the list `ORDER BY org_name` (was unordered). **GET /api/auth/me** / the shared `get_active_org_id` helper now resolve the super_admin org via the fallback chain `active_org_id` cookie → `users.last_active_org_id` → the super_admin's own `organisation_id` → deterministic first org (`ORDER BY created_at ASC, id ASC`) (was cookie → arbitrary `.first()`).
@@ -73,7 +80,7 @@ Response:
 ```
 Plain dict (no response_model). `onboarding_required` = (organisation_id is None) AND (user_type != super_admin).
 
-Status codes: 200 OK (default); 400 Bad Request — "User with this email already exists." (email already exists with status != invited); 422 Unprocessable Entity — Pydantic validation error.
+Status codes: 200 OK (default); 400 Bad Request — "User with this email already exists." (email already exists with status != invited); 422 Unprocessable Entity — Pydantic validation error; **429 Too Many Requests — "Too many requests. Please slow down and try again shortly." (2026-07-11; in-process rate limit: ~10/300s per IP).**
 
 Notes: Two branches — (1) existing user with status=invited → accepts invite (name/hashed_password updated, status→active); (2) no existing user → creates new User(user_type=org_admin, status=active, organisation_id=None). Sets cookie `token` (httponly, max_age=604800, samesite=COOKIE_SAMESITE default 'lax', secure=COOKIE_SECURE default false, path='/'). Password hashed with bcrypt.
 
@@ -110,7 +117,7 @@ Response:
 ```
 Plain dict (no response_model). `onboarding_required` = (organisation_id is None) AND (user_type != super_admin).
 
-Status codes: 200 OK; 401 Unauthorized — "Incorrect email or password." (user not found OR no hashed_password OR password mismatch); 403 Forbidden — "Your account has been deactivated." (status == inactive); 422 Unprocessable Entity — Pydantic validation error.
+Status codes: 200 OK; 401 Unauthorized — "Incorrect email or password." (user not found OR no hashed_password OR password mismatch); 403 Forbidden — "Your account has been deactivated." (status == inactive); 422 Unprocessable Entity — Pydantic validation error; **429 Too Many Requests — "Too many requests. Please slow down and try again shortly." (2026-07-11; in-process rate limit: ~20/60s per IP AND ~8/300s per email).**
 
 Notes: Password verified with bcrypt.checkpw. Sets cookie `token` (httponly, max_age=604800, samesite=COOKIE_SAMESITE default 'lax', secure=COOKIE_SECURE default false, path='/'). **(2026-06-30)** For super_admin, the `active_org_id` cookie is now set only when a target org resolves, by precedence: (1) the `active_org_id` cookie already present on the request, else (2) the user's stored internal `users.last_active_org_id`, else (3) a deterministic first org `ORDER BY created_at ASC, id ASC`. It no longer clobbers an existing selection on every login (previously, when ≥1 Organisation existed, it unconditionally set `active_org_id` to an arbitrary `Organisation.first()`). The handler also reads `request: Request` internally to inspect the incoming cookie; this is internal and the request/response schema is unchanged (`last_active_org_id` is never exposed).
 
@@ -178,7 +185,7 @@ Plain dict. `organisation_id` now populated with the new org's id.
 
 Status codes: 200 OK; 400 Bad Request — "Organisation already set up." (current_user.organisation_id is not None); 401 Unauthorized — get_current_user failures ("Not authenticated" / "Invalid credentials token" / "Could not validate credentials" / "User not found"); 422 Unprocessable Entity — missing org_name.
 
-Notes: Creates Organisation(org_name, domain, contact_email = data.contact_email or current_user.email, website_link, location, description), then sets current_user.organisation_id = org.id and commits. contact_email defaults to the user's email when not provided.
+Notes: Creates Organisation(org_name, domain, contact_email = data.contact_email or current_user.email, website_link, location, description), then sets current_user.organisation_id = org.id and commits. contact_email defaults to the user's email when not provided. **(2026-07-05)** The created org is also system-assigned a unique public career-page subdomain (`org.career_subdomain = unique_career_subdomain(db, data.org_name)`) — a URL-safe slug of the org name made unique with `-2`/`-3`/… on collision — so its careers page is addressable immediately (recruiters never type this). Schema unchanged.
 
 #### GET /api/auth/me
 
@@ -803,22 +810,23 @@ Schedule a screening or functional interview for a candidate: sets scheduled tim
 - **Path params:** `applicant_id`:UUID — the applicant id
 - **Query params:** none
 
-Request: raw JSON object (Body as `dict`, no Pydantic model)
+Request: `ScheduleInterviewIn` (typed Pydantic model, since 2026-07-11 — was an untyped `dict`)
 ```json
 {
-  "stage": "screening|functional (optional, default 'functional')",
-  "scheduled_at": "ISO datetime string (required) — e.g. 2026-06-24T10:00:00Z"
+  "scheduled_at": "string (required) — ISO-8601 datetime; a trailing 'Z' is accepted (parsed in the handler), e.g. 2026-06-24T10:00:00Z",
+  "stage": "string (optional, default 'functional') — 'screening' routes to the recruiter-screening stage; any other value routes to the functional interview stage"
 }
 ```
+Pydantic model `ScheduleInterviewIn`: scheduled_at: str (required, no default); stage: str = "functional".
 
 Response:
 ```json
 // ApplicantOut (see POST /applicants for full shape)
 ```
 
-Status codes: 200 OK; 400 'scheduled_at is required' / 'Invalid scheduled_at format'; 401 not authenticated; 403 'Access denied'; 404 'Applicant not found' / 'Job not found'.
+Status codes: 200 OK; 400 'scheduled_at is required' / 'Invalid scheduled_at format'; 401 not authenticated; 403 'Access denied'; 404 'Applicant not found' / 'Job not found'; 422 Unprocessable Entity — body fails `ScheduleInterviewIn` validation.
 
-Notes: response_model=ApplicantOut. Untyped dict body. stage!='screening' treated as functional. Always regenerates scheduling_token. Calendar/email/AI-sync failures are caught and logged (non-fatal), so a 200 may still be returned even if email or calendar failed. interview_link = INTERVIEW_ROOM_URL/interview?sessionId=<applicant_id>.
+Notes: response_model=ApplicantOut. **(2026-07-11)** Body is now the typed `ScheduleInterviewIn` model (previously an untyped `dict`); missing/malformed `scheduled_at` still yields 400 in the handler, and schema-validation failures yield 422. stage!='screening' treated as functional. Always regenerates scheduling_token. Calendar/email/AI-sync failures are caught and logged (non-fatal), so a 200 may still be returned even if email or calendar failed. interview_link = INTERVIEW_ROOM_URL/interview?sessionId=<applicant_id>.
 
 #### DELETE /api/jobs/applicants/{applicant_id}
 
@@ -1143,7 +1151,7 @@ Response:
 
 Status codes: 200 OK; 401 (from get_current_user); 404 'No active organisation context.' (no resolvable org_id); 404 'Organisation settings not set up yet' (org row not found); 422 validation error.
 
-Notes: org_id = active_org_id if super_admin else current_user.organisation_id. OrganisationOut omits created_at and updated_at even though the model has them.
+Notes: org_id = active_org_id if super_admin else current_user.organisation_id. OrganisationOut omits created_at and updated_at even though the model has them. **(2026-07-05)** `career_subdomain` is system-assigned (auto-provisioned at org creation / on save when absent, and backfilled for older rows at startup), so its response value is effectively always non-null for any created org even though it stays typed `Optional[str]`.
 
 #### PUT /api/organisation
 
@@ -1188,7 +1196,7 @@ Response:
 
 Status codes: 200 OK; 401 (from get_current_user); 422 validation error (malformed body; no field is required as of 2026-07-01).
 
-Notes: Three-branch upsert — (1) no resolvable org_id → create new Organisation from model_dump(), set current_user.organisation_id (onboarding); (2) org_id resolves + row exists → partial update via model_dump(exclude_unset=True); (3) org_id resolves but no row → create with id=org_id and full model_dump() (exclude_unset NOT applied, so unset optionals written as None). Success is 200.
+Notes: Three-branch upsert — (1) no resolvable org_id → create new Organisation from model_dump(), set current_user.organisation_id (onboarding); (2) org_id resolves + row exists → partial update via model_dump(exclude_unset=True); (3) org_id resolves but no row → create with id=org_id and full model_dump() (exclude_unset NOT applied, so unset optionals written as None). Success is 200. **(2026-07-05)** `career_subdomain` is system-managed: after the create/update, if the org still has no `career_subdomain`, one is auto-assigned (`unique_career_subdomain(db, org.org_name[, org.id])`) — a URL-safe slug of the org name, uniquified with `-2`/`-3`/…; the create-new branch assigns before commit, the update/known-id branches assign the same way. The request body may still supply `career_subdomain`, but the dashboard no longer sends it, so `OrganisationOut.career_subdomain` is effectively always non-null on the response (still typed `Optional[str]`).
 
 #### POST /api/organisation
 
@@ -1232,7 +1240,7 @@ Response:
 
 Status codes: 200 OK; 401 (from get_current_user); 422 validation error.
 
-Notes: upsert_organisation_post directly delegates to upsert_organisation, so behavior is identical to PUT /api/organisation. Provided for clients that POST instead of PUT.
+Notes: upsert_organisation_post directly delegates to upsert_organisation, so behavior is identical to PUT /api/organisation (including the 2026-07-05 `career_subdomain` auto-provisioning — see PUT notes). Provided for clients that POST instead of PUT.
 
 #### POST /api/organisation/logo
 
@@ -1533,7 +1541,7 @@ Notes: Loads user fresh via db.query(User).filter(User.id == current_user.id).fi
 
 LLM chat-completion proxy. Forwards OpenAI-style chat messages to a cascade of providers (DeepSeek → Groq → Grok/xAI → Gemini), returning the first successful response. Each provider tried only if its API key is configured.
 
-- **Auth:** none (no get_current_user dependency; route is public). Server-side use of provider API keys from settings/env.
+- **Auth:** JWT httpOnly cookie (required) — Depends(get_current_user); token from the `token` cookie or `Authorization: Bearer <jwt>` header (since 2026-07-11 — this route was previously public). Server-side use of provider API keys from settings/env.
 - **Path params:** none
 - **Query params:** none
 
@@ -1568,7 +1576,7 @@ Response: shape depends on which provider succeeded. Body is passed through verb
 }
 ```
 
-Status codes: 200 OK (first successful upstream provider, or reshaped Gemini); 422 Unprocessable Entity (body fails DeepSeekRequest validation); 500 Internal Server Error ("No LLM API key configured (DeepSeek, Groq, Grok, Gemini), or all attempts failed.").
+Status codes: 200 OK (first successful upstream provider, or reshaped Gemini); **401 Unauthorized — get_current_user failures (no/invalid `token` cookie or Bearer token) (2026-07-11);** 422 Unprocessable Entity (body fails DeepSeekRequest validation); 500 Internal Server Error ("No LLM API key configured (DeepSeek, Groq, Grok, Gemini), or all attempts failed.").
 
 Notes: Upstream calls — DeepSeek https://api.deepseek.com/v1/chat/completions (deepseek-chat, temp 0.7, max_tokens 3000, 40s); Groq https://api.groq.com/openai/v1/chat/completions (llama-3.1-8b-instant, 30s); Grok/xAI https://api.xai.com/v1/chat/completions (grok-beta, 30s); Gemini https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent (30s; messages flattened to 'ROLE: content' joined by blank lines; unwrapped from candidates[0].content.parts[0].text). Keys: DEEPSEEK_API_KEY, GROQ_API_KEY, GROK_API_KEY/XAI_API_KEY, GEMINI_API_KEY. Providers tried strictly in order; skipped if key falsy, falls through on exception. No streaming. Route decorator path is "" → full path exactly /api/deepseek (no trailing slash).
 
@@ -1637,7 +1645,7 @@ Response:
 ```
 job_title = Job.role_name or Job.title, else "General Position". stage = "Functional Interview" | "Recruiter Screening" | "Resume". scheduled_at = ISO-8601 datetime or null.
 
-Status codes: 200 OK; 404 "Invalid or expired scheduling token." (no Applicant with that token).
+Status codes: 200 OK; 404 "Invalid or expired scheduling token." (no Applicant with that token); **429 Too Many Requests — "Too many requests. Please slow down and try again shortly." (2026-07-11; in-process rate limit ~60/60s per IP).**
 
 Notes: Plain dict (no Pydantic model). Stage resolution: functional_status not None → "Functional Interview" (scheduled_at=functional_scheduled_at); elif screening_status not None → "Recruiter Screening" (scheduled_at=screening_scheduled_at); else "Resume" (scheduled_at=None). Presence/absence (not value) drives the stage.
 
@@ -1662,7 +1670,7 @@ Response:
 }
 ```
 
-Status codes: 200 OK; 404 "Session not found." (no Applicant with that id); 422 if session_id is not a valid UUID.
+Status codes: 200 OK; 404 "Session not found." (no Applicant with that id); 422 if session_id is not a valid UUID; **429 Too Many Requests — "Too many requests. Please slow down and try again shortly." (2026-07-11; in-process rate limit ~60/60s per IP).**
 
 Notes: Plain dict (no Pydantic model). Identical stage-resolution logic to /schedule/{token}.
 
@@ -1686,7 +1694,7 @@ Response:
 ...</html>
 ```
 
-Status codes: 200 HTML confirmation page; 404 "Invalid or expired scheduling token."; 400 "No proposed time is set for the interview." (proposed_time falsy — neither functional_status nor screening_status set).
+Status codes: 200 HTML confirmation page; 404 "Invalid or expired scheduling token."; 400 "No proposed time is set for the interview." (proposed_time falsy — neither functional_status nor screening_status set); **429 Too Many Requests — "Too many requests. Please slow down and try again shortly." (2026-07-11; in-process rate limit ~30/60s per IP).**
 
 Notes: Mutates and commits the Applicant: functional stage sets functional_scheduled_at (default next-day 13:00 UTC) and functional_status=scheduled, plus sync_applicant_to_ai (non-fatal); screening stage sets screening_scheduled_at (default next-day 13:00 UTC) and screening_status=scheduled. Always sets calendar_sequence=0. Creates Google Calendar event via create_calendar_event and stores id in calendar_event_id (non-fatal). Sends send_ical_invitation_email (duration_minutes=30, sequence=0, uid=interview-{stage-slug}-{applicant.id}@interviehire.com; non-fatal). Organizer from Organisation (org_name/contact_email) falling back to "IntervieHire Host" and settings.SMTP_FROM or "hr@interviehire.com". reschedule_link={FRONTEND_URL}/reschedule.html?token=...; interview_link={FRONTEND_URL}/interview?sessionId={applicant.id}.
 
@@ -1713,7 +1721,7 @@ Response:
 }
 ```
 
-Status codes: 200 OK; 404 "Invalid or expired scheduling token."; 400 "Invalid ISO datetime format."; 422 if request body missing the required "new_time" field.
+Status codes: 200 OK; 404 "Invalid or expired scheduling token."; 400 "Invalid ISO datetime format."; 422 if request body missing the required "new_time" field; **429 Too Many Requests — "Too many requests. Please slow down and try again shortly." (2026-07-11; in-process rate limit ~30/60s per IP).**
 
 Notes: Mutates and commits the Applicant: functional stage sets functional_scheduled_at=parsed_time, functional_status=scheduled, sync_applicant_to_ai (non-fatal); screening stage sets screening_scheduled_at=parsed_time, screening_status=scheduled. Always increments calendar_sequence = (calendar_sequence or 0) + 1. If calendar_event_id exists, calls update_calendar_event (non-fatal). Resends send_ical_invitation_email (duration_minutes=30, sequence=calendar_sequence; non-fatal). Unlike /confirm, does NOT raise if no stage status is set.
 
@@ -2761,9 +2769,9 @@ Response:
 }
 ```
 
-Status codes: 200 OK; 403 `{ "error": "This interview link is invalid or has expired.", "code": "INVALID_TOKEN" }` when the session is token-bound and the `token` query param doesn't match; 404/500 — uses findUniqueOrThrow, so unknown id throws (P2025) surfaced as 500-class; 429 rate limited.
+Status codes: 200 OK; 403 `{ "error": "This interview link is invalid or has expired.", "code": "INVALID_TOKEN" }` when the session is token-bound and the `token` query param doesn't match; 403 recruiter-settings gates — `INTERVIEW_DISABLED` (settings.interviewEnabled === false), `NO_REATTEMPT` (settings.allowReattempt === false and status COMPLETED/EVALUATED), `LATE_ATTEMPT` (settings.allowLate === false and now > scheduledAt + 5min grace), `ACCESS_SCHEDULED_ONLY` / `ACCESS_INVITED_ONLY` (settings.accessControl), and `TOO_EARLY` `{ "error": "This interview has not opened yet. Please return at your scheduled time.", "code": "TOO_EARLY" }` (scheduledAt is set and now < scheduledAt − 10min early-entry window); 400 `CV_REQUIRED` (settings.requireCv === true and no candidate resume); 404/500 — uses findUniqueOrThrow, so unknown id throws (P2025) surfaced as 500-class; 429 rate limited.
 
-Notes: No Fastify schema. The token guard runs after the findUniqueOrThrow: only sessions with a non-null `inviteToken` enforce it, so token-free sessions are unaffected and the existing settings checks still apply. firstQuestion = first isActive question (orderBy createdAt asc) of the jobRole, else fallback. Calls ensureTranscriptMeta(id).
+Notes: No Fastify schema. The token guard runs after the findUniqueOrThrow: only sessions with a non-null `inviteToken` enforce it, so token-free sessions are unaffected and the existing settings checks still apply. **Scheduled-slot barrier:** the `TOO_EARLY` guard is UNCONDITIONAL on any session that has a `scheduledAt` (not gated behind a setting) and rejects a start until the early-entry window opens (`scheduledAt − 10min`); `EARLY_ENTRY_MS` here MUST stay in sync with the candidate room's `EARLY_ENTRY_MS` (interviewcandidateroom/page.tsx), which renders a countdown "waiting room" lobby until the same instant. Sessions with no `scheduledAt` (plain link / demo) are unaffected. firstQuestion = first isActive question (orderBy createdAt asc) of the jobRole, else fallback. Calls ensureTranscriptMeta(id).
 
 #### GET /api/interview/sessions/:id/vapi-config
 
@@ -3104,6 +3112,83 @@ Response:
 Status codes: 200 OK (file stream); 404 'Not found' (file missing); 429 rate limited.
 
 Notes: No Fastify schema. Path = path.join(process.cwd(),'uploads',file). No explicit Content-Type set; no path-traversal sanitization on :file.
+
+#### POST /api/interview/consent
+
+Records one candidate consent decision (grant or decline) for a session into the append-only `ConsentLog` audit table. Backs the candidate room's informed-consent gate (18+, recording+AI, biometric, privacy policy, cookies) — each grant/decline is persisted server-side.
+
+- **Auth:** Public (candidate is unauthenticated; no preHandler, no api key). Subject to the global @fastify/rate-limit (max 200/min).
+- **Path params:** none
+- **Query params:** none
+
+Request: application/json
+```
+{
+  sessionId: string,          // required; empty/missing → 400
+  consentVersion: string,     // required; empty/missing → 400
+  action?: string,            // optional, default 'granted' — one of 'granted' | 'declined'; any value other than exactly 'declined' is stored as 'granted'
+  scopes?: object,            // optional, default {} — expected boolean keys: age18Plus, dataProcessing, biometric, privacyPolicy, cookies
+  candidateEmail?: string,    // optional
+  candidateName?: string,     // optional
+  inviteToken?: string,       // optional
+  userAgent?: string,         // optional — falls back to the request's User-Agent header when omitted
+  locale?: string             // optional
+}
+// NOTE: ipAddress is NOT accepted from the body — it is captured server-side from the X-Forwarded-For header (first hop) or req.ip.
+```
+
+Response:
+```
+200 OK (application/json)
+{
+  ok: true,
+  id: string,          // ConsentLog.id (cuid)
+  createdAt: string     // ISO 8601 datetime
+}
+```
+
+Status codes: 200 OK; 400 `{ "error": "sessionId and consentVersion are required" }` when `sessionId` or `consentVersion` is missing/empty; 429 rate limited; 500 on Prisma/DB error.
+
+Notes: No Fastify schema. Creates one `ConsentLog` row (no foreign key to InterviewSession by design, so the log survives session deletion). `action` is normalized to 'granted' unless it is exactly 'declined'. `scopes` defaults to `{}`. `ipAddress` is server-captured (first X-Forwarded-For hop, else `req.ip`) and is never taken from the request body.
+
+#### GET /api/interview/consent/:sessionId
+
+Returns the consent audit trail for a session — the most-recent `ConsentLog` records (newest first, capped at 20).
+
+- **Auth:** Public. Global rate limit (max 200/min).
+- **Path params:** `sessionId`:string — the interview session id
+- **Query params:** none
+
+Request: none
+
+Response:
+```
+200 OK (application/json)
+{
+  sessionId: string,
+  count: number,           // number of records returned (≤ 20)
+  records: ConsentLog[]    // ordered newest-first, max 20
+}
+
+ConsentLog {
+  id: string,                       // cuid
+  sessionId: string,
+  action: string,                   // 'granted' | 'declined'
+  consentVersion: string,
+  scopes: object,                   // e.g. { age18Plus, dataProcessing, biometric, privacyPolicy, cookies }
+  candidateEmail: string | null,
+  candidateName: string | null,
+  inviteToken: string | null,
+  userAgent: string | null,
+  ipAddress: string | null,
+  locale: string | null,
+  createdAt: string                 // ISO 8601 datetime
+}
+```
+
+Status codes: 200 OK (`records` may be an empty array if no consent logged for the session); 429 rate limited; 500 on Prisma/DB error.
+
+Notes: No Fastify schema. `records` ordered by createdAt desc, take 20. `count` = records.length.
 
 ### `interview-engine/apps/api/src/routes/transcript.routes.ts`
 

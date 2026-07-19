@@ -9,6 +9,7 @@ import { processRecordingForSession, transcribeUploadedFile } from '../services/
 import { uploadRecordingToDrive } from '../services/drive-upload.service.js';
 import { handleCandidateTranscript } from '../services/interview-conversation.service.js';
 import { ensureTranscriptMeta, finalizeTranscript } from '../services/transcript.service.js';
+import { saveTranscriptFile, flagcheckTranscriptFile, transcriptFilePath, FLAGCHECK_DISCLAIMER } from '../services/flagcheckTranscription.service.js';
 
 // Per-candidate invite enforcement shared by the post-start session routes: a
 // session bound to an inviteToken only serves the matching ?token=. Returns true
@@ -42,6 +43,67 @@ function readTranscript(raw: unknown): TranscriptRecord[] {
     }
   }
   return [];
+}
+
+/** Only call the LLM semantic pass once the transcript has grown enough since the last run. */
+const FLAGCHECK_LLM_MIN_GROWTH_CHARS = 400;
+
+/**
+ * Transcript flagcheck. Best-effort, fire-and-forget: saves the full transcript
+ * to `transcripts/<sessionId>.txt`, then runs the AI-tone analysis on that file
+ * (deterministic heuristics always; LLM semantic pass only once enough new text
+ * has accumulated, or when finalized). The verdict is stored in a dedicated
+ * `transcript_flagcheck` entry on the session transcript JSON, keyed by
+ * transcriptId. Re-reads immediately before writing to limit clobbering the
+ * concurrent speech-to-text save (last-writer-wins is acceptable for this MVP).
+ */
+async function runTranscriptFlagcheck(
+  sessionId: string,
+  transcriptId: string,
+  fullText: string,
+  finalized: boolean,
+): Promise<void> {
+  const session = await prisma.interviewSession.findUnique({ where: { id: sessionId } });
+  if (!session) return;
+
+  // 1. Persist the live transcription to a .txt file.
+  const filePath = await saveTranscriptFile(sessionId, fullText);
+
+  // 2. Decide whether this run earns an LLM pass.
+  const current = readTranscript(session.transcript);
+  const existing = current.find(
+    (item) => item?.type === 'transcript_flagcheck' && item?.transcriptId === transcriptId,
+  );
+  const analyzedChars = Number(existing?.analyzedChars) || 0;
+  const runLlm = finalized || fullText.length - analyzedChars >= FLAGCHECK_LLM_MIN_GROWTH_CHARS;
+
+  // 3. Run the flagcheck on the file.
+  const assessment = await flagcheckTranscriptFile(filePath, { runLlm });
+
+  const entry = {
+    type: 'transcript_flagcheck',
+    transcriptId,
+    transcriptFile: transcriptFilePath(sessionId),
+    assessment,
+    // Track chars analyzed by the LLM so the next run knows when to re-run it.
+    analyzedChars: runLlm ? fullText.length : analyzedChars,
+    finalized,
+    updatedAt: new Date().toISOString(),
+    disclaimer: FLAGCHECK_DISCLAIMER,
+  };
+
+  // Re-read just before writing to reduce the window for clobbering the speech save.
+  const fresh = readTranscript(
+    (await prisma.interviewSession.findUnique({ where: { id: sessionId } }))?.transcript,
+  );
+  const index = fresh.findIndex(
+    (item) => item?.type === 'transcript_flagcheck' && item?.transcriptId === transcriptId,
+  );
+  const updated = index >= 0
+    ? fresh.map((item, i) => (i === index ? { ...item, ...entry } : item))
+    : [...fresh, entry];
+
+  await prisma.interviewSession.update({ where: { id: sessionId }, data: { transcript: updated as any } });
 }
 
 const juniorSdeQuestions = [
@@ -244,6 +306,54 @@ export async function interviewRoutes(app: FastifyInstance) {
     return { sessionId: session.id, companyId: company.id, roleId: role.id, candidateId: candidate.id };
   });
 
+  // ── Candidate consent audit log ("security log") ───────────────────────────
+  // Persist the candidate's informed-consent decision (granted / declined)
+  // recorded by the consent gate in the candidate room BEFORE any camera / mic /
+  // recording starts. This is the server-side, durable record of biometric,
+  // recording+AI, 18+, privacy-policy and cookies consent — the client also
+  // keeps a localStorage proof, but this row is the authoritative audit trail.
+  // Unauthenticated by design (candidates are not logged-in users); rate limited
+  // by the global plugin. The client IP + User-Agent are captured server-side.
+  app.post('/consent', async (req:any, reply:any) => {
+    const b = req.body ?? {};
+    const sessionId = String(b.sessionId ?? '').trim();
+    const consentVersion = String(b.consentVersion ?? '').trim();
+    const action = b.action === 'declined' ? 'declined' : 'granted';
+    if (!sessionId || !consentVersion) {
+      return reply.code(400).send({ error: 'sessionId and consentVersion are required' });
+    }
+    const scopes = (b.scopes && typeof b.scopes === 'object' && !Array.isArray(b.scopes)) ? b.scopes : {};
+    const xff = req.headers['x-forwarded-for'];
+    const ipAddress =
+      (typeof xff === 'string' ? xff.split(',')[0].trim() : Array.isArray(xff) ? xff[0] : '') || req.ip || null;
+    const ua = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+    const record = await prisma.consentLog.create({
+      data: {
+        sessionId,
+        action,
+        consentVersion,
+        scopes,
+        candidateEmail: b.candidateEmail ? String(b.candidateEmail) : null,
+        candidateName: b.candidateName ? String(b.candidateName) : null,
+        inviteToken: b.inviteToken ? String(b.inviteToken) : null,
+        userAgent: b.userAgent ? String(b.userAgent) : ua,
+        ipAddress,
+        locale: b.locale ? String(b.locale) : null,
+      },
+    });
+    return { ok: true, id: record.id, createdAt: record.createdAt };
+  });
+
+  // Consent history for a session (newest first) — recruiter/audit verification.
+  app.get('/consent/:sessionId', async (req:any) => {
+    const records = await prisma.consentLog.findMany({
+      where: { sessionId: req.params.sessionId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    return { sessionId: req.params.sessionId, count: records.length, records };
+  });
+
   app.get('/sessions/:id', async (req:any, reply:any) => {
     const session = await prisma.interviewSession.findUnique({where:{id:req.params.id}, include:{company:true,candidate:true,jobRole:{include:{questions:true}},proctoringLogs:true}});
     // A token-bound session only reveals its config/questions to the matching token.
@@ -276,6 +386,15 @@ export async function interviewRoutes(app: FastifyInstance) {
     const LATE_GRACE_MS = 5 * 60 * 1000;
     if (s.allowLate === false && session.scheduledAt && Date.now() > new Date(session.scheduledAt).getTime() + LATE_GRACE_MS) {
       return reply.code(403).send({ error: 'The scheduled interview window has passed.', code: 'LATE_ATTEMPT' });
+    }
+    // Scheduled-slot barrier: a session with a future slot cannot be started until
+    // its early-entry window opens. This is the server half of the candidate-room
+    // countdown lobby — it makes the lock real (a bypassed client can't start
+    // early). EARLY_ENTRY_MS MUST match the web EARLY_ENTRY_MS. Sessions with no
+    // scheduledAt (plain link / demo) are unaffected.
+    const EARLY_ENTRY_MS = 10 * 60 * 1000;
+    if (session.scheduledAt && Date.now() < new Date(session.scheduledAt).getTime() - EARLY_ENTRY_MS) {
+      return reply.code(403).send({ error: 'This interview has not opened yet. Please return at your scheduled time.', code: 'TOO_EARLY' });
     }
     if (s.requireCv === true && !session.candidate?.resumeText) {
       return reply.code(400).send({ error: 'A CV/resume is required before starting this interview.', code: 'CV_REQUIRED' });
@@ -446,6 +565,11 @@ export async function interviewRoutes(app: FastifyInstance) {
       ? current.map((item, index) => index === existingIndex ? { ...item, ...entry, createdAt: item.createdAt ?? entry.createdAt } : item)
       : [...current, entry];
     await prisma.interviewSession.update({ where: { id: req.params.id }, data: { transcript: updated as any } });
+
+    // Save transcript to .txt + run AI-tone flagcheck on the file (best-effort, non-blocking).
+    runTranscriptFlagcheck(req.params.id, transcriptId, fullText, body.finalized === true).catch((err) =>
+      app.log.error('Transcript flagcheck error', err),
+    );
 
     return { stored: true, entry };
   });

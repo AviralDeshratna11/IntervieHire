@@ -1,0 +1,52 @@
+{
+  // Incremental JS -> TS migration config for the dashboard.
+  // Strategy: allowJs keeps the ~80 not-yet-converted .js modules building
+  // unchanged while we rename files to .ts one leaf at a time. checkJs stays
+  // OFF so untyped .js is not error-flooded; strict stays OFF so a freshly
+  // converted .ts file doesn't have to satisfy the full strict wall on day one.
+  // Tighten (checkJs, strict, noImplicitAny) once the tree is mostly .ts.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "strict": false,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "forceConsistentCasingInFileNames": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

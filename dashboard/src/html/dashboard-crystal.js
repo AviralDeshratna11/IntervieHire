@@ -295,14 +295,13 @@ export const html = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                   </div>
                   <span class="metric-title">Total Applicants</span>
-                  <span class="metric-val" id="stat-total-applicants">—</span>
+                  <span class="metric-val" id="stat-total-applicants">20</span>
                 </div>
                 <div class="metric-pills">
                   <div class="m-pill">Career Page <span class="v">0</span></div>
                   <div class="m-pill">Bulk Upload <span class="v">0</span></div>
-                  <div class="m-pill">Direct Link <span class="v">0</span></div>
-                  <div class="m-pill">ATS <span class="v">0</span></div>
-                  <div class="m-pill">Other <span class="v">0</span></div>
+                  <div class="m-pill">Scheduled <span class="v">3</span></div>
+                  <div class="m-pill">Direct Link <span class="v">1</span></div>
                 </div>
               </div>
 
@@ -313,12 +312,12 @@ export const html = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                   </div>
                   <span class="metric-title">Resume Analysis</span>
-                  <span class="metric-val" id="stat-resume-analysis">—</span>
+                  <span class="metric-val" id="stat-resume-analysis">0</span>
                 </div>
                 <div class="metric-pills">
                   <div class="m-pill">Analysed <span class="v">0</span></div>
-                  <div class="m-pill">Advanced <span class="v">0</span></div>
-                  <div class="m-pill">Rejected <span class="v">0</span></div>
+                  <div class="m-pill">Shortlisted <span class="v">0</span></div>
+                  <div class="m-pill">Waitlisted <span class="v">0</span></div>
                 </div>
               </div>
 
@@ -329,14 +328,13 @@ export const html = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
                   </div>
                   <span class="metric-title">Recruiter Screening</span>
-                  <span class="metric-val" id="stat-recruiter-screening">—</span>
+                  <span class="metric-val" id="stat-recruiter-screening">3</span>
                 </div>
                 <div class="metric-pills">
-                  <div class="m-pill">Not Scheduled <span class="v">0</span></div>
-                  <div class="m-pill">Scheduled <span class="v">0</span></div>
-                  <div class="m-pill">Attempted <span class="v">0</span></div>
-                  <div class="m-pill">Advanced <span class="v">0</span></div>
-                  <div class="m-pill">Rejected <span class="v">0</span></div>
+                  <div class="m-pill">Attempted <span class="v">2</span></div>
+                  <div class="m-pill">Scheduled <span class="v">1</span></div>
+                  <div class="m-pill">Shortlisted <span class="v">0</span></div>
+                  <div class="m-pill">Waitlisted <span class="v">0</span></div>
                 </div>
               </div>
 
@@ -347,14 +345,13 @@ export const html = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                   </div>
                   <span class="metric-title">Functional Interview</span>
-                  <span class="metric-val" id="stat-functional-interview">—</span>
+                  <span class="metric-val" id="stat-functional-interview">2</span>
                 </div>
                 <div class="metric-pills">
-                  <div class="m-pill">Not Scheduled <span class="v">0</span></div>
-                  <div class="m-pill">Scheduled <span class="v">0</span></div>
-                  <div class="m-pill">Attempted <span class="v">0</span></div>
-                  <div class="m-pill">Hired <span class="v">0</span></div>
-                  <div class="m-pill">Rejected <span class="v">0</span></div>
+                  <div class="m-pill">Attempted <span class="v">1</span></div>
+                  <div class="m-pill">Scheduled <span class="v">1</span></div>
+                  <div class="m-pill">Shortlisted <span class="v">0</span></div>
+                  <div class="m-pill">Waitlisted <span class="v">0</span></div>
                 </div>
               </div>
             </div>
@@ -363,7 +360,7 @@ export const html = `
             <div class="table-card card-glass">
               <div class="table-tabs">
                 <button class="table-tab-btn active" data-table="jobs-data">Jobs data</button>
-                <button class="table-tab-btn" data-table="candidates-data">Candidate data</button>
+                <button class="table-tab-btn" data-table="candidates-data">Candidate data <span class="badge-new">New</span></button>
               </div>
 
               <!-- Table Control Bar -->
@@ -610,24 +607,31 @@ export const html = `
                     <label for="career-subdomain">Company Subdomain</label>
                     <div class="input-prefix-wrap">
                       <span class="prefix">interviehire.com/careers/</span>
-                      <input type="text" id="career-subdomain" value="" required disabled />
+                      <input type="text" id="career-subdomain" value="devasri-tech" required />
                     </div>
                   </div>
                   <div class="form-group">
-                    <label for="career-intro">Hero Headline Introduction</label>
-                    <input type="text" id="career-intro" value="Build the future of technology with us." disabled />
+                    <label for="career-theme">Portal Theme Mode</label>
+                    <select id="career-theme">
+                      <option value="dark">Dark Slate Brand Theme (Default)</option>
+                      <option value="light">Crisp Editorial Light Theme</option>
+                    </select>
                   </div>
-                  <button type="button" class="btn-submit" id="career-edit-toggle">Edit Configurations</button>
+                  <div class="form-group">
+                    <label for="career-intro">Hero Headline Introduction</label>
+                    <input type="text" id="career-intro" value="Build the future of technology with us." />
+                  </div>
+                  <button type="submit" class="btn-submit">Save Configurations</button>
                 </form>
               </div>
 
               <div class="card-glass panel-preview">
                 <h3 class="panel-title">Live Subdomain Status</h3>
                 <div class="status-indicator-box">
-                  <span class="pulsing-dot"></span>
+                  <span class="pulsing-dot green"></span>
                   <div class="status-text">
-                    <div class="status-title">Not published yet</div>
-                    <a target="_blank" class="status-link">Set your career page URL to publish jobs</a>
+                    <div class="status-title">Live & Active</div>
+                    <a href="https://interviehire.com/careers/devasri-tech" target="_blank" class="status-link">interviehire.com/careers/devasri-tech ↗</a>
                   </div>
                 </div>
                 <div class="meta-metric-box">
@@ -656,7 +660,7 @@ export const html = `
                 <div class="settings-row">
                   <div class="settings-row-info">
                     <span class="settings-row-label">Email Address</span>
-                    <span class="settings-row-hint" id="settings-email-value">—</span>
+                    <span class="settings-row-hint">vanshmalik6606@gmail.com</span>
                   </div>
                   <button class="settings-btn-action" id="btn-change-email">Change</button>
                 </div>
@@ -666,6 +670,13 @@ export const html = `
                     <span class="settings-row-hint">Last changed 30 days ago</span>
                   </div>
                   <button class="settings-btn-action" id="btn-change-password">Update Password</button>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Two-Factor Authentication</span>
+                    <span class="settings-row-hint">Add an extra layer of security to your account</span>
+                  </div>
+                  <div class="settings-toggle" id="toggle-2fa"></div>
                 </div>
               </div>
 
@@ -829,7 +840,6 @@ export const html = `
                 <button class="jd-tab" data-jd-tab="resume">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                   Resume Analysis
-                  <span class="jd-count-pill" id="jd-count-resume">0</span>
                 </button>
                 <button class="jd-tab" data-jd-tab="screening">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
@@ -840,6 +850,11 @@ export const html = `
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
                   Functional Interview
                   <span class="jd-count-pill" id="jd-count-functional">0</span>
+                </button>
+                <button class="jd-tab" data-jd-tab="interviewanalysis">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg>
+                  Interview Analysis
+                  <span class="jd-count-pill" id="jd-count-interviewanalysis">0</span>
                 </button>
                 <button class="jd-tab" data-jd-tab="questions">
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line><circle cx="12" cy="12" r="10"></circle></svg>
@@ -863,7 +878,7 @@ export const html = `
                   <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                   Add Collaborator
                 </button>
-                <button class="btn-jd-primary">+ Add Applicants</button>
+                <button class="btn-jd-primary" id="btn-jd-add-applicants">+ Add Applicants</button>
                 <div class="jd-date-range-wrap" id="jd-date-range-wrap">
                   <button class="btn-jd-ghost" id="btn-jd-daterange">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
@@ -965,6 +980,11 @@ export const html = `
                 <div class="jd-stage-candidates-list" id="list-stage-functional"></div>
               </div>
 
+              <!-- Interview Analysis Pane (rendered by interview-analysis.js) -->
+              <div class="jd-pane" id="jd-pane-interviewanalysis">
+                <div class="jd-stage-candidates-list" id="list-stage-interviewanalysis"></div>
+              </div>
+
               <!-- Questions Generator Pane (rendered by blueprint-studio.js) -->
               <div class="jd-pane" id="jd-pane-questions"></div>
 
@@ -1008,6 +1028,11 @@ export const html = `
                 <span class="breadcrumb-link" id="src-bc-jobname">Job Detail</span>
                 <span class="breadcrumb-separator">/</span>
                 <span class="breadcrumb-item active">Sourcing</span>
+              </div>
+              <!-- Stage context banner — shown when arriving from a specific stage -->
+              <div id="sourcing-stage-context" style="display:none;align-items:center;gap:8px;margin-top:6px;padding:5px 12px;background:rgba(var(--color-gold-rgb),0.08);border:1px solid rgba(var(--color-gold-rgb),0.2);border-radius:20px;font-size:0.75rem;color:var(--color-gold);font-family:var(--font-body);font-weight:500;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Adding to: <strong id="sourcing-stage-label">Pipeline</strong>
               </div>
               <div class="sourcing-actions">
                 <button class="btn-jd-ghost" id="btn-src-collaborator">

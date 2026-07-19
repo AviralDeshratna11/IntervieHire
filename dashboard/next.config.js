@@ -28,6 +28,19 @@ const ROOM_ORIGIN = 'https://interview.interviehire.com';
 
 const nextConfig = {
   serverExternalPackages: ['@napi-rs/canvas'],
+  // Incremental JS -> TS migration: the dashboard's ESM modules import each other
+  // with explicit `.js` extensions (e.g. `from './escape.js'`). As we rename files
+  // to `.ts`, those specifiers must keep resolving without touching all 200+ import
+  // lines. extensionAlias maps a `.js` request to `.ts`/`.tsx` first, falling back
+  // to the real `.js`/`.jsx` for not-yet-converted modules.
+  webpack: (config) => {
+    config.resolve.extensionAlias = {
+      ...(config.resolve.extensionAlias || {}),
+      '.js': ['.ts', '.tsx', '.js', '.jsx'],
+      '.jsx': ['.tsx', '.jsx'],
+    };
+    return config;
+  },
   async redirects() {
     return [
       { source: '/interviewcandidateroom', destination: `${ROOM_ORIGIN}/interviewcandidateroom`, permanent: false },
