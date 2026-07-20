@@ -71,6 +71,15 @@ def init_db():
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS anonymised_at TIMESTAMP;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS erasure_request_id UUID;"))
         conn.execute(text('ALTER TABLE "ConsentLog" ADD COLUMN IF NOT EXISTS "erasedForRequestId" VARCHAR;'))
+        # Direct-apply consent: candidate applied via the public career page / direct
+        # link and agreed to the privacy policy (they hand us PII first-hand).
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS consent_given_at TIMESTAMP;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS consent_version VARCHAR;"))
+        # Custom application questions (public apply form): org-wide default +
+        # per-job override (both JSON text), and the candidate's answers.
+        conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS application_questions TEXT;"))
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS application_questions TEXT;"))
+        conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS application_answers TEXT;"))
         conn.commit()
 
         # Backfill: repair legacy jobs with a NULL organisation_id by inheriting the

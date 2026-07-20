@@ -1,10 +1,10 @@
 # Privacy Policy
 
-**Effective date:** [DATE]
-**Last updated:** [DATE]
+**Effective date:** 19 July 2026
+**Last updated:** 19 July 2026
 
-**[LEGAL ENTITY NAME]** ("**IntervieHire**", "**we**", "**us**", "**our**") provides an AI-assisted
-hiring platform at **[DOMAIN(S)]** (the "**Services**") — a recruiter dashboard, an AI-driven
+**Bali Tech Innovations Pvt. Ltd.** ("**IntervieHire**", "**we**", "**us**", "**our**") provides an AI-assisted
+hiring platform at **www.interviehire.com** (the "**Services**") — a recruiter dashboard, an AI-driven
 interview experience (text, voice, and AI-avatar), candidate assessment and reporting, and candidate
 sourcing tools. This Policy explains what personal data we collect, why, who we share it with, how
 long we keep it, and the rights you have.
@@ -16,7 +16,7 @@ Fiduciary*; *Processor* ≈ *Data Processor*; *Data Subject* ≈ *Data Principal
 ≈ *Data Protection Board of India (DPBI)*.
 
 > **Languages.** This notice is available in English and, on request, in any language listed in the
-> Eighth Schedule to the Constitution of India. To request another language, email **[GRIEVANCE/DPO EMAIL]**.
+> Eighth Schedule to the Constitution of India. To request another language, email **interviehire.assist@gmail.com**.
 
 ---
 
@@ -127,7 +127,7 @@ by **GDPR Art. 14** and the **DPDP Act**.
 **We do not use your interview data, biometrics, or résumé to train our own AI models**, and we require
 our AI sub-processors not to train their models on your data.
 
-For **Talent Finder**, if you do not wish to be included, contact **[GRIEVANCE/DPO EMAIL]** and we will
+For **Talent Finder**, if you do not wish to be included, contact **interviehire.assist@gmail.com** and we will
 remove you and honour your objection or deletion request.
 
 ---
@@ -153,7 +153,7 @@ against a role-specific rubric. We aim to be transparent about it:
 - **Proctoring is separate from scoring.** Camera/voice integrity monitoring is used only to flag
   possible anomalies for the recruiter's review — it does **not** grade your skills.
 - **Your right to human review.** You may **obtain human intervention, express your point of view, and
-  contest** an AI-assisted decision (GDPR Art. 22(3)). Contact **[DPO EMAIL]**, or the Client you
+  contest** an AI-assisted decision (GDPR Art. 22(3)). Contact **interviehire.assist@gmail.com**, or the Client you
   interviewed with (who makes the final decision).
 - **AI-generated avatar.** Where an AI avatar conducts your interview, it is **artificially generated**
   and is labelled as AI-generated, as required by India's IT Rules (synthetic-content amendment, 2025).
@@ -178,7 +178,7 @@ your data, we will update this Policy (see §16).
 | Supabase | Primary database | US / EU |
 | Render | Backend / app hosting | US |
 | Vercel | Front-end hosting | US |
-| **[AI evaluation provider — name it, e.g. Anthropic Claude via AWS Bedrock]** | AI scoring of answers & résumé | US / EU |
+| **DeepSeek** | AI scoring of answers & résumé | US / EU |
 | Deepgram | Speech-to-text | US |
 | OpenAI (Whisper) | Speech-to-text | US |
 | OpenRouter | LLM routing (evaluation) | US |
@@ -206,7 +206,7 @@ EU/EEA/UK** (primarily in the **United States**).
 - **For EU/EEA/UK data:** transfers rely on appropriate safeguards under GDPR Chapter V — principally
   the European Commission's **Standard Contractual Clauses (SCCs)** and the UK International Data
   Transfer Addendum, and/or an adequacy decision where one applies. You may request details at
-  **[DPO EMAIL]**.
+  **interviehire.assist@gmail.com**.
 - **For India data:** the DPDP Act permits transfers to countries not on a Central-Government restricted
   list; no such list affects our transfers, and we remain responsible for your data after transfer.
 
@@ -221,10 +221,10 @@ periods:
 
 | Data | Retention |
 |---|---|
-| Proctoring recordings & biometric data | **[30] days** after the interview |
-| Interview transcripts, recordings & AI evaluations | **[12 months]** after the hiring decision, or per the Client's instruction |
-| Résumé / sourced profile data | **[12 months]**, or until you ask us to delete it |
-| Account data | The life of the account + **[6 months]** |
+| Proctoring recordings & biometric data | **30 days** after the interview |
+| Interview transcripts, recordings & AI evaluations | **12 months** after the hiring decision, or per the Client's instruction |
+| Résumé / sourced profile data | **12 months**, or until you ask us to delete it |
+| Account data | The life of the account + **6 months** |
 | Security & access logs | **At least 1 year** (required by the DPDP Rules 2025 for breach detection and investigation) |
 
 Where law requires longer retention (e.g. to defend a legal claim), we keep only the minimum necessary
@@ -248,8 +248,7 @@ high. No system is perfectly secure, and we cannot guarantee absolute security.
 
 We use **strictly necessary cookies** for authentication and **local browser storage** to remember your
 interview consent. We use non-essential (analytics/functionality) cookies only **with your consent**,
-which you can manage in our cookie settings. [If you operate a separate Cookie Policy listing each
-cookie, link it here.]
+which you can manage in our cookie settings.
 
 ---
 
@@ -270,7 +269,7 @@ Subject to the conditions and exceptions in applicable law, you have the right t
 - **Nominate** another individual to exercise your rights in the event of death or incapacity (DPDP §14).
 
 **How to exercise your rights.** You can submit access, correction, deletion, and export requests
-yourself at **[CANDIDATE PRIVACY PORTAL URL]**, or by emailing **[DPO/GRIEVANCE EMAIL]**. We verify your
+yourself at **interviehire.com/help/privacy**, or by emailing **interviehire.assist@gmail.com**. We verify your
 identity before actioning a request and respond within the timeframes required by law (generally **one
 month** under GDPR; **90 days** for DPDP grievances). These rights are free in most cases. If you
 interviewed for a Client, we may forward your request to that Client (the Controller) and will tell you.
@@ -290,20 +289,20 @@ The Services are **intended for individuals aged 18 and over.**
 
 **Accessibility & accommodations.** If you need an adjustment to take the interview — for example due to
 a disability, or if you prefer not to use a camera — you may take a **text-only interview** where the
-role permits, or contact **[GRIEVANCE/DPO EMAIL]** (or the Client) and we will work with you on a
+role permits, or contact **interviehire.assist@gmail.com** (or the Client) and we will work with you on a
 reasonable accommodation.
 
 ---
 
 ## 15. Contact, Data Protection Officer & complaints
 
-**Data Fiduciary / Controller:** [LEGAL ENTITY NAME], [REGISTERED ADDRESS].
+**Data Fiduciary / Controller:** Bali Tech Innovations Pvt. Ltd., S-147 Panchshila Park, Malviya Nagar, Hauz Khas, Malviya Nagar, New Delhi.
 
-**Grievance Officer (India, DPDP):** [NAME], [EMAIL], [PHONE/ADDRESS].
+**Grievance Officer (India, DPDP):** Bali Tech Innovations Pvt. Ltd. (Grievance Officer), interviehire.assist@gmail.com, S-147 Panchshila Park, Malviya Nagar, Hauz Khas, Malviya Nagar, New Delhi.
 
-**Data Protection Officer / Privacy Contact:** [NAME / EMAIL].
+**Data Protection Officer / Privacy Contact:** interviehire.assist@gmail.com.
 
-**EU / UK Representative (if you target the EU/UK):** [EU REP NAME & ADDRESS] / [UK REP NAME & ADDRESS].
+**EU / UK Representative (if you target the EU/UK):** Not currently appointed — for EU/UK data-protection matters, contact interviehire.assist@gmail.com.
 
 **Complaints to a regulator:**
 - **India:** the **Data Protection Board of India (DPBI)**, after raising your grievance with us.

@@ -537,7 +537,7 @@ export const FooterCTA = () => {
               <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 13, color: '#555550', marginBottom: 6 }}>interviehire.com</div>
               <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: 13, color: '#555550', marginBottom: 6 }}>interviehire@gmail.com</div>
               <div style={{ display: 'flex', gap: 14, justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: 14 }}>
-                {[['Terms', '/legal/terms'], ['Privacy', '/legal/privacy'], ['DPA', '/legal/dpa']].map(([label, href]) => (
+                {[['Terms', '/help/terms'], ['Privacy', '/help/privacy'], ['DPA', '/help/dpa']].map(([label, href]) => (
                   <a key={href} href={href} style={{ fontFamily: 'Outfit, sans-serif', fontSize: 12, color: '#888880', textDecoration: 'none', transition: 'color 0.2s' }}
                     onMouseEnter={e => e.currentTarget.style.color = '#C9A84C'}
                     onMouseLeave={e => e.currentTarget.style.color = '#888880'}

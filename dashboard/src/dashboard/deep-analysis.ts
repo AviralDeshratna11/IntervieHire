@@ -10,7 +10,7 @@ import { escapeHTML, sourceLabel } from './escape';
 import { AppState } from './state';
 import { filterCandidatesByDateRange } from './render-views';
 import { soundEngine } from './sound';
-import { isApiMode, apiFetchCandidateReport, apiFetchTestReport } from './api';
+import { isApiMode, apiFetchCandidateReport, apiFetchTestReport, apiGetApplicantApplication } from './api';
 
 const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role alignment'];
 
@@ -214,6 +214,11 @@ const daUi = { selectedId: null, openAnswerId: null, showAllDims: false, openDim
 
 // Live (api mode) report cache: candidateId -> { state:'loading'|'ready'|'pending'|'error', report?, error? }.
 const liveReports = new Map();
+
+// Custom application-question answers cache: candidateId -> { state, answers?, questions? }.
+// Fetched lazily when a candidate detail opens (api mode only); additive — never
+// blocks the report blocks and renders nothing when the candidate answered none.
+const applicationData = new Map();
 
 // "Run test interview" result cache: jobId -> { state:'loading'|'ready'|'none', report? }.
 // Test interviews use a throwaway candidate that's excluded from the roster/funnel,
@@ -425,8 +430,35 @@ function renderDetail(job, container, candidate) {
       functionalHTML = functionalPending(entry.state, entry.error);
     }
   }
-  container.innerHTML = `<div class="da-intel">${detailShell(candidate, functionalHTML, exit)}</div>`;
+  const answersHTML = apiLive ? applicationAnswersSection(job, container, candidate) : '';
+  container.innerHTML = `<div class="da-intel">${detailShell(candidate, functionalHTML, exit, answersHTML)}</div>`;
   bind(container, job);
+}
+
+// Application answers block — the candidate's responses to the client's custom
+// apply-form questions. Fetched once per candidate and cached; returns '' while
+// loading, on error, or when there are no answers, so it's purely additive.
+function applicationAnswersSection(job, container, candidate) {
+  const entry = applicationData.get(candidate.id);
+  if (!entry) {
+    applicationData.set(candidate.id, { state: 'loading' });
+    apiGetApplicantApplication(candidate.id)
+      .then((d: any) => applicationData.set(candidate.id, { state: 'ready', answers: (d && d.answers) || [] }))
+      .catch(() => applicationData.set(candidate.id, { state: 'error' }))
+      .finally(() => { if (daUi.selectedId === candidate.id && AppState.activeJobId === job.id) renderDeepAnalysisPane(job, container); });
+    return '';
+  }
+  if (entry.state !== 'ready' || !Array.isArray(entry.answers) || !entry.answers.length) return '';
+  const rows = entry.answers.map((a) => `
+    <div class="da-li" style="display:block;margin-bottom:10px;">
+      <div style="color:#94a3b8;font-size:12px;margin-bottom:2px;">${escapeHTML(a.question || a.id || '')}</div>
+      <div style="color:#f3f4f6;white-space:pre-wrap;">${escapeHTML(a.answer || '')}</div>
+    </div>`).join('');
+  return `
+    <div class="da-section">
+      <h3 class="da-section-title">Application answers<span class="da-dim-count">${entry.answers.length}</span></h3>
+      ${rows}
+    </div>`;
 }
 
 function functionalPending(state, error?) {
@@ -475,7 +507,7 @@ function screeningBlock(c) {
     </div>`;
 }
 
-function detailShell(candidate, functionalHTML, exit) {
+function detailShell(candidate, functionalHTML, exit, answersHTML = '') {
   return `
     <div class="da-detail-head">
       <button class="da-back" data-action="back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> All candidates</button>
@@ -490,6 +522,7 @@ function detailShell(candidate, functionalHTML, exit) {
     </div>
     ${exit ? '' : resumeBlock(candidate)}
     ${exit ? '' : screeningBlock(candidate)}
+    ${answersHTML}
     <div class="da-section">
       <h3 class="da-section-title">${exit ? 'Exit interview' : 'Functional interview'}</h3>
       ${functionalHTML}

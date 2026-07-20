@@ -5,6 +5,7 @@ import React from 'react';
 export const Navbar = () => {
   const [scrolled, setScrolled] = React.useState(false);
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const [helpOpen, setHelpOpen] = React.useState(false);
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -100,6 +101,61 @@ export const Navbar = () => {
                 >
                   {item.label}
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Help Dropdown Container (legal docs) */}
+        <div
+          style={{
+            position: 'relative',
+            paddingBottom: '16px', // Hover bridge
+            marginBottom: '-16px' // offset padding
+          }}
+          onMouseEnter={() => setHelpOpen(true)}
+          onMouseLeave={() => setHelpOpen(false)}
+        >
+          <span style={{
+            fontFamily: 'Outfit, sans-serif', fontSize: 14, color: '#F5F0E8',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+            transition: 'color 0.2s'
+          }}
+             onMouseEnter={e => e.currentTarget.style.color = '#C9A84C'}
+             onMouseLeave={e => e.currentTarget.style.color = '#F5F0E8'}
+             onClick={() => setHelpOpen(!helpOpen)}
+          >
+            Help
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transition: 'transform 0.2s', transform: helpOpen ? 'rotate(180deg)' : 'none' }}>
+              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </span>
+
+          {helpOpen && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0,
+              background: '#111111', border: '1px solid rgba(201,168,76,0.15)',
+              borderRadius: 8, padding: '8px 0', minWidth: 190,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 101,
+              marginTop: 0
+            }}>
+              {[
+                { label: 'Terms of Service', href: '/help/terms' },
+                { label: 'Privacy Policy', href: '/help/privacy' },
+                { label: 'DPA', href: '/help/dpa' }
+              ].map((item, idx) => (
+                <a
+                  key={idx}
+                  href={item.href}
+                  style={{
+                    display: 'block', fontFamily: 'Outfit, sans-serif', fontSize: 13, color: '#888880',
+                    padding: '8px 16px', cursor: 'pointer', textDecoration: 'none', transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#C9A84C'; e.currentTarget.style.background = 'rgba(201,168,76,0.05)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#888880'; e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {item.label}
+                </a>
               ))}
             </div>
           )}

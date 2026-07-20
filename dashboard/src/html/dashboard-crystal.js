@@ -646,6 +646,10 @@ export const html = `
               <p class="panel-desc">These roles are live on your public career page right now. Remove one to take it down instantly.</p>
               <div id="career-jobs-list"></div>
             </section>
+
+            <!-- Company-wide default application questions. Static shell filled by
+                 renderOrgApplicationQuestions() (application-questions-editor.ts). -->
+            <section class="card-glass" id="career-questions-editor" style="margin-top:16px;"></section>
           </section>
 
           <!-- ===================================== -->
@@ -967,6 +971,12 @@ export const html = `
                   </div>
 
                 </div>
+
+                <!-- Apply link / share panel (filled by renderApplyShare) -->
+                <div class="card-glass" id="jd-apply-share" style="margin-top:16px;"></div>
+
+                <!-- Per-job application questions editor (filled by renderJobApplicationQuestions) -->
+                <div class="card-glass" id="jd-apply-questions" style="margin-top:16px;"></div>
               </div><!-- /overview -->
 
               <!-- Stage panes -->

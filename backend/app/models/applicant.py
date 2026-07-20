@@ -96,6 +96,16 @@ class Applicant(Base):
     anonymised_at = Column(DateTime(timezone=True), nullable=True)
     erasure_request_id = Column(UUID(as_uuid=True), nullable=True)
 
+    # Direct-apply consent — set when a candidate applies through the public career
+    # page / direct link (they hand us PII first-hand, so we are the data controller
+    # at that step). NULL for applicants added by a recruiter (bulk/ATS/scheduled).
+    consent_given_at = Column(DateTime(timezone=True), nullable=True)
+    consent_version = Column(String, nullable=True)
+
+    # Answers to the client's custom application questions (JSON text: a list of
+    # {id, question, type, answer}). NULL when the job/org asked no extra questions.
+    application_answers = Column(Text, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

@@ -200,11 +200,6 @@ export default function LegalDoc({ title, markdown }) {
           <a href="/" style={{ fontFamily: 'Outfit, sans-serif', fontSize: 13, color: C.muted, textDecoration: 'none' }}>← Back to home</a>
         </div>
 
-        <div style={{ background: 'rgba(255,107,53,0.10)', border: '1px solid rgba(255,107,53,0.38)', color: '#FFB499', padding: '12px 16px', borderRadius: 8, fontSize: 13, lineHeight: 1.6, marginBottom: 32 }}>
-          <strong style={{ color: '#FFD1BC' }}>Draft — pending legal review.</strong> This document is a template with
-          placeholders still to be completed and is awaiting sign-off by qualified counsel. It is not yet legally effective.
-        </div>
-
         {blocks.map((b, idx) => <Block key={`b${idx}`} block={b} k={`b${idx}`} />)}
       </div>
     </main>
