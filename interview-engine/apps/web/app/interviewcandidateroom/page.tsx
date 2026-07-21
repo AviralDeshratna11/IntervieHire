@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WS_URL, API_URL } from '@/lib/api';
 import { GazeCalibration } from '@/hooks/GazeCalibration';
-import { useProctoring } from '@/hooks/useProctoring';
+import { useProctoring, getBestViolationRecordingMimeType } from '@/hooks/useProctoring';
 import { useSpeechMetrics } from '@/hooks/useSpeechMetrics';
 import { useTranscript } from '@/hooks/useTranscript';
 import { Check, Mic, MonitorUp, ShieldCheck, Video } from 'lucide-react';
@@ -11,6 +11,12 @@ import { roomStyles } from './roomStyles';
 import { WaitingRoom } from './WaitingRoom';
 
 const AVATAR_URL = process.env.NEXT_PUBLIC_AVATAR_URL || 'http://localhost:80';
+// Optional dynamic avatar orchestrator (per-candidate independent Lina stream).
+// When NEXT_PUBLIC_ORCHESTRATOR_URL is UNSET, the room uses the single shared
+// AVATAR_URL exactly as before — zero behavior change. When set, and the link
+// carries ?jobId=, the room requests a dedicated per-job stream instead.
+const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '').replace(/\/+$/, '');
+const DEFAULT_JOB_ID = process.env.NEXT_PUBLIC_DEFAULT_JOB_ID || '';
 
 // How early a candidate may enter the room before their scheduled slot. The
 // lobby unlocks and the engine's /start accepts a start once inside this window.
@@ -101,6 +107,10 @@ export default function Interview() {
   const [reportStatus, setReportStatus] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
   const [report, setReport] = useState<any>(null);
+  // Recruiter-screening vs functional distinction: same room, same session mechanics,
+  // driven off the stage the backend stamped into InterviewSession.settings.
+  const [screeningOutcome, setScreeningOutcome] = useState<{ fits: boolean; link?: string; fitLabel?: string } | null>(null);
+  const screeningEndTriggeredRef = useRef(false);
   const [avatarCapture, setAvatarCapture] = useState<'off' | 'on' | 'error'>('off');
   const [avatarCaptureMsg, setAvatarCaptureMsg] = useState('');
   // Per-job interview settings + branding, synced from the recruiter dashboard.
@@ -194,7 +204,9 @@ export default function Interview() {
     return () => { alive = false; clearInterval(id); };
   }, [sessionId, avatarCapture]);
 
-  const avatarSrc = useMemo(() => withPixelStreamingParams(AVATAR_URL), []);
+  // Defaults to the static shared avatar; the orchestrator effect below swaps in
+  // this session's dedicated StreamerId URL when the feature is enabled.
+  const [avatarSrc, setAvatarSrc] = useState(() => withPixelStreamingParams(AVATAR_URL));
 
   // The dashboard's "Launch test interview" opens this room with ?sessionId=…
   // (the FastAPI test-session created from the job blueprint). Use it when
@@ -214,6 +226,60 @@ export default function Interview() {
     if (hasStoredConsent(resolvedId)) setConsentGiven(true);
     setConsentChecked(true);
   }, []);
+
+  // --- Optional: dynamic per-candidate avatar instance via the orchestrator ---
+  // Backward-compatible: no-op unless NEXT_PUBLIC_ORCHESTRATOR_URL is set AND the
+  // emailed link carries ?jobId= (the backend appends it). Requests a dedicated
+  // per-job Lina stream, heartbeats it, and releases it on unmount so the exe
+  // frees immediately. On capacity/error it silently keeps the shared avatar.
+  useEffect(() => {
+    if (!ORCHESTRATOR_URL) return;
+    if (typeof window === 'undefined') return;
+    // Wait for a real session id (don't spawn an exe for the 'demo-session'
+    // placeholder before it resolves).
+    if (!sessionId || sessionId === 'demo-session') return;
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get('jobId') || params.get('job') || DEFAULT_JOB_ID;
+    if (!jobId) return;
+
+    const orchSession = sessionId;
+    let released = false;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+    (async () => {
+      try {
+        const res = await fetch(`${ORCHESTRATOR_URL}/session`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jobId, sessionId: orchSession }),
+        });
+        if (!res.ok) return; // capacity_full / error → keep the shared avatar
+        const data = await res.json();
+        if (released || !data?.playerUrl) return;
+        setAvatarSrc(withPixelStreamingParams(data.playerUrl));
+        heartbeat = setInterval(() => {
+          fetch(`${ORCHESTRATOR_URL}/session/${encodeURIComponent(orchSession)}/heartbeat`, {
+            method: 'POST',
+          }).catch(() => {});
+        }, 30000);
+      } catch {
+        /* keep the shared avatar */
+      }
+    })();
+
+    return () => {
+      released = true;
+      if (heartbeat) clearInterval(heartbeat);
+      try {
+        fetch(`${ORCHESTRATOR_URL}/session/${encodeURIComponent(orchSession)}`, {
+          method: 'DELETE',
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        /* noop */
+      }
+    };
+  }, [sessionId]);
 
   // Re-restore consent if the session id changes AFTER mount (e.g. the demo
   // bootstrap swaps in a real id). This can only reveal a prior consent — it
@@ -338,7 +404,7 @@ export default function Interview() {
   // Gate proctoring on consent AND an explicit permission request: no camera/mic/
   // screen capture or model loading happens until the candidate has agreed in the
   // consent gate AND clicked "Grant required access" in the permission gate below.
-  const { videoRef, events, state, requestRequiredPermissions, startProctoringSession, endProctoringSession, getScreenAudioStream, screenShareError } = useProctoring(sessionId, socket, calibration, consentGiven && permissionsRequested);
+  const { videoRef, events, state, requestRequiredPermissions, startProctoringSession, endProctoringSession, getScreenAudioStream, getScreenVideoStream, screenShareError } = useProctoring(sessionId, socket, calibration, consentGiven && permissionsRequested);
 
   // --- Lock scroll to a fullscreen room while mounted ---
   useEffect(() => {
@@ -361,6 +427,11 @@ export default function Interview() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Which stage this session is (stamped by the backend into InterviewSession.settings
+  // — see ai_sync.py). Undefined for demo/legacy sessions, which behave exactly as before.
+  const sessionStage = interviewSettings?.stage as 'screening' | 'functional' | undefined;
+  const SCREENING_DURATION_SECONDS = 300;
+
   // --- Elapsed timer (starts once calibration is done) ---
   useEffect(() => {
     if (!calibration) return;
@@ -368,41 +439,91 @@ export default function Interview() {
     return () => clearInterval(t);
   }, [calibration]);
 
+  // --- Recruiter screening: hard 5-minute cutoff, auto-ends the call exactly once ---
+  useEffect(() => {
+    if (sessionStage !== 'screening') return;
+    if (ended || screeningEndTriggeredRef.current) return;
+    if (elapsed >= SCREENING_DURATION_SECONDS) {
+      screeningEndTriggeredRef.current = true;
+      endCall();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStage, elapsed, ended]);
+
   // --- Recording lifecycle ---
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const [recordingStatus, setRecordingStatus] = useState('Idle');
+  // Full-interview recording mix: candidate mic + Lina's tab audio, combined via Web
+  // Audio API so the uploaded file has both voices alongside the shared-screen video.
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const audioMixCtxRef = useRef<AudioContext | null>(null);
 
-  function startRecording() {
+  async function startRecording() {
     try {
       const original = videoRef.current?.srcObject as MediaStream | null;
-      if (!original) {
-        setRecordingStatus('Grant camera access first');
+      const screenVideo = getScreenVideoStream?.() ?? null;
+      const screenAudio = getScreenAudioStream?.() ?? null;
+
+      let recordStream: MediaStream | null = null;
+      if (screenVideo) {
+        // Mic permission was already granted earlier for STT, so this should not
+        // trigger a second browser prompt.
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+        micStreamRef.current = micStream;
+
+        const ctx = new AudioContext();
+        const dest = ctx.createMediaStreamDestination();
+        if (micStream) ctx.createMediaStreamSource(micStream).connect(dest);
+        if (screenAudio) ctx.createMediaStreamSource(screenAudio).connect(dest);
+        audioMixCtxRef.current = ctx;
+
+        recordStream = new MediaStream([...screenVideo.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      } else if (original) {
+        // Fallback: screen share unavailable for some reason — keep the old
+        // webcam-only behavior rather than not recording at all.
+        recordStream = original;
+      }
+
+      if (!recordStream) {
+        setRecordingStatus('Grant camera or screen access first');
         return;
       }
-      const mr = new MediaRecorder(original, { mimeType: 'video/webm' });
+
+      const mimeType = getBestViolationRecordingMimeType() || 'video/webm';
+      const mr = new MediaRecorder(recordStream, { mimeType });
       chunksRef.current = [];
       mr.ondataavailable = (ev: any) => {
         if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
       };
       mr.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const blob = new Blob(chunksRef.current, { type: mimeType });
         const form = new FormData();
         form.append('file', blob, `recording-${Date.now()}.webm`);
         setRecordingStatus('Uploading recording…');
         try {
-          await fetch(`${API_URL}/api/interview/sessions/${sessionId}/recording`, { method: 'POST', body: form });
+          const res = await fetch(`${API_URL}/api/interview/sessions/${sessionId}/recording`, { method: 'POST', body: form });
+          if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
           setRecordingStatus('Recording uploaded');
-        } catch {
+        } catch (err) {
+          console.error('recording upload failed', err);
           setRecordingStatus('Recording upload failed');
         }
       };
       recorderRef.current = mr;
-      mr.start();
+      mr.start(5000);
       setRecordingStatus('Recording video + audio');
     } catch (err) {
       console.error('startRecording error', err);
     }
+  }
+
+  function stopRecordingCapture() {
+    recorderRef.current?.stop();
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current = null;
+    audioMixCtxRef.current?.close().catch(() => {});
+    audioMixCtxRef.current = null;
   }
 
   // --- Auto-start the recorded session once calibrated + connected ---
@@ -501,7 +622,7 @@ export default function Interview() {
     setEnded(true);
     setReportBusy(true);
     try {
-      recorderRef.current?.stop();
+      stopRecordingCapture();
       transcript.stopBrowserSTT();
       void transcript.flush();
       endProctoringSession();
@@ -522,6 +643,19 @@ export default function Interview() {
       if (eRes.ok && eJson?.evaluation) {
         setReport(eJson.evaluation);
         setReportStatus(`Report generated (engine: ${eJson.engine}).`);
+
+        if (sessionStage === 'screening') {
+          setReportStatus('Checking fit for the next round…');
+          try {
+            const oRes = await fetch(`${API_URL}/api/interviews/${sessionId}/screening-outcome`, { method: 'POST' });
+            const oJson = await oRes.json();
+            if (oRes.ok) setScreeningOutcome(oJson);
+            // On failure we deliberately leave screeningOutcome null — the room falls
+            // back to showing the raw report card instead of trapping the candidate.
+          } catch {
+            /* best-effort — fall back to the raw report card */
+          }
+        }
       } else {
         setReportStatus(eJson?.error || 'Report generation failed.');
       }
@@ -717,8 +851,9 @@ export default function Interview() {
     ? { label: `Looking ${state.gazeDirection ?? 'away'}`, tone: 'warn' as const }
     : { label: 'Monitored', tone: 'ok' as const };
 
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const ss = String(elapsed % 60).padStart(2, '0');
+  const clockSeconds = sessionStage === 'screening' ? Math.max(0, SCREENING_DURATION_SECONDS - elapsed) : elapsed;
+  const mm = String(Math.floor(clockSeconds / 60)).padStart(2, '0');
+  const ss = String(clockSeconds % 60).padStart(2, '0');
   const clock = `${mm}:${ss}`;
   // Prefer Lina's actually-asked questions (from the live transcript) over the
   // premade blueprint list; fall back to premade when none are captured yet.
@@ -1038,8 +1173,8 @@ export default function Interview() {
           </div>
           <div className="job-pill">
             <i className="live-dot" />
-            <strong>Associate Consultant Screening</strong>
-            <span>Round 1</span>
+            <strong>{sessionStage === 'screening' ? 'Recruiter Screening' : 'Associate Consultant Screening'}</strong>
+            <span>{sessionStage === 'screening' ? '5-min check-in' : 'Round 1'}</span>
           </div>
           <div className="connection">
             <span className={`integrity ${integrity.tone}`}>
@@ -1079,6 +1214,19 @@ export default function Interview() {
             <span className="timer">{clock}</span>
           </div>
         </header>
+
+        {calibration && !ended && (
+          <div
+            style={{
+              position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 8000,
+              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 999,
+              background: 'rgba(15,23,42,0.65)', color: '#e2e8f0', fontSize: 11, fontWeight: 600,
+              letterSpacing: 0.3, border: '1px solid rgba(255,255,255,0.12)', pointerEvents: 'none',
+            }}
+          >
+            ● This interview is recorded (audio &amp; video) for evaluation purposes.
+          </div>
+        )}
 
         {/* Prominent prompt: the interviewer's voice can only be recorded if the
             candidate shares the screen/tab WITH audio (browsers can't capture
@@ -1186,7 +1334,7 @@ export default function Interview() {
           <div className="control-time">
             <i className="red-dot" />
             <span>{clock}</span>
-            <span className="elapsed-label">Elapsed · {recordingStatus}</span>
+            <span className="elapsed-label">{sessionStage === 'screening' ? 'Remaining' : 'Elapsed'} · {recordingStatus}</span>
             <button type="button" className="debug-toggle" onClick={() => setShowDebug((v) => !v)} title="Toggle proctoring debug (Ctrl+Shift+D or ` )">
               🐞 Debug
             </button>
@@ -1239,10 +1387,45 @@ export default function Interview() {
                 Interview complete
               </p>
               <h2 style={{ margin: '6px 0 4px', fontSize: 22, fontWeight: 800 }}>
-                {report ? 'Interview report' : 'Generating the interview report'}
+                {!report
+                  ? 'Generating the interview report'
+                  : sessionStage === 'screening' && screeningOutcome
+                  ? (screeningOutcome.fits ? "You're moving to the next round" : 'Thanks for your time')
+                  : 'Interview report'}
               </h2>
 
-              {!report ? (
+              {report && sessionStage === 'screening' && screeningOutcome ? (
+                <div style={{ marginTop: 6 }}>
+                  {screeningOutcome.fits ? (
+                    <>
+                      <p style={{ margin: '0 0 18px', fontSize: 13.5, lineHeight: 1.65, color: '#c7d4ee' }}>
+                        Nice work — based on your screening conversation, you're a good fit to continue.
+                        Click below to start your functional interview.
+                      </p>
+                      {screeningOutcome.link ? (
+                        <a
+                          href={screeningOutcome.link}
+                          style={{
+                            display: 'inline-block', padding: '12px 22px', borderRadius: 10, fontWeight: 700,
+                            fontSize: 14, color: '#04121f', background: '#7dd3fc', textDecoration: 'none',
+                          }}
+                        >
+                          Continue to Functional Interview →
+                        </a>
+                      ) : (
+                        <p style={{ fontSize: 13, color: '#9fb2d4' }}>
+                          Your recruiter will follow up shortly with your next interview link.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65, color: '#c7d4ee' }}>
+                      Thanks for taking the time to speak with us today. Your responses have been recorded and
+                      our team will follow up with you shortly on next steps.
+                    </p>
+                  )}
+                </div>
+              ) : !report ? (
                 <>
                   <p style={{ margin: '0 0 14px', fontSize: 13.5, lineHeight: 1.6, color: '#9fb2d4' }}>
                     The transcript was captured automatically — your speech via speech-to-text and the

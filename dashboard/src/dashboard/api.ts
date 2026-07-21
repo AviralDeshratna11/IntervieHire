@@ -242,6 +242,19 @@ export async function apiScheduleCandidate(applicantId, scheduledAt, stage = 'sc
   return mapApplicantOutToCandidate(data);
 }
 
+export async function apiAddApplicantsBulk(jobId, candidates) {
+  const results = [];
+  for (const c of candidates) {
+    try {
+      const r = await apiAddApplicant(jobId, c);
+      results.push(r);
+    } catch (e) {
+      console.warn('apiAddApplicantsBulk: failed for', c, e);
+    }
+  }
+  return results;
+}
+
 // Mint a unique, unguessable per-candidate interview link bound to this applicant
 // (and optionally email it). Returns the raw backend payload
 // ({ token, link, status, expires_at, sent, ... }) — not mapped to a candidate,
@@ -669,4 +682,24 @@ function mapFullReportToCandidateReport(data: any): CandidateReport | null {
   const report = data.report;
   if (data.evaluated && report && Array.isArray(report.questionBreakdown)) return report;
   return null;
+}
+
+// ── Preferences ──────────────────────────────────────────────────────────────
+// Fetch the signed-in user's saved preferences from the backend.
+// Returns { theme: 'dark'|'light'|'system' }, or null if the request fails.
+export async function apiGetPreferences() {
+  try {
+    return await request('/settings/preferences');
+  } catch {
+    return null;
+  }
+}
+
+// Persist a preference change. Only the fields you pass are updated.
+export async function apiUpdatePreferences(data) {
+  try {
+    return await request('/settings/preferences', { method: 'PUT', body: data });
+  } catch {
+    return null;
+  }
 }

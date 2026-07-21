@@ -2237,7 +2237,8 @@ def schedule_interview(
     # FRONTEND_URL may be a comma-separated list; take the first origin.
     _frontend = (settings.FRONTEND_URL or "").split(",")[0].strip().rstrip("/")
     reschedule_link = f"{_frontend}/reschedule.html?token={applicant.scheduling_token}"
-    interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interviewcandidateroom?sessionId={applicant.id}"
+    _job_qs = f"&jobId={applicant.job_id}" if applicant.job_id else ""
+    interview_link = f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interviewcandidateroom?sessionId={applicant.id}{_job_qs}"
 
     # Create/update Google Calendar event
     try:

@@ -80,6 +80,8 @@ def init_db():
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS application_questions TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS application_questions TEXT;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS application_answers TEXT;"))
+        conn.execute(text('ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS "recordingDriveFileId" VARCHAR;'))
+        conn.execute(text('ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS "recordingDriveUrl" VARCHAR;'))
         conn.commit()
 
         # Backfill: repair legacy jobs with a NULL organisation_id by inheriting the
@@ -223,3 +225,4 @@ app.include_router(privacy.router,          prefix="/api/privacy", tags=["Privac
 @app.get("/")
 def root():
     return {"status": "ok", "app": settings.APP_NAME}
+ 

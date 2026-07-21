@@ -1,4 +1,4 @@
-import '../../src/landing/landing.css';
+import '../../src/landing/styles/landing.css';
 
 export const metadata = {
   title: 'intervieHire — AI Interviews, Human Results',

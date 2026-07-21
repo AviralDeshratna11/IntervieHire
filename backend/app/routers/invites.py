@@ -575,10 +575,13 @@ def open_invite(token: str, request: Request, db: Session = Depends(get_db)):
         )
 
     # Key the room on the applicant id (the engine session id); carry the token
-    # for traceability and future WS-level hardening.
+    # for traceability and future WS-level hardening. `jobId` lets the avatar
+    # orchestrator launch THIS job's dedicated Lina build (per-job exe) for an
+    # independent, parallel stream — no effect when the orchestrator is unset.
+    job_qs = f"&jobId={invite.job_id}" if invite.job_id else ""
     room = (
         f"{settings.INTERVIEW_ROOM_URL.rstrip('/')}/interviewcandidateroom"
-        f"?sessionId={invite.applicant_id}&ih_invite={invite.token}"
+        f"?sessionId={invite.applicant_id}&ih_invite={invite.token}{job_qs}"
     )
     return RedirectResponse(room, status_code=302)
 
