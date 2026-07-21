@@ -13,6 +13,8 @@ import { stopActiveCardPlayer, toggleCardPlayer } from "./kanban-dnd";
 import { recalculateJobPipelines, renderKanbanBoard } from "./kanban-swarm";
 import { triggerExcelExport } from "./navigation";
 import { renderBlueprintStudio } from "./blueprint-studio";
+import { renderApplyShare } from "./apply-share-panel";
+import { renderJobApplicationQuestions } from "./application-questions-editor";
 import { renderInterviewAnalysisStage } from "./interview-analysis";
 import { renderTestInterviewPane } from "./test-interview";
 import {
@@ -71,6 +73,11 @@ function renderJobDetailPanes(job) {
 			return true;
 		},
 	);
+
+	// Overview: per-job public apply link / QR / embed + custom-questions editor
+	// (each build→bind inside).
+	renderApplyShare(job);
+	renderJobApplicationQuestions(job);
 
 	// 1. Resume pane — criteria config + candidates table
 	const resumeList = document.getElementById("list-stage-resume");

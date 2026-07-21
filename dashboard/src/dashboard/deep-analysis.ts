@@ -10,7 +10,7 @@ import { escapeHTML, sourceLabel } from './escape';
 import { AppState } from './state';
 import { filterCandidatesByDateRange } from './render-views';
 import { soundEngine } from './sound';
-import { isApiMode, apiFetchCandidateReport, apiFetchTestReport } from './api';
+import { isApiMode, apiFetchCandidateReport, apiFetchTestReport, apiGetApplicantApplication } from './api';
 import type { Candidate, Job } from './types';
 
 const DIMENSIONS = ['Correctness', 'Depth', 'Clarity', 'Communication', 'Role alignment'];
@@ -57,6 +57,7 @@ const RECO_META: Record<string, { label: string; color: string }> = {
   hold: { label: 'Hold', color: '#fbbf24' },
   reject: { label: 'Reject', color: '#f87171' },
   needs_human_review: { label: 'Needs review', color: '#fb923c' },
+  exit: { label: 'Interviewed', color: '#94a3b8' },   // exit leavers aren't scored/recommended
 };
 const SEV_COLOR: Record<string, string> = { low: '#9a9a9a', medium: '#fbbf24', high: '#fb923c', critical: '#f87171' };
 const CONF_COLOR: Record<string, string> = { high: '#34d399', medium: '#fbbf24', low: '#f87171' };
@@ -178,21 +179,53 @@ export function buildSampleCandidateReport(candidate: Candidate, job: Job) {
   };
 }
 
-// Transient per-view UI state. Typed explicitly so the ids/keys can hold a string
-// once a candidate/answer/dimension is selected (a bare literal would infer `null`
-// and reject those assignments).
-interface DaUiState {
-  selectedId: string | null;
-  openAnswerId: string | null;
-  showAllDims: boolean;
-  openDimKey: string | null;
-  testOpen: boolean;
-  hiringFilter: string;
+// Exit-interview demo report. Emits the VERBATIM (unscored) exit shape the engine now
+// produces: interviewType === 'exit_interview', mode 'verbatim', scored false, an ordered
+// list of question/answer exchanges (live follow-ups flagged) plus the themes covered.
+// No scores, sentiment or attrition signal — exit interviews are a plain transcript record.
+// Exported for the offline/demo path; not auto-wired into the roster because local mode has
+// no per-candidate "this was an exit interview" signal.
+const EXIT_EXCHANGES = [
+  { theme: 'Reason for leaving', question: 'What ultimately made you decide to leave?', answer: 'It came down to growth. I enjoyed the work and the people, but I could not see a clear path to the next level here.', isFollowup: false },
+  { theme: 'Reason for leaving', question: 'When you say you could not see a path — was that about role scope or timing?', answer: 'Mostly scope. The senior roles were filled and there was no plan to open more, so the ceiling felt fixed for the next couple of years.', isFollowup: true },
+  { theme: 'Management', question: 'How would you describe your relationship with your manager?', answer: 'Genuinely good. They advocated for me and gave honest feedback — this was never about my manager.', isFollowup: false },
+  { theme: 'Retention drivers', question: 'What did you enjoy most about working here?', answer: 'The team, without question. The people are the best part and I will miss working with them day to day.', isFollowup: false },
+  { theme: 'Retention', question: 'Is there anything we could have done to keep you?', answer: 'A concrete progression plan would have made me think twice — compensation mattered less than knowing where I was headed.', isFollowup: false },
+];
+
+export function buildSampleExitReport(candidate, job) {
+  const exchanges = EXIT_EXCHANGES.map((e, i) => ({
+    questionIndex: e.isFollowup ? null : i,
+    theme: e.theme,
+    question: e.question,
+    answer: e.answer,
+    isFollowup: e.isFollowup,
+  }));
+  return {
+    interviewType: 'exit_interview',
+    mode: 'verbatim',
+    scored: false,
+    interviewId: `exit-${candidate.id}`,
+    candidateId: candidate.id,
+    roleTitle: job.roleName || job.cardName || 'Role',
+    exchanges,
+    themes: uniq(EXIT_EXCHANGES.map((e) => e.theme)),
+    questionCount: EXIT_EXCHANGES.filter((e) => !e.isFollowup).length,
+    transcriptOnly: true,
+    generatedAt: new Date().toISOString(),
+    questionBreakdown: [],
+  };
 }
-const daUi: DaUiState = { selectedId: null, openAnswerId: null, showAllDims: false, openDimKey: null, testOpen: false, hiringFilter: 'all' };
+
+const daUi = { selectedId: null, openAnswerId: null, showAllDims: false, openDimKey: null, testOpen: false, hiringFilter: 'all' };
 
 // Live (api mode) report cache: candidateId -> { state:'loading'|'ready'|'pending'|'error', report?, error? }.
 const liveReports = new Map<string, { state: string; report?: any; error?: string }>();
+
+// Custom application-question answers cache: candidateId -> { state, answers?, questions? }.
+// Fetched lazily when a candidate detail opens (api mode only); additive — never
+// blocks the report blocks and renders nothing when the candidate answered none.
+const applicationData = new Map();
 
 // "Run test interview" result cache: jobId -> { state:'loading'|'ready'|'none', report? }.
 // Test interviews use a throwaway candidate that's excluded from the roster/funnel,
@@ -232,6 +265,13 @@ function testInterviewSection(job: Job, container: any): string {
 const hasFunctional = (c: Candidate): boolean => c.interviewStatus === 'Completed' && Number.isFinite(c.interviewScore);
 const hasResume = (c: Candidate): boolean => !!c.resumeAnalysis || c.matchScore != null;
 const hasScreening = (c: Candidate): boolean => !!c.recruiterScreening || c.recruiterScreeningScore != null;
+
+// An exit-interview job records a verbatim transcript with NO score, so "functional
+// complete" for an exit leaver means the interview finished — not that a number exists.
+// isExitJob gates every score-assuming branch below, leaving the hiring path untouched.
+const isExitJob = (job) => !!job && (job.jobKind === 'exit' || job.job_kind === 'exit');
+const hasExitInterview = (c) => c.interviewStatus === 'Completed';
+const functionalPresent = (job, c) => (isExitJob(job) ? hasExitInterview(c) : hasFunctional(c));
 
 // ── R / S / F funnel chips ──────────────────────────────────────────────────
 // Each hiring stage (Resume → Screening → Functional) resolves to one state:
@@ -317,34 +357,40 @@ function deriveStageStates(c: Candidate): { resume: string; screening: string; f
 // Deep Analysis now holds ALL THREE result blocks per candidate (resume, screening,
 // functional), so the roster includes anyone with at least one result — not just
 // candidates who finished the interview (which left the tab empty pre-interview).
-function rosterCandidates(job: Job): Candidate[] {
+function rosterCandidates(job) {
   // Scope to THIS job the same way every other view does: in api mode a candidate
   // belongs to the job only when its backend jobId matches. Matching on the role
   // NAME alone (the old behaviour) also swept in same-named rows from other jobs and
   // the local demo seed, so the roster showed phantom + duplicated candidates.
   const apiLive = isApiMode() && !!job._backend;
+  const done = isExitJob(job) ? hasExitInterview : hasFunctional;
   return filterCandidatesByDateRange(AppState.candidates)
-    .filter((c: Candidate) => {
+    .filter((c) => {
       const belongsToJob = apiLive
         ? c.jobId === job.id
-        : c.jobApplied === job.roleName || c.jobApplied === job.cardName;
-      return belongsToJob && (hasResume(c) || hasScreening(c) || hasFunctional(c));
+        : (c.jobApplied === job.roleName || c.jobApplied === job.cardName);
+      return belongsToJob && (hasResume(c) || hasScreening(c) || done(c));
     });
 }
 
 // One headline number per candidate: functional score if interviewed, else resume
 // match, else screening score. Null when nothing numeric exists yet.
-function headlineScore(c: Candidate): number | null {
-  if (hasFunctional(c)) return Math.round(c.interviewScore as number);
-  const ra = c.resumeAnalysis as any;
-  const m = (ra && ra.matchScore) ?? c.matchScore;
+function headlineScore(c, job) {
+  if (isExitJob(job)) return null;               // exit interviews are recorded, not scored
+  if (hasFunctional(c)) return Math.round(c.interviewScore);
+  const m = (c.resumeAnalysis && c.resumeAnalysis.matchScore) ?? c.matchScore;
   if (Number.isFinite(m)) return Math.round(m);
   if (Number.isFinite(c.recruiterScreeningScore)) return Math.round(c.recruiterScreeningScore as number);
   return null;
 }
 
-function rosterEntry(c: Candidate) {
-  const score = headlineScore(c);
+function rosterEntry(c, job) {
+  // Exit leavers have no score, no hiring recommendation, and no resume/screening
+  // stages — just a completed interview to open.
+  if (isExitJob(job)) {
+    return { candidate: c, report: { overallScore: null, recommendation: 'exit', recommendationConfidence: 'medium', redFlags: [], stages: { resume: false, screening: false, functional: hasExitInterview(c) } } };
+  }
+  const score = headlineScore(c, job);
   const ra = c.resumeAnalysis as any;
   let recommendation = 'hold';
   if (hasFunctional(c)) recommendation = recoFromScore(score ?? 0);
@@ -365,7 +411,7 @@ export function renderDeepAnalysisPane(job: Job, container: any): void {
   // The test-interview result renders above the roster (api mode only). It's fetched
   // and cached separately so it never affects the roster or the stat strip below.
   const testHTML = apiLive ? testInterviewSection(job, container) : '';
-  const entries = rosterCandidates(job).map(rosterEntry)
+  const entries = rosterCandidates(job).map((c) => rosterEntry(c, job))
     .sort((a, b) => (b.report.overallScore ?? -1) - (a.report.overallScore ?? -1));
   if (!entries.length) { container.innerHTML = `<div class="da-intel">${testHTML}${emptyState(apiLive)}</div>`; bind(container, job); return; }
 
@@ -381,11 +427,14 @@ const recoFromScore = (s: number): string => (s >= 88 ? 'strong_proceed' : s >= 
 // in api mode (loading → ready/pending/error) without blocking the other two.
 function renderDetail(job: Job, container: any, candidate: Candidate): void {
   const apiLive = isApiMode() && !!job._backend;
-  let functionalHTML: string;
-  if (!hasFunctional(candidate)) {
-    functionalHTML = `<div class="da-li muted">No functional interview completed yet.</div>`;
+  const exit = isExitJob(job);
+  let functionalHTML;
+  if (!functionalPresent(job, candidate)) {
+    functionalHTML = `<div class="da-li muted">${exit ? 'No exit interview completed yet.' : 'No functional interview completed yet.'}</div>`;
   } else if (!apiLive) {
-    functionalHTML = functionalReportBody(buildSampleCandidateReport(candidate, job), candidate);
+    functionalHTML = exit
+      ? functionalReportBody(buildSampleExitReport(candidate, job), candidate)
+      : functionalReportBody(buildSampleCandidateReport(candidate, job), candidate);
   } else {
     const entry = liveReports.get(candidate.id);
     if (!entry) {
@@ -401,11 +450,38 @@ function renderDetail(job: Job, container: any, candidate: Candidate): void {
       functionalHTML = functionalPending(entry.state, entry.error);
     }
   }
-  container.innerHTML = `<div class="da-intel">${detailShell(candidate, functionalHTML)}</div>`;
+  const answersHTML = apiLive ? applicationAnswersSection(job, container, candidate) : '';
+  container.innerHTML = `<div class="da-intel">${detailShell(candidate, functionalHTML, exit, answersHTML)}</div>`;
   bind(container, job);
 }
 
-function functionalPending(state: string, error?: string): string {
+// Application answers block — the candidate's responses to the client's custom
+// apply-form questions. Fetched once per candidate and cached; returns '' while
+// loading, on error, or when there are no answers, so it's purely additive.
+function applicationAnswersSection(job, container, candidate) {
+  const entry = applicationData.get(candidate.id);
+  if (!entry) {
+    applicationData.set(candidate.id, { state: 'loading' });
+    apiGetApplicantApplication(candidate.id)
+      .then((d: any) => applicationData.set(candidate.id, { state: 'ready', answers: (d && d.answers) || [] }))
+      .catch(() => applicationData.set(candidate.id, { state: 'error' }))
+      .finally(() => { if (daUi.selectedId === candidate.id && AppState.activeJobId === job.id) renderDeepAnalysisPane(job, container); });
+    return '';
+  }
+  if (entry.state !== 'ready' || !Array.isArray(entry.answers) || !entry.answers.length) return '';
+  const rows = entry.answers.map((a) => `
+    <div class="da-li" style="display:block;margin-bottom:10px;">
+      <div style="color:#94a3b8;font-size:12px;margin-bottom:2px;">${escapeHTML(a.question || a.id || '')}</div>
+      <div style="color:#f3f4f6;white-space:pre-wrap;">${escapeHTML(a.answer || '')}</div>
+    </div>`).join('');
+  return `
+    <div class="da-section">
+      <h3 class="da-section-title">Application answers<span class="da-dim-count">${entry.answers.length}</span></h3>
+      ${rows}
+    </div>`;
+}
+
+function functionalPending(state, error?) {
   const msg = state === 'loading'
     ? ['Loading evaluation…', 'Fetching this candidate’s interview report from the backend.']
     : state === 'error'
@@ -451,7 +527,7 @@ function screeningBlock(c: Candidate): string {
     </div>`;
 }
 
-function detailShell(candidate: Candidate, functionalHTML: string): string {
+function detailShell(candidate, functionalHTML, exit, answersHTML = '') {
   return `
     <div class="da-detail-head">
       <button class="da-back" data-action="back"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> All candidates</button>
@@ -464,10 +540,11 @@ function detailShell(candidate: Candidate, functionalHTML: string): string {
         <div class="da-report-role">${escapeHTML(candidate.jobApplied || '')}</div>
       </div>
     </div>
-    ${resumeBlock(candidate)}
-    ${screeningBlock(candidate)}
+    ${exit ? '' : resumeBlock(candidate)}
+    ${exit ? '' : screeningBlock(candidate)}
+    ${answersHTML}
     <div class="da-section">
-      <h3 class="da-section-title">Functional interview</h3>
+      <h3 class="da-section-title">${exit ? 'Exit interview' : 'Functional interview'}</h3>
       ${functionalHTML}
     </div>`;
 }
@@ -482,12 +559,29 @@ function emptyState(apiMode?: boolean): string {
   </div>`;
 }
 
-function rosterMarkup(job: Job, reports: any[]): string {
-  const dist: Record<string, number> = {};
+function rosterMarkup(job, reports) {
+  const interviewed = reports.filter((r) => r.report.stages && r.report.stages.functional).length;
+
+  // Exit-interview roster: no scores and no hiring-decision filter — just the leavers
+  // and their completed verbatim interviews.
+  if (isExitJob(job)) {
+    return `
+    <div class="da-roster-head">
+      <div><h2 class="da-title">Exit interviews</h2><p class="da-sub">${reports.length} exit interview${reports.length !== 1 ? 's' : ''} · verbatim transcripts, not scored</p></div>
+    </div>
+    <div class="da-stat-strip">
+      <div class="da-stat"><span class="da-stat-num">${reports.length}</span><span class="da-stat-label">Leavers</span></div>
+      <div class="da-stat"><span class="da-stat-num" style="color:#34d399;">${interviewed}</span><span class="da-stat-label">Completed</span></div>
+    </div>
+    <div class="da-roster">
+      ${reports.length ? reports.map((r, i) => rosterRow(r, i)).join('') : '<div class="da-li muted" style="text-align:center;padding:20px;">No exit interviews completed yet.</div>'}
+    </div>`;
+  }
+
+  const dist: any = {};
   reports.forEach((r) => { dist[r.report.recommendation] = (dist[r.report.recommendation] || 0) + 1; });
   const scored = reports.map((r) => r.report.overallScore).filter((s) => Number.isFinite(s));
   const avg = scored.length ? Math.round(scored.reduce((a, s) => a + s, 0) / scored.length) : 0;
-  const interviewed = reports.filter((r) => r.report.stages && r.report.stages.functional).length;
 
   // Hiring-decision filter (P8): narrows the list below to the recruiter's Hired /
   // Rejected calls. The stat strip stays on the full analysed set.
@@ -574,7 +668,7 @@ function structuredAnalysisSection(report: any, candidate?: Candidate | null): s
   const finalScore = Math.round(sb.finalScore != null ? sb.finalScore : (s.overallScore || 0));
   const penTone = (v: number): string => ((v || 0) > 0 ? '#f87171' : '#34d399');
 
-  const cell = (label: string, value: string | number, color?: string): string => `
+  const cell = (label, value, color?) => `
     <div class="da-stat" style="align-items:flex-start;text-align:left;">
       <span class="da-stat-num"${color ? ` style="color:${color};"` : ''}>${value}</span>
       <span class="da-stat-label">${escapeHTML(label)}</span>
@@ -609,7 +703,11 @@ function structuredAnalysisSection(report: any, candidate?: Candidate | null): s
     ${proctoringBlock}`;
 }
 
-function functionalReportBody(report: any, candidate?: Candidate | null): string {
+function functionalReportBody(report, candidate?) {
+  // Exit interviews flow through the same endpoints/renderer as hiring reports but
+  // carry a distinct shape: an unscored verbatim transcript (exchanges + themes, no
+  // scores). Branch early; the hiring path below is unchanged.
+  if (report && report.interviewType === 'exit_interview') return exitReportBody(report, candidate);
   const reco = RECO_META[report.recommendation] || RECO_META.hold;
   const band = scoreColor(report.overallScore);
   const critical = (report.redFlags || []).filter((f: any) => f.severity === 'critical');
@@ -661,6 +759,65 @@ function functionalReportBody(report: any, candidate?: Candidate | null): string
     ${structuredAnalysisSection(report, candidate)}`;
 }
 
+// Exit-interview view. Exit interviews are NOT scored — the engine emits a plain
+// VERBATIM transcript (interviewType === 'exit_interview', mode: 'verbatim',
+// scored: false): the themes covered plus an ordered list of question/answer
+// exchanges, with live follow-up probes flagged. No score ring, recommendation,
+// sentiment or attrition signal is rendered because none exist. Same DOM-string
+// style as functionalReportBody; reuses the transcript-download affordance so HR
+// can export the raw record (structuredAnalysisSection degrades to the button alone
+// for an unscored report).
+function exitReportBody(report, candidate) {
+  const name = (candidate && candidate.name) || '';
+  const themes = (report.themes || []).filter(Boolean);
+  const exchanges = report.exchanges || [];
+  return `
+    <div class="da-report-top">
+      <div class="da-report-id">
+        <div class="da-report-name">${escapeHTML(name || 'Exit interview')}<span class="da-report-role">${escapeHTML(report.roleTitle || '')}</span></div>
+        <p class="da-summary" style="margin-top:5px;">Exit interview · Verbatim record — not scored</p>
+      </div>
+    </div>
+
+    ${themes.length ? `
+      <div class="da-section">
+        <h3 class="da-section-title">Themes covered<span class="da-dim-count">${themes.length}</span></h3>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${themes.map((t) => `<span class="da-ans-topic">${escapeHTML(t)}</span>`).join('')}</div>
+      </div>` : ''}
+
+    <div class="da-section">
+      <h3 class="da-section-title">Transcript</h3>
+      ${exchanges.length
+        ? exchanges.map((ex) => exitExchange(ex)).join('')
+        : '<div class="da-li muted">No responses were recorded for this exit interview.</div>'}
+    </div>
+
+    ${structuredAnalysisSection(report, candidate)}`;
+}
+
+// One question/answer exchange in the exit transcript. Anchor questions render flush;
+// live follow-up probes are indented and gold-tinted (reusing the accent used across
+// this view) and prefixed with a "↳ Follow-up" marker so HR can tell scripted anchors
+// from the interviewer's live probes. The answer is quoted (da-quote) for readability.
+function exitExchange(ex) {
+  const followup = !!(ex && ex.isFollowup);
+  const theme = (ex && ex.theme) || '';
+  const question = (ex && ex.question) || '';
+  const answer = ((ex && ex.answer) || '').trim();
+  const wrapStyle = followup
+    ? 'margin:0 0 12px 16px;padding-left:12px;border-left:2px solid var(--color-gold);'
+    : 'margin:0 0 12px;';
+  return `
+    <div style="${wrapStyle}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+        ${followup ? '<span class="da-ans-topic">↳ Follow-up</span>' : ''}
+        ${theme ? `<span class="da-ans-topic">${escapeHTML(theme)}</span>` : ''}
+      </div>
+      <div class="da-ans-q" style="white-space:normal;overflow:visible;margin-bottom:7px;">${escapeHTML(question)}</div>
+      ${answer ? `<blockquote class="da-quote">${escapeHTML(answer)}</blockquote>` : '<div class="da-li muted">No answer recorded.</div>'}
+    </div>`;
+}
+
 // "Evaluation dimensions" — the engine can return 15+ raw dimensions across a
 // mixed interview. Normalise labels, rank by priority then evidence breadth then
 // score, and cap to DIM_CAP with a toggle so the list reads short and even.
@@ -694,7 +851,7 @@ function answerCard(r: any): string {
   const c = scoreColor(r.overallScore);
   const mac = r.modelAnswerComparison || {};
   const dims = Object.entries(r.dimensionScores)
-    .map(([d, v]: [string, any]) => ({
+    .map(([d, v]: any) => ({
       key: d, label: prettyDim(d), score: v.score, reason: v.reason || '',
       evidence: (v.evidence || []).filter(Boolean), missing: (v.missing || []).filter(Boolean),
     }))

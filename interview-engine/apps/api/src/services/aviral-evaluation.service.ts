@@ -21,6 +21,7 @@ import {
   type RedFlagSeverity,
   type ResponseEvaluation,
 } from '../aviral-eval/index.js';
+import { buildExitTranscriptReport, isExitInterviewSettings } from './exit-report.service.js';
 
 type TranscriptEntry = {
   speaker?: string;
@@ -67,6 +68,7 @@ const VALID_QUESTION_TYPES = new Set<QuestionType>([
   'general',
   'followup',
   'custom',
+  'exit_theme',
 ]);
 
 const VALID_DIFFICULTIES = new Set(['easy', 'medium', 'hard', 'custom']);
@@ -83,6 +85,12 @@ export async function evaluateInterviewWithAviral(sessionId: string): Promise<an
   });
 
   if (!session) throw new Error('Session not found');
+
+  // Exit interviews are recorded, not scored — hand off to the no-LLM verbatim
+  // structuring pass and never run the hire grader.
+  if (isExitInterviewSettings(session.settings)) {
+    return buildExitTranscriptReport(session.id);
+  }
 
   const transcript = normalizeTranscript(session.transcript);
   const questions = getEffectiveQuestions(session) as unknown as QuestionWithGuidance[];

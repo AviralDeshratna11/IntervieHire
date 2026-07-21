@@ -10,6 +10,7 @@ import { assistantRoutes } from './routes/assistant.routes.js';
 import { companyRoutes } from './routes/company.routes.js';
 import { interviewRoutes } from './routes/interview.routes.js';
 import { transcriptRoutes } from './routes/transcript.routes.js';
+import { internalRoutes } from './routes/internal.routes.js';
 import { registerWebsocket } from './websocket/gateway.js';
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,7 @@ await app.register(companyRoutes, { prefix: '/api/company' });
 await app.register(interviewRoutes, { prefix: '/api/interview' });
 await app.register(transcriptRoutes, { prefix: '/api/interviews' });
 await app.register(assistantRoutes, { prefix: '/api/assistant' });
+await app.register(internalRoutes, { prefix: '/internal' });
 await registerWebsocket(app);
 
 const port = Number(process.env.PORT || 4000);

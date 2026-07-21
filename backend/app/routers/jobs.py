@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 from app.config import settings
 
 from app.database import get_db
-from app.models.job import Job, JobStatus, JobCollaborator
+from app.models.job import Job, JobStatus, JobType, JobCollaborator
 from app.models.applicant import Applicant, ApplicantSource, InterviewStatus
 from app.models.user import User, UserType
 from app.schemas import (
@@ -21,6 +21,9 @@ from app.schemas import (
 )
 from app.websocket_manager import manager
 from app.utils.auth import get_current_user, get_active_org_id
+# Canonical upload-path helpers (shared with app/routers/public.py). Aliased to the
+# historical private names so existing call sites in this module stay unchanged.
+from app.utils.uploads import ensure_upload_dir as _ensure_upload_dir, safe_upload_path as _safe_upload_path
 
 def _verify_job_access(job_id: UUID, current_user: User, active_org_id: Optional[UUID], db: Session) -> Job:
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -50,38 +53,6 @@ def _verify_applicant_access(applicant_id: UUID, current_user: User, active_org_
 
 
 router = APIRouter()
-
-
-def _ensure_upload_dir(path: str) -> None:
-    """Create an upload dir with owner-only perms.
-
-    chmod is best-effort — a no-op on Windows, but on the Linux host it keeps
-    resume/JD files from being world-readable by other processes on the box.
-    """
-    os.makedirs(path, exist_ok=True)
-    try:
-        os.chmod(path, 0o700)
-    except OSError:
-        pass
-
-
-def _safe_upload_path(base_dir: str, filename: str) -> Optional[str]:
-    """Resolve a caller-supplied filename inside base_dir, defending against
-    path traversal / zip-slip.
-
-    Strips any directory components, then verifies the realpath stays within
-    base_dir. Returns None for empty or otherwise unsafe names so the caller
-    can skip them instead of writing outside the upload root.
-    """
-    name = os.path.basename(filename or "").strip()
-    if not name or name in (".", ".."):
-        return None
-    target = os.path.join(base_dir, name)
-    base_real = os.path.realpath(base_dir)
-    target_real = os.path.realpath(target)
-    if target_real != base_real and not target_real.startswith(base_real + os.sep):
-        return None
-    return target
 
 
 UPLOAD_DIR = "uploads/jd"
@@ -187,12 +158,24 @@ def create_job(
     if not org_id:
         raise HTTPException(status_code=400, detail="User does not belong to any organisation.")
 
+    # Hiring pipeline (default) vs. exit-interview template. Coerce defensively so
+    # an unexpected value can never leave the job in a broken enum state.
+    job_kind = JobType.exit if str(data.job_kind or "hiring").strip().lower() == "exit" else JobType.hiring
+
+    # Exit jobs ship with a default question spine so an exit interview has
+    # something to ask out of the box; an authored blueprint always wins.
+    functional_params = data.functional_parameters
+    if job_kind == JobType.exit and not functional_params:
+        from app.utils.exit_blueprint import DEFAULT_EXIT_BLUEPRINT
+        functional_params = DEFAULT_EXIT_BLUEPRINT
+
     new_job = Job(
         title=data.title,
         role_name=data.role_name,
         experience_band=data.experience_band,
         custom_job_id=data.custom_job_id,
         status=data.status,
+        job_kind=job_kind,
         created_by_id=current_user.id,
         organisation_id=org_id,
         resume_analysis_enabled=data.resume_analysis_enabled,
@@ -201,7 +184,7 @@ def create_job(
         description=data.description,
         resume_parameters=json.dumps(data.resume_parameters) if data.resume_parameters else None,
         screening_parameters=json.dumps(data.screening_parameters) if data.screening_parameters else None,
-        functional_parameters=json.dumps(data.functional_parameters) if data.functional_parameters else None,
+        functional_parameters=json.dumps(functional_params) if functional_params else None,
         screening_questions=json.dumps(data.screening_questions) if data.screening_questions else json.dumps([
             "Tell me about your professional background and key areas of expertise.",
             "Why are you interested in this position and why do you want to join our organization?",
@@ -1325,6 +1308,7 @@ def _build_job_detail_out(job: Job) -> dict:
         "description": job.description,
         "location": job.location,
         "job_type": job.job_type,
+        "job_kind": job.job_kind,
         "experience_band": job.experience_band,
         "is_job_listed": job.is_job_listed,
         "resume_analysis_enabled": job.resume_analysis_enabled,
@@ -1336,6 +1320,7 @@ def _build_job_detail_out(job: Job) -> dict:
         "functional_parameters": json.loads(job.functional_parameters) if job.functional_parameters else None,
         "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
         "interview_settings": json.loads(job.interview_settings) if job.interview_settings else None,
+        "application_questions": json.loads(job.application_questions) if job.application_questions else None,
         "tags": tags
     }
 
@@ -1366,6 +1351,8 @@ def update_job_settings(
         elif key == "screening_questions" and value is not None:
             import json
             setattr(job, key, json.dumps(value))
+        elif key == "job_kind" and value is not None:
+            setattr(job, key, JobType.exit if str(value).strip().lower() == "exit" else JobType.hiring)
         else:
             setattr(job, key, value)
     db.commit()
@@ -1459,6 +1446,12 @@ def update_job_parameters(
         job.screening_questions = json.dumps(data.screening_questions)
     if data.interview_settings is not None:
         job.interview_settings = json.dumps(data.interview_settings)
+    if data.application_questions is not None:
+        from app.utils.application_questions import normalize_questions
+        normalized = normalize_questions(data.application_questions)
+        # Empty → store NULL (not "[]") so the job falls back to the org-wide default;
+        # a non-empty list is an explicit per-job override.
+        job.application_questions = json.dumps(normalized) if normalized else None
     db.commit()
     db.refresh(job)
     return _build_job_detail_out(job)
@@ -1856,7 +1849,7 @@ def add_applicant(
     applicant = Applicant(**data.model_dump(), job_id=job_id)
     if applicant.source == ApplicantSource.scheduled:
         applicant.screening_status = InterviewStatus.pending
-    elif applicant.source == ApplicantSource.functional:
+    elif applicant.source in (ApplicantSource.functional, ApplicantSource.exit):
         applicant.functional_status = InterviewStatus.pending
     db.add(applicant)
     db.commit()
@@ -1893,7 +1886,7 @@ def add_applicants_bulk(
         applicant = Applicant(**app_in.model_dump(), job_id=job_id)
         if applicant.source == ApplicantSource.scheduled:
             applicant.screening_status = InterviewStatus.pending
-        elif applicant.source == ApplicantSource.functional:
+        elif applicant.source in (ApplicantSource.functional, ApplicantSource.exit):
             applicant.functional_status = InterviewStatus.pending
         db.add(applicant)
         created_applicants.append(applicant)
@@ -2033,7 +2026,7 @@ def upload_resumes(
             if existing_applicant.source == ApplicantSource.scheduled and not existing_applicant.screening_status:
                 existing_applicant.screening_status = InterviewStatus.pending
             # If the source is functional, ensure functional_status is set
-            if existing_applicant.source == ApplicantSource.functional and not existing_applicant.functional_status:
+            if existing_applicant.source in (ApplicantSource.functional, ApplicantSource.exit) and not existing_applicant.functional_status:
                 existing_applicant.functional_status = InterviewStatus.pending
                 
             # Update candidate details if they were defaults or unset
@@ -2063,7 +2056,7 @@ def upload_resumes(
             )
             if applicant.source == ApplicantSource.scheduled:
                 applicant.screening_status = InterviewStatus.pending
-            elif applicant.source == ApplicantSource.functional:
+            elif applicant.source in (ApplicantSource.functional, ApplicantSource.exit):
                 applicant.functional_status = InterviewStatus.pending
             db.add(applicant)
             created_applicants.append(applicant)
@@ -2086,6 +2079,29 @@ def upload_resumes(
         pass
         
     return created_applicants
+
+
+@router.get("/applicants/{applicant_id}/application")
+def get_applicant_application(
+    applicant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    active_org_id: Optional[UUID] = Depends(get_active_org_id),
+    db: Session = Depends(get_db)
+):
+    """Display-on-command: a candidate's answers to the client's custom application
+    questions, plus the effective question set for the job (job override → org
+    default). Auth + org ownership enforced via _verify_applicant_access."""
+    from app.models.organisation import Organisation
+    from app.utils.application_questions import parse_answers, resolve_questions
+
+    applicant = _verify_applicant_access(applicant_id, current_user, active_org_id, db)
+    job = db.query(Job).filter(Job.id == applicant.job_id).first()
+    org = db.query(Organisation).filter(Organisation.id == job.organisation_id).first() if job else None
+    return {
+        "applicant_id": str(applicant.id),
+        "answers": parse_answers(applicant.application_answers),
+        "questions": resolve_questions(job, org),
+    }
 
 
 @router.patch("/applicants/{applicant_id}", response_model=ApplicantOut)
@@ -2316,8 +2332,16 @@ def delete_applicant(
     role_name = job.role_name if job else "the position"
     applicant_name = applicant.name
     
-    db.delete(applicant)
-    db.commit()
+    from app.utils.data_rights import anonymise_applicant
+    from app.models.compliance_audit_log import AuditActorType
+    # Recruiter "delete" = DSAR anonymise-in-place: the row is reduced to a non-identifying
+    # stub (scores/status kept) rather than removed, so pipeline analytics stay intact and
+    # every removal is audited. Cleans up this applicant's invites + engine session + files.
+    anonymise_applicant(
+        db, applicant,
+        actor_type=AuditActorType.recruiter,
+        actor_id=str(current_user.id),
+    )
     
     # Broadcast deletion update via WebSocket
     message = OutgoingMessage(
@@ -2332,7 +2356,7 @@ def delete_applicant(
     except RuntimeError:
         pass
 
-    return {"message": "Applicant successfully deleted"}
+    return {"message": "Applicant data anonymised (records retained as a non-identifying stub)"}
 
 
 @router.get("/applicants/{applicant_id}/resume-text")

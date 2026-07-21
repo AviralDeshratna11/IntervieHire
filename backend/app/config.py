@@ -37,6 +37,27 @@ class Settings(BaseSettings):
     # Days a freshly-minted invite link stays valid before it auto-expires.
     INVITE_TTL_DAYS: int = 7
 
+    # Data-rights (DPDP Act 2023). DSAR_SLA_DAYS = statutory window to fulfil a Data
+    # Principal request before it's flagged overdue (confirm against the current DPDP
+    # Rules). DSAR_TOKEN_TTL_HOURS bounds self-serve verification / export-download links.
+    # DPO_CONTACT_EMAIL is the published grievance-redressal contact (DPDP §13).
+    DSAR_SLA_DAYS: int = 30
+    DSAR_TOKEN_TTL_HOURS: int = 48
+    DPO_CONTACT_EMAIL: str = "privacy@interviehire.com"
+
+    # Backend -> interview-engine internal calls. The engine's on-disk transcripts /
+    # recordings live on its own container (unreachable via the shared DB), so erasure
+    # unlinks them through POST /internal/data-rights/erase-files, guarded by this secret.
+    ENGINE_API_URL: str = "http://localhost:4000"
+    INTERNAL_SERVICE_SECRET: str = "change-this-internal-secret"
+
+    # Retention / auto-purge (DPDP §8). DISABLED while RETENTION_DAYS <= 0 (the default):
+    # nothing is ever purged until you set it. When enabled, candidates whose retention
+    # window has lapsed (and who aren't mid-pipeline) are anonymised in place — same path
+    # as an erasure. RETENTION_MAX_PER_RUN bounds how many are processed per invocation.
+    RETENTION_DAYS: int = 0
+    RETENTION_MAX_PER_RUN: int = 500
+
     # SMTP Settings
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

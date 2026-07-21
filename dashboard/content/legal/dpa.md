@@ -14,10 +14,10 @@
 
 # IntervieHire — Data Processing Addendum (DPA)
 
-**Effective date:** [DATE]
+**Effective date:** 19 July 2026
 **Version:** 1.0
 
-This Data Processing Addendum ("**DPA**") is entered into between **[LEGAL ENTITY NAME]** ("**IntervieHire**",
+This Data Processing Addendum ("**DPA**") is entered into between **Bali Tech Innovations Pvt. Ltd.** ("**IntervieHire**",
 "**Processor**", "**we**", "**us**") and the customer that has accepted the Terms of Service (the
 "**Client**", "**Controller**", "**you**"). It forms part of, and is governed by, the **Terms of Service**
 between the parties (the "**Agreement**"). Where this DPA and the Agreement conflict on the subject of data
@@ -281,7 +281,7 @@ the Privacy Policy and must be kept in sync with it. **All AI providers are US/E
 | **Supabase** | Primary database / storage | All stored Candidate Personal Data | US / EU region |
 | **Render** | Backend / application hosting | Data in processing/transit | US |
 | **Vercel** | Front-end / edge hosting | Technical + form data | US |
-| **[AI evaluation provider — name it, e.g. Anthropic / OpenAI / Azure OpenAI]** | AI scoring of answers & résumé parsing | Transcripts, résumé text | US / EU |
+| **DeepSeek** | AI scoring of answers & résumé parsing | Transcripts, résumé text | US / EU |
 | **Deepgram** | Speech-to-text | Voice audio | US |
 | **OpenAI (Whisper)** | Speech-to-text (fallback) | Voice audio | US |
 | **OpenRouter** | LLM routing (evaluation) | Transcripts | US |

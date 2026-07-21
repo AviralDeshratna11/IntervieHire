@@ -5,6 +5,7 @@ import path from 'node:path';
 import { callDeepSeekJson } from './deepseek.service.js';
 import { analyzeAiAuthorship } from './ai-authorship.service.js';
 import { getEffectiveQuestions } from './effective-questions.js';
+import { buildExitTranscriptReport, isExitInterviewSettings } from './exit-report.service.js';
 import {
   aggregateEvalCandidateReport,
   analyzeTranscriptConfidence,
@@ -229,6 +230,12 @@ export async function evaluateInterview(sessionId: string): Promise<EvalCandidat
   });
 
   if (!session) throw new Error('Session not found');
+
+  // Exit interviews are recorded, not scored — return the no-LLM verbatim structuring
+  // instead of running the hire evaluator (which scores even with no DeepSeek key).
+  if (isExitInterviewSettings(session.settings)) {
+    return buildExitTranscriptReport(session.id) as unknown as EvalCandidateReport;
+  }
 
   const finalReport = await evaluateInterviewData({
     interviewId: session.id,

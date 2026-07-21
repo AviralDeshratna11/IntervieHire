@@ -14,6 +14,11 @@ class JobStatus(str, enum.Enum):
     archived = "archived"
 
 
+class JobType(str, enum.Enum):
+    hiring = "hiring"
+    exit = "exit"
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -22,6 +27,9 @@ class Job(Base):
     title = Column(String, nullable=False)               # card name shown on dashboard
     role_name = Column(String, nullable=False)           # actual role
     status = Column(Enum(JobStatus), default=JobStatus.draft)
+    # Hiring pipeline vs. exit-interview template. Distinct from `job_type` below,
+    # which is the employment type (Full-Time/Part-Time/remote) shown on careers.
+    job_kind = Column(Enum(JobType), default=JobType.hiring)
     experience_band = Column(String, nullable=True)      # e.g. "0-2 Years"
     tags = Column(String, nullable=True)
     description = Column(Text, nullable=True)            # full JD text
@@ -35,6 +43,9 @@ class Job(Base):
     functional_parameters = Column(Text, nullable=True)
     screening_questions = Column(Text, nullable=True)  # JSON array of AI-generated screening interview questions
     interview_settings = Column(Text, nullable=True)   # JSON: per-job interview settings (mobile/late/cv/access/etc.)
+    # Per-job override for the public apply form's custom questions (JSON text).
+    # NULL → fall back to the org-wide default (organisations.application_questions).
+    application_questions = Column(Text, nullable=True)
 
     # Pipeline stage toggles
     resume_analysis_enabled = Column(Boolean, default=True)

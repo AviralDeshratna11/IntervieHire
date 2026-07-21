@@ -205,6 +205,9 @@ model ConsentLog {
   userAgent      String?
   ipAddress      String?
   locale         String?
+  // DSAR tombstone: set to the data_subject_requests.id when this row's identifiers were
+  // anonymised by an erasure (row KEPT as proof of consent, PII stripped). DPDP Act 2023.
+  erasedForRequestId String?
   createdAt      DateTime @default(now())
 
   @@index([sessionId, createdAt])

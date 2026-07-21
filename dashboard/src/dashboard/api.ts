@@ -131,6 +131,20 @@ export async function apiFetchCandidateReport(applicantId: string): Promise<Cand
   return mapFullReportToCandidateReport(data);
 }
 
+// Custom application-question answers for one candidate (display-on-command).
+// Returns { applicant_id, answers: [{id, question, type, answer}], questions: [...] }.
+export async function apiGetApplicantApplication(applicantId: string) {
+  return request(`/jobs/applicants/${applicantId}/application`);
+}
+
+// Persist a job's per-job override of the public apply-form questions. `questions`
+// is a structured list ([{id?, label, type, required, options?}]); the backend
+// normalizes + stores it as jobs.application_questions (null/[] → falls back to the
+// org-wide default).
+export async function apiPatchJobApplicationQuestions(jobId: string, questions) {
+  return request(`/jobs/${jobId}/parameters`, { method: 'PATCH', body: { application_questions: questions } });
+}
+
 // Interview Analysis tab source: compact summaries for every applicant of a job
 // whose AI interview has been EVALUATED (score, recommendation, proctoring), most
 // recent first. The backend reconciles + persists autonomously, so this reflects
@@ -381,6 +395,19 @@ export async function apiRemoveMember(userId) {
   return request(`/team/${userId}`, { method: 'DELETE' });
 }
 
+// ── Privacy / Data Rights (DSAR) ────────────────────────────────────────────
+// Recruiter/admin visibility into candidate data-rights requests (DPDP Act 2023),
+// backed by /api/privacy/admin/*. The active_org_id cookie rides along with
+// request(), so results are scoped to the active organisation. The panel reads the
+// snake_case response directly (like apiFetchUsageStats), so no mapper is needed.
+export async function apiListDsarRequests() {
+  const data = await request('/privacy/admin/requests');
+  return Array.isArray(data) ? data : [];
+}
+export async function apiGetDsarRequest(id: string) {
+  return request(`/privacy/admin/requests/${id}`);
+}
+
 // ── Usage / Analytics ───────────────────────────────────────────────────────
 // Backs the Usage Overview page (view-analytics). These hit the org-scoped
 // /api/usage/* endpoints — the active_org_id cookie rides along with request(),
@@ -467,6 +494,7 @@ function mapJobOutToJob(j: any = {}): Job {
       functionalInterview: { enabled: !!j.functional_interview_enabled },
     },
     interviewSettings: j.interview_settings ? { ...defaultInterviewSettings(), ...j.interview_settings } : undefined,
+    applicationQuestions: Array.isArray(j.application_questions) ? j.application_questions : [],
     pipeline: j.pipeline || { total: 0, resume: 0, screening: 0, functional: 0 },
     _backend: true,
   };

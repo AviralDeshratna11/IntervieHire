@@ -84,10 +84,11 @@ class OrganisationOut(BaseModel):
     description: Optional[str]
     career_subdomain: Optional[str]
     career_intro: Optional[str]
+    application_questions: Optional[str] = None  # JSON text: company-default apply questions
 
     class Config:
         from_attributes = True
- 
+
 class OrganisationIn(BaseModel):
     # Optional so partial updates (e.g. saving only career_subdomain/career_intro
     # from the Career Page settings) don't 422. The PUT/POST handler applies
@@ -100,6 +101,9 @@ class OrganisationIn(BaseModel):
     description: Optional[str] = None
     career_subdomain: Optional[str] = None
     career_intro: Optional[str] = None
+    # Company-default custom application questions. Accepts a structured list; the
+    # handler normalizes + json.dumps it into organisations.application_questions.
+    application_questions: Optional[List[Dict[str, Any]]] = None
 
 
 # ─── JOBS ────────────────────────────────────────────────────────────────────
@@ -124,6 +128,7 @@ class JobOut(BaseModel):
     resume_analysis_enabled: bool = True
     recruiter_screening_enabled: bool = True
     functional_interview_enabled: bool = True
+    job_kind: Optional[str] = None
     pipeline: JobPipelineCounts
     resume_parameters: Optional[dict] = None
     screening_parameters: Optional[dict] = None
@@ -151,6 +156,7 @@ class JobDetailOut(BaseModel):
     description: Optional[str]
     location: Optional[str]
     job_type: Optional[str]
+    job_kind: Optional[str] = None
     experience_band: Optional[str]
     is_job_listed: bool
     resume_analysis_enabled: bool
@@ -162,6 +168,7 @@ class JobDetailOut(BaseModel):
     functional_parameters: Optional[dict] = None
     screening_questions: Optional[List[str]] = None
     interview_settings: Optional[dict] = None
+    application_questions: Optional[List[Dict[str, Any]]] = None  # per-job apply-form override
     tags: Optional[List[str]] = None
 
     class Config:
@@ -181,6 +188,7 @@ class JobSettingsIn(BaseModel):
     status: Optional[JobStatus] = None
     screening_questions: Optional[List[str]] = None
     job_type: Optional[str] = None
+    job_kind: Optional[str] = None   # 'hiring' | 'exit'
     location: Optional[str] = None
  
 class JobCreateIn(BaseModel):
@@ -197,6 +205,7 @@ class JobCreateIn(BaseModel):
     screening_parameters: Optional[dict] = None
     functional_parameters: Optional[dict] = None
     screening_questions: Optional[List[str]] = None
+    job_kind: Optional[str] = "hiring"   # 'hiring' (default) | 'exit' (exit-interview template)
 
 class JobParametersIn(BaseModel):
     resume_parameters: Optional[dict] = None
@@ -204,6 +213,9 @@ class JobParametersIn(BaseModel):
     functional_parameters: Optional[dict] = None
     screening_questions: Optional[List[str]] = None
     interview_settings: Optional[dict] = None
+    # Per-job override for the public apply form's custom questions. Structured list;
+    # the handler normalizes + json.dumps it into jobs.application_questions.
+    application_questions: Optional[List[Dict[str, Any]]] = None
 
 
 # ─── APPLICANTS / RESPONSES ──────────────────────────────────────────────────
@@ -243,10 +255,11 @@ class ApplicantOut(BaseModel):
     calendar_sequence: Optional[int] = 0
     scheduling_token: Optional[str] = None
     calendar_event_id: Optional[str] = None
- 
+    application_answers: Optional[str] = None  # JSON text: answers to custom apply questions
+
     class Config:
         from_attributes = True
- 
+
 class AddApplicantIn(BaseModel):
     name: str
     email: EmailStr

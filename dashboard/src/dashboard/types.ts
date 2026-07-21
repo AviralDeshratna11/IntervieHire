@@ -158,6 +158,7 @@ export interface Job {
   functionalParameters: { topics: unknown[] };
   pipelineConfig: PipelineConfig;
   interviewSettings?: Record<string, unknown>;
+  applicationQuestions?: any[];
   pipeline: PipelineCounts;
   _backend?: boolean;
 }

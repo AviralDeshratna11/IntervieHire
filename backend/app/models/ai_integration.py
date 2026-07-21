@@ -190,6 +190,9 @@ class ConsentLog(Base):
     userAgent = Column(String, nullable=True)
     ipAddress = Column(String, nullable=True)
     locale = Column(String, nullable=True)
+    # DSAR tombstone: set to the data_subject_requests.id when this consent row's
+    # identifiers were anonymised by an erasure (row KEPT as proof, PII stripped).
+    erasedForRequestId = Column('erasedForRequestId', String, nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Index name matches the Prisma migration so create_all() and

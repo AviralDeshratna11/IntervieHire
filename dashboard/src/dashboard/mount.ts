@@ -24,6 +24,7 @@ import { apiCreateJob, apiPatchJobParameters, apiDeleteJob, apiUpdateJobStatus, 
 import { initOrgSwitcher } from './org-switcher';
 import { initSettingsPage, syncSettingsControls } from './settings-page';
 import { renderCareerJobs } from './career-panel';
+import { renderOrgApplicationQuestions } from './application-questions-editor';
 
 // ==========================================
 // COMPONENT MOUNT BINDINGS
@@ -897,6 +898,7 @@ function initMountBindings() {
           // live status panel. The recruiter can only edit the hero intro.
           applyCareerDomain(org.career_subdomain || '');
           if (org.career_intro != null) introField.value = org.career_intro;
+          renderOrgApplicationQuestions(org);  // company-default apply questions editor
         }
       } catch { /* keep the local fallback already applied */ }
     }

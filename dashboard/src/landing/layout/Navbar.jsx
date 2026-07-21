@@ -13,7 +13,15 @@ export const Navbar = ({ simple }) => {
   const [loaded, setLoaded] = React.useState(false);
   const [contentReady, setContentReady] = React.useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [helpOpen, setHelpOpen] = React.useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
+
+  // Legal/help documents surfaced from the navbar (served by /help/[doc]).
+  const HELP_LINKS = [
+    { label: 'Terms of Service', href: '/help/terms' },
+    { label: 'Privacy Policy', href: '/help/privacy' },
+    { label: 'DPA', href: '/help/dpa' },
+  ];
 
   React.useEffect(() => {
     const onScroll = () => setScrolled((window.__lenis?.scroll ?? 0) > 20);
@@ -114,6 +122,40 @@ export const Navbar = ({ simple }) => {
             >
               About
             </a>
+
+            {/* Help dropdown — legal docs (Terms / Privacy / DPA), hover-revealed. */}
+            <div
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', height: '100%', paddingBottom: '16px', marginBottom: '-16px' }}
+              onMouseEnter={() => setHelpOpen(true)}
+              onMouseLeave={() => setHelpOpen(false)}
+            >
+              <span
+                style={{ fontFamily: 'Outfit, sans-serif', fontSize: 16, fontWeight: 500, color: '#A0A0A0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'color 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#2dd4bf'}
+                onMouseLeave={e => e.currentTarget.style.color = '#A0A0A0'}
+                onClick={() => setHelpOpen(!helpOpen)}
+              >
+                Help
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ transition: 'transform 0.2s', transform: helpOpen ? 'rotate(180deg)' : 'none' }}>
+                  <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              {helpOpen && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(45,212,191,0.15)', borderRadius: 8, padding: '8px 0', minWidth: 190, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 101 }}>
+                  {HELP_LINKS.map((item, idx) => (
+                    <a
+                      key={idx}
+                      href={item.href}
+                      style={{ display: 'block', fontFamily: 'Outfit, sans-serif', fontSize: 13, color: '#888880', padding: '8px 16px', textDecoration: 'none', transition: 'all 0.2s' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = '#2dd4bf'; e.currentTarget.style.background = 'rgba(45,212,191,0.05)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.color = '#888880'; e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </>)}
 
@@ -190,6 +232,15 @@ export const Navbar = ({ simple }) => {
           >
             About
           </a>
+          {HELP_LINKS.map((item, idx) => (
+            <a
+              key={idx}
+              href={item.href}
+              style={{ fontFamily: 'Outfit, sans-serif', fontSize: 15, fontWeight: 500, color: '#888880', textDecoration: 'none', padding: '10px 0' }}
+            >
+              {item.label}
+            </a>
+          ))}
         </div>
       )}
       <style>{`

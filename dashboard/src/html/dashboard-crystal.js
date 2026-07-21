@@ -74,6 +74,12 @@ export const html = `
               </svg>
               <span>Career Page</span>
             </li>
+            <li class="nav-item" data-tab="data-rights">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              <span>Data Rights</span>
+            </li>
             <li class="nav-item has-sub" data-tab="settings">
               <div class="nav-item-header">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -646,6 +652,30 @@ export const html = `
                 </div>
               </div>
             </div>
+
+            <!-- Jobs live on the public career page — the dashboard-side record +
+                 quick-manage list. Static shell filled by renderCareerJobs()
+                 (career-panel.js); mirrors the #jobs-list-container pattern. -->
+            <section class="card-glass career-jobs-panel">
+              <h3 class="panel-title">Jobs on your career page</h3>
+              <p class="panel-desc">These roles are live on your public career page right now. Remove one to take it down instantly.</p>
+              <div id="career-jobs-list"></div>
+            </section>
+
+            <!-- Company-wide default application questions. Static shell filled by
+                 renderOrgApplicationQuestions() (application-questions-editor.ts). -->
+            <section class="card-glass" id="career-questions-editor" style="margin-top:16px;"></section>
+          </section>
+
+          <!-- ===================================== -->
+          <!-- DATA RIGHTS VIEW (DSAR) -->
+          <!-- ===================================== -->
+          <section class="dashboard-view" id="view-data-rights">
+            <section class="card-glass">
+              <h3 class="panel-title">Data-rights requests</h3>
+              <p class="panel-desc">Access, correction, and deletion requests from candidates (DPDP Act 2023). Click a row for its audit trail.</p>
+              <div id="dsar-requests-list"></div>
+            </section>
           </section>
 
           <!-- ===================================== -->
@@ -967,6 +997,12 @@ export const html = `
                   </div>
 
                 </div>
+
+                <!-- Apply link / share panel (filled by renderApplyShare) -->
+                <div class="card-glass" id="jd-apply-share" style="margin-top:16px;"></div>
+
+                <!-- Per-job application questions editor (filled by renderJobApplicationQuestions) -->
+                <div class="card-glass" id="jd-apply-questions" style="margin-top:16px;"></div>
               </div><!-- /overview -->
 
               <!-- Stage panes -->

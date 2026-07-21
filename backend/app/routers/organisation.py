@@ -10,8 +10,20 @@ from app.models.user import User, UserType
 from app.schemas import OrganisationOut, OrganisationIn
 from app.utils.auth import get_current_user, get_active_org_id
 from app.utils.career import unique_career_subdomain
+from app.utils.application_questions import normalize_questions
+
+import json
 
 router = APIRouter()
+
+
+def _normalize_org_payload(payload: dict) -> dict:
+    """If the caller sent structured application_questions, normalize + json.dumps
+    them into the JSON-text column shape the model stores. Empty → NULL (no default)."""
+    if "application_questions" in payload and payload["application_questions"] is not None:
+        normalized = normalize_questions(payload["application_questions"])
+        payload["application_questions"] = json.dumps(normalized) if normalized else None
+    return payload
 
 UPLOAD_DIR = "uploads/logos"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -43,7 +55,7 @@ def upsert_organisation(
     org_id = active_org_id if current_user.user_type == UserType.super_admin else current_user.organisation_id
     if not org_id:
         # Create a new Organisation if they don't have one (alternative onboarding flow)
-        org = Organisation(**data.model_dump())
+        org = Organisation(**_normalize_org_payload(data.model_dump()))
         # Career subdomain is system-managed; auto-assign one if none was provided.
         if not org.career_subdomain:
             org.career_subdomain = unique_career_subdomain(db, org.org_name)
@@ -57,10 +69,10 @@ def upsert_organisation(
 
     org = db.query(Organisation).filter(Organisation.id == org_id).first()
     if org:
-        for key, value in data.model_dump(exclude_unset=True).items():
+        for key, value in _normalize_org_payload(data.model_dump(exclude_unset=True)).items():
             setattr(org, key, value)
     else:
-        org = Organisation(id=org_id, **data.model_dump())
+        org = Organisation(id=org_id, **_normalize_org_payload(data.model_dump()))
         db.add(org)
     # Ensure every org ends up with a career subdomain even if it never had one
     # (older orgs, or the create-with-known-id branch above).

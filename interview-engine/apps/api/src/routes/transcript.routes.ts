@@ -12,6 +12,7 @@ import { asrAvailable, transcribeAudioSegments } from '../services/asr.service.j
 import { generateTranscriptReport } from '../services/transcript-report.service.js';
 import { evaluateInterview } from '../services/evaluation.service.js';
 import { evaluateInterviewWithAviral } from '../services/aviral-evaluation.service.js';
+import { buildExitTranscriptReport, isExitInterviewSettings } from '../services/exit-report.service.js';
 
 type TranscriptSpeaker = 'candidate' | 'interviewer';
 
@@ -149,10 +150,17 @@ export async function transcriptRoutes(app: FastifyInstance) {
   // so the candidate always gets a report. Returns { evaluation, engine }.
   app.post('/:sessionId/report', async (req: any, reply) => {
     const { sessionId } = req.params;
-    const session = await prisma.interviewSession.findUnique({ where: { id: sessionId }, select: { id: true } });
+    const session = await prisma.interviewSession.findUnique({ where: { id: sessionId }, select: { id: true, settings: true } });
     if (!session) return reply.code(404).send({ error: 'Session not found' });
 
     await finalizeTranscript(sessionId);
+
+    // Exit interviews are recorded, not scored: skip the holistic LLM report and the
+    // structured grader, and store the no-LLM verbatim transcript report instead.
+    if (isExitInterviewSettings(session.settings)) {
+      const evaluation = await buildExitTranscriptReport(sessionId);
+      return { evaluation, engine: 'exit_verbatim' };
+    }
 
     // Primary holistic report (keeps Deep Analysis unchanged), then the structured
     // rubric/dimension/proctoring evaluation (gpt-4o when OPENAI_API_KEY is set,

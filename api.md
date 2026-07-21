@@ -6,13 +6,22 @@
 
 > Append-only, newest first. A new entry is **prepended** here whenever a route is added, modified, refactored, or removed. Never rewrite history.
 
+- **2026-07-20** — **Richer custom-application-question types** (`backend/app/utils/application_questions.py`, `backend/app/routers/public.py`; recruiter editor `dashboard/src/dashboard/application-questions-editor.ts`). The question-definition `type` enum is **extended from `short_text|long_text|boolean|select` to `short_text|long_text|boolean|select|multi_select|number|date|file`** (`ALLOWED_TYPES`). Options are now carried for **both** `select` **and** `multi_select` (`OPTION_TYPES = (select, multi_select)`); `number`/`date`/`file` carry no options. This changes the accepted value space of `application_questions` on **PATCH `/api/jobs/{job_id}/parameters`** (`JobParametersIn.application_questions`) and **PUT/POST `/api/organisation`** (`OrganisationIn.application_questions`) — same field/shape, additional valid `type` values (`normalize_questions` still drops unknown types to `short_text`). **Public apply-form behavior** (`GET`/`POST` `/api/public/careers/{subdomain}/apply/{job_id}` and `/api/public/apply/{job_id}`): the GET form now renders `number` → `<input type=number>`, `date` → `<input type=date>`, `file` → `<input type=file>` (accept-list below), and `multi_select` → a checkbox group whose boxes all share the multipart field name `aq__<id>`. On **POST**, `collect_answers` reads `multi_select` via `form.getlist("aq__<id>")` and stores the chosen options as a comma-joined string; `number`/`date` are stored as trimmed text; a `file`-type answer stores the uploaded file's original name, and the bytes are streamed to `uploads/attachments/` (shared `safe_upload_path` traversal defense, **≤ 10 MB** `MAX_ATTACHMENT_BYTES`, extension allowlist `ALLOWED_ATTACHMENT_EXTS` = `.pdf/.doc/.docx/.txt/.rtf/.png/.jpg/.jpeg/.gif/.csv/.xls/.xlsx/.ppt/.pptx`), and the stored answer object gains an additional **`url`** field pointing at the saved path. Required-question enforcement is unchanged (blank required question → **400** `"Please answer: <label>"`); a required `multi_select` is enforced server-side (HTML `required` can't span a checkbox group). New **400**s on this path: unsupported attachment file type, attachment > 10 MB, unreadable/unsafe attachment filename. Stored answer shape is now `{ id, question, type, answer, url? }` (the extra `url` is additive; existing `applicants.application_answers` readers and the recruiter **GET `/api/jobs/applicants/{applicant_id}/application`** response are unaffected). **No routes added or removed; no DB columns added.**
 - **2026-07-20** — Recruiter screening is now a distinct AI-avatar interview stage instead of just "the same room with different questions". `backend/app/utils/ai_sync.py` (`sync_applicant_to_ai`) now stamps `interview_settings['stage'] = 'screening' | 'functional'` into `InterviewSession.settings` (no schema change — reuses the existing free-form JSON column) so the candidate room can tell the two apart. Added **POST /api/public/interview-session/{session_id}/screening-outcome** (`backend/app/routers/public.py`, webhook-secret gated like the existing recording-upload route) — reads the already-persisted engine evaluation, writes the real verdict onto `Applicant.recruiter_screening`/`recruiter_screening_score`/`screening_status`/`screening_score` (which `report-page.js` and `deep-analysis.js` already render), and on a "Good fit" mapping calls the existing `_provision_invite_for_applicant(stage="functional")` to auto-mint + email the next-stage invite. Added **POST /api/interviews/{sessionId}/screening-outcome** (`interview-engine/apps/api/src/routes/transcript.routes.ts`) as a thin server-to-server relay to the backend route above. Candidate room (`interviewcandidateroom/page.tsx`) now: shows a "Recruiter Screening" header + 5:00 countdown that force-ends the call at 0:00 when the session's stage is `screening`; calls the new screening-outcome route after `/report` resolves; and replaces the end-of-call report card with either a "Continue to Functional Interview" link (fit) or a polite close-out message (not a fit) — the functional-interview experience itself, and every manual recruiter-driven invite/schedule action, are unchanged.
 - **2026-07-20** — Full-interview recordings now get forwarded to Google Drive. Engine (`interview-engine/apps/api/src/routes/interview.routes.ts`) forwards each recording upload to the backend after saving it locally (fire-and-forget), calling the new `uploadRecordingToDrive` (`drive-upload.service.ts`, POSTs to the backend's existing `POST /api/public/interview-session/{session_id}/recording` webhook-secret-gated route) and persists the returned `driveFileId`/`driveUrl` onto two new `InterviewSession` columns `recordingDriveFileId`/`recordingDriveUrl` (Prisma migration `20260720000000_add_recording_drive_fields`) — kept separate from the transcript JSON since `finalizeTranscript()` rewrites that field and would otherwise silently drop a merged `driveUrl`. Also raised Fastify's body/multipart size limit from the 1 MiB default to 500 MiB (`server.ts`) so a full video+audio recording upload doesn't get rejected, and exported `getScreenVideoStream` from `useProctoring.ts` so the recorder can reuse the existing screen-share stream instead of a second `getDisplayMedia` prompt. New backend setting `GOOGLE_DRIVE_FOLDER_NAME` (default `"Recordings"`, `backend/app/config.py`). No new/changed HTTP routes — the recording upload endpoint's request/response shape is unchanged.
+- **2026-07-17** — **`JobDetailOut` now returns `application_questions`** (`backend/app/schemas.py`, `backend/app/routers/jobs.py:_build_job_detail_out`) — the job's per-job apply-form question override is now serialized as **`application_questions: Optional[List[dict]]`** (parsed from `jobs.application_questions`; `null` when the job has no override and falls back to the org default). Affects the response of **GET `/api/jobs/{job_id}`**, **POST `/api/jobs`**, **POST `/api/jobs/{job_id}/duplicate`**, and **PATCH `/api/jobs/{job_id}/settings`** / **PATCH `/api/jobs/{job_id}/parameters`** (all return `JobDetailOut`). Request schemas and all other fields are unchanged; this lets the dashboard's per-job question editor load the current override.
+- **2026-07-17** — **Custom application questions on the public apply form** (client-defined questions beyond the resume; company-default + per-job override; answers stored + displayable). **Question model:** company default lives on `organisations.application_questions` and a per-job override on `jobs.application_questions` (both new NULLABLE **TEXT** columns holding a JSON array; the job override wins, else the org default, else none); a question def is `{ id, label, type: short_text|long_text|boolean|select, required: bool, options?: [str] (select only) }`. Candidate answers live on the new NULLABLE **TEXT** column `applicants.application_answers` (JSON array of `{ id, question, type, answer }`, snapshotting the label). All three added via `main.py:init_db()` `ADD COLUMN IF NOT EXISTS`. New helper `app/utils/application_questions.py` (`normalize_questions`/`resolve_questions`/`collect_answers`/`parse_answers`). **Authoring (recruiter, auth):** **PATCH `/api/jobs/{job_id}/parameters`** — `JobParametersIn` gains optional **`application_questions: List[dict]`** (the per-job override; the handler normalizes + `json.dumps` into `jobs.application_questions`; response `JobDetailOut` unchanged for now). **PUT/POST `/api/organisation`** — `OrganisationIn` gains optional **`application_questions: List[dict]`** (company default; normalized + `json.dumps` in the upsert), and **`OrganisationOut`** now returns **`application_questions: Optional[str]`** (the stored JSON text; still effectively present on other org fields as before). **Public apply POST behavior change** (`backend/app/routers/public.py`) — **POST `/api/public/careers/{subdomain}/apply/{job_id}`** and **POST `/api/public/apply/{job_id}`** now render the effective question set on the GET form and, on submit, read each answer from multipart field **`aq__<question_id>`**; a blank REQUIRED question → **400** `"Please answer: <label>"`; answers are stored on `applicants.application_answers`. The email field is now validated server-side (invalid → **400** instead of 422) since the handler parses the raw multipart form to support dynamic fields; `name`/`email`/`consent`/`resume` requirements and all other error codes are unchanged. **Display-on-command (recruiter, auth):** new **GET `/api/jobs/applicants/{applicant_id}/application`** — org-scoped via `_verify_applicant_access`; returns `{ applicant_id: str, answers: [{id, question, type, answer}], questions: [<effective question defs>] }` (404 if the applicant isn't in the caller's active org). **`ApplicantOut`** gains **`application_answers: Optional[str]`** (raw JSON text) wherever it is serialized. No routes removed.
+- **2026-07-17** — **Direct Apply — public candidate self-application** (`backend/app/routers/public.py`, prefix `/api/public`). Candidates now apply directly to IntervieHire (no recruiter/company middleman): they submit their own details + resume and a new `Applicant` lands straight in the recruiter pipeline. Four new public, unauthenticated, rate-limited routes across two front doors that share one handler (`_process_application`). **Careers front door** (`source=career_page`, `entry_method="career_page"`): **GET `/api/public/careers/{subdomain}/apply/{job_id}`** (rate-limit ~30/60s → 429) returns the apply form as `text/html`; **POST `/api/public/careers/{subdomain}/apply/{job_id}`** (rate-limit ~10/60s → 429) accepts **`multipart/form-data`** `{ name: str (required), email: EmailStr (required), phone?: str, consent: bool (required — must be truthy), resume: file (REQUIRED; `.pdf`/`.docx`/`.txt` only; ≤ 5 MB) }`. **Direct-link / QR front door** (`source=direct_link`, `entry_method="direct_link"`): **GET `/api/public/apply/{job_id}`** and **POST `/api/public/apply/{job_id}`** — identical body/behavior, keyed by job id only (org resolved via `job.organisation_id`), for sharing a job on LinkedIn/job boards/QR without the careers subdomain. **POST behavior:** the target job must be `is_job_listed == true` AND `status == published` (and, for the careers door, belong to the subdomain's org) else **404**; on success it creates OR updates an `Applicant` (dedupe by `lower(email)` within the job — a re-application refreshes contact/resume and keeps existing stage state), saves the resume under `uploads/resumes/` (via the shared `safe_upload_path`) and stores `resume_url` + extracted `resume_text` (no DeepSeek parse — the form fields are authoritative; text < 50 chars is dropped as junk), sets `screening_status = pending` to auto-enter the Recruiter Screening stage (unless the applicant is already in a stage), records `consent_given_at` (now) + `consent_version` (`"2026-07"`), broadcasts a `candidate_update` WebSocket message, and returns a **200** `text/html` confirmation page. **Errors:** **400** (consent not given / unsupported file type / missing resume / resume > 5 MB / unsafe filename), **404** (unknown `subdomain`, or job not found / not listed / not published), **422** (missing or invalid `name`/`email`), **429** (rate-limited). **DB:** two new NULLABLE `applicants` columns — **`consent_given_at`** (TIMESTAMP) and **`consent_version`** (VARCHAR) — added to the SQLAlchemy model and via `main.py:init_db()` `ADD COLUMN IF NOT EXISTS`; they are populated ONLY on this direct-apply path and are NOT serialized in `ApplicantOut`/`AddApplicantIn`/`ApplicantUpdateIn`, so no existing request/response schema changed. **Refactor (no route/schema change):** the upload-path helpers `_ensure_upload_dir`/`_safe_upload_path` were extracted from `app/routers/jobs.py` into new **`app/utils/uploads.py`** (`ensure_upload_dir`/`safe_upload_path`) so the recruiter and public paths share one traversal/zip-slip defense; `jobs.py` imports them aliased to the old private names (its call sites are unchanged). `GET /api/public/careers/{subdomain}` is unchanged. Since `career_page`/`direct_link` are already `entry_method` buckets, these applicants flow into the existing `GET /api/usage/stats` Card-1 counts with no change there.
 - **2026-07-15** — Team-member email invitations. **POST /api/team/invite** (`backend/app/routers/team.py`) now, after creating the `invited` user, **sends an invitation email** (new `send_team_invite_email` in `backend/app/utils/email_sender.py`) with an accept link `{FRONTEND_URL}/signup?email=…&name=…&invited=1`. Auth, request body (`InviteMemberIn`: `name`, `email`, `designation?`, `user_type`), and success response (`UserOut`) are UNCHANGED; the email is a best-effort side effect (wrapped in try/except, logged on failure — a mail error never fails the invite). Delivery uses the shared `send_html_email` transport (Resend when `RESEND_API_KEY` is set; note Railway blocks direct SMTP, so Resend is required for real delivery there — otherwise it runs in simulation/log mode). The dashboard signup page (`dashboard/app/(auth)/signup/page.js`) now prefills name/email from those query params so the invitee only sets a password; **POST /api/auth/signup** then activates the invited account (status `invited`→`active`) into its org with the role assigned at invite time (existing behavior, unchanged).
 - **2026-07-15** — Dynamic per-candidate avatar routing (multi-instance Pixel Streaming). **NO request/response schema change to any endpoint** — all changes are to emitted link/redirect URLs plus one opt-in client behavior. Emailed interview-room links now carry an optional **`jobId`** query param so an external avatar orchestrator can launch that job's dedicated Lina build as an independent, parallel stream. **GET /i/{token}** (`backend/app/routers/invites.py`) — the 302 redirect `Location` gains `&jobId={invite.job_id}` (omitted when the invite has no `job_id`); `sessionId`/`ih_invite` unchanged. The scheduled + reschedule calendar-invite `interview_link` built in **`backend/app/routers/public.py`** (×2) and **`backend/app/routers/jobs.py`** (×1) likewise gains `&jobId={applicant.job_id}` (omitted when null). **Candidate room** (`interview-engine/apps/web/app/interviewcandidateroom/page.tsx`) reads `?jobId=` and — ONLY when the new build-time env `NEXT_PUBLIC_ORCHESTRATOR_URL` is set — POSTs `{ jobId, sessionId }` to that external orchestrator's `/session` to obtain a per-session Pixel Streaming StreamerId (then 30s heartbeat + DELETE on unmount); unset (default) → the room keeps using the single shared `NEXT_PUBLIC_AVATAR_URL` exactly as before. No new HTTP routes on any of the three services; the orchestrator is a separate self-hosted service outside this API contract.
+- **2026-07-14** — Added `POST /api/privacy/internal/run-retention` (backend) — internal-only trigger for the retention/auto-purge job (DPDP §8). Shared-secret guarded; defaults to dry-run. Also added `RETENTION_DAYS` (default 0 = disabled) and `RETENTION_MAX_PER_RUN` (500) config, and the `app/jobs/retention.py` CLI (`python -m app.jobs.retention`).
+- **2026-07-13** — Added **`/api/privacy` router** (backend FastAPI, new `backend/app/routers/privacy.py`, mounted in `main.py` at prefix `/api/privacy`) — candidate self-serve data-rights (DPDP Act 2023): create request, email-token verify, erasure double-confirm, export ZIP download, status, grievance, plus recruiter/admin list + detail. Public routes: **POST /api/privacy/requests** (create; rate-limited; emails a one-time verification link; body `{email, request_type: access_export|erasure|rectification, scope: company|platform (default company), organisation_id?, invite_token?, rectification?}` → `{request_id, status, due_at}`), **GET /api/privacy/requests/verify** (`?rid&token`; HTML page — verifies token, then for access_export shows a download link, for rectification applies the correction, for erasure shows a double-confirm form), **POST /api/privacy/requests/{rid}/confirm** (`?token`; erasure only — runs the anonymise-in-place; HTML), **GET /api/privacy/requests/{rid}/status** (`?token`; JSON `{request_id, status, request_type, scope, due_at, created_at, fulfilled_at}`), **GET /api/privacy/exports/{rid}** (`?token`; `application/zip` attachment `my-interviehire-data.zip`), **POST /api/privacy/grievances** (rate-limited; body `{email, message, request_id?}` → `{ok, contact: <DPO email>}`; audited + emailed to the DPO). Recruiter/admin routes (auth via get_current_user + get_active_org_id, org-scoped): **GET /api/privacy/admin/requests** (list this org's requests, each with `overdue`), **GET /api/privacy/admin/requests/{rid}** (one request + its audit trail). Identity is proven by a one-time, hashed, time-boxed token emailed to the subject (`app/utils/privacy_tokens.py`); every public route is rate-limited via `_rate_limit`; fulfilment is audited to `compliance_audit_logs`. Backed by the `data_rights` / `data_export` services (`app/utils/data_rights.py`, `app/utils/data_export.py`) and the new `compliance_audit_logs` + `data_subject_requests` tables. New config (`app/config.py`): `DSAR_SLA_DAYS` (default 30), `DSAR_TOKEN_TTL_HOURS` (default 48), `DPO_CONTACT_EMAIL` (default `privacy@interviehire.com`). No existing routes changed.
+- **2026-07-12** — Added internal service-to-service endpoint **POST /internal/data-rights/erase-files** (interview-engine Fastify, new `interview-engine/apps/api/src/routes/internal.routes.ts`, registered with prefix `/internal` in `server.ts`) — files-only erasure for the DPDP Act 2023 right-to-erasure flow, called by the FastAPI backend (never the browser). Guarded by a shared-secret header: requires `x-internal-secret` matching the engine's `INTERNAL_SERVICE_SECRET` env var, else **401** `{"error":"unauthorized","code":"BAD_INTERNAL_SECRET"}`. Body `{ sessionIds: string[], requestId?: string }`; for each session id it best-effort/idempotently unlinks the transcript `.txt` (resolved via both transcript-dir helpers plus the path stored on `InterviewTranscript.transcriptFilePath`) and any `type:'recording'` blobs referenced in the session's `transcript` JSON (under `uploads/`), returning **200** `{ ok: true, count: number, filesUnlinked: string[] }`. Because both services share one Postgres, the backend does all DB anonymise/erase itself; the engine only purges its on-disk artifacts. Also added `erasedForRequestId` column to the engine `ConsentLog` model (DSAR anonymisation tombstone). No other routes added/removed.
 - **2026-07-11** — Security hardening: auth requirement, rate limiting, and a typed schedule body (`backend/`). **POST /api/deepseek** (`app/routers/deepseek.py`) now **REQUIRES authentication** — it gained `current_user: User = Depends(get_current_user)`, so it returns **401** if no valid `token` cookie / `Authorization: Bearer <jwt>` is present (previously fully public). Request body (`{ messages, jsonMode? }`) and success response (LLM proxy JSON) are UNCHANGED. **POST /api/auth/login** and **POST /api/auth/signup** (`app/routers/auth.py`) are now **rate-limited** via an in-process fixed-window limiter (login: ~20/60s per IP AND ~8/300s per email; signup: ~10/300s per IP) — they can now return **429 Too Many Requests** ("Too many requests. Please slow down and try again shortly."); request/response bodies are otherwise UNCHANGED. **POST /api/jobs/applicants/{applicant_id}/schedule** (`app/routers/jobs.py`, `schedule_interview`) — the request body changed from an untyped `dict` to the typed Pydantic model **`ScheduleInterviewIn`** (`app/schemas.py`): `scheduled_at: str` (required, ISO-8601, trailing 'Z' accepted) and `stage: str = "functional"` (`'screening'` → recruiter-screening stage, any other value → functional interview stage). Auth (session + `_verify_applicant_access` org ownership) and the success response (`ApplicantOut`) are UNCHANGED; malformed/missing `scheduled_at` → 400, schema-validation failure → 422. **Public endpoints now rate-limited** (`app/routers/public.py`, ~per-IP fixed window; 429 added, bodies/responses UNCHANGED): **GET /api/public/schedule/{token}** (~60/60s), **GET /api/public/interview-session/{session_id}** (~60/60s), **GET /api/public/confirm/{token}** (~30/60s), and **POST /api/public/reschedule/{token}** (~30/60s).
 - **2026-07-05** — Auto-provision a unique public career-page `career_subdomain` for every organisation (`backend/app/utils/career.py` new `slugify`/`unique_career_subdomain`; `backend/app/routers/auth.py`, `backend/app/routers/organisation.py`, `backend/main.py`). Behavior-only change — NO request/response schema fields added, removed, or renamed, and NO routes added/removed. The slug is a URL-safe slug of the org name, made unique by appending `-2`, `-3`, … on collision (re-provisioning an existing org keeps its own slug via the `org_id` exclusion). **POST /api/auth/onboarding** — the created org now always gets a system-assigned `career_subdomain` (`unique_career_subdomain(db, data.org_name)`), so its careers page is addressable the moment it's created. **PUT /api/organisation** and **POST /api/organisation** — on create (both the no-org-id onboarding branch and the create-with-known-id branch) AND on any save where the org still lacks a subdomain, one is auto-assigned; the request body may still include `career_subdomain` (`OrganisationIn` UNCHANGED — all fields Optional), but the dashboard no longer sends it. Net effect: `OrganisationOut.career_subdomain` is now effectively always non-null for any created org (still typed `Optional[str]`). Existing NULL-subdomain orgs are backfilled at startup in `main.py:init_db()` (query orgs with `career_subdomain IS NULL`, assign one each, flush-per-row so successive uniqueness checks see prior slugs). `PATCH /api/jobs/{id}/settings` and `GET /api/public/careers/{subdomain}` are UNCHANGED.
-- **2026-07-01** — Added candidate consent audit log ("security log"): new `ConsentLog` table (Prisma model in `interview-engine/apps/api` + mirrored SQLAlchemy model in `backend/app/models/ai_integration.py`) and two new Fastify routes on the interview engine (`interview-engine/apps/api/src/routes/interview.routes.ts`, prefix `/api/interview`) — **POST /api/interview/consent** (public, rate-limited; records one grant/decline for a session — body `sessionId`+`consentVersion` required, `action` default 'granted', optional `scopes`/`candidateEmail`/`candidateName`/`inviteToken`/`userAgeGnt`/`locale`; `ipAddress` captured server-side from X-Forwarded-For/`req.ip`, never accepted from the body; returns `{ ok, id, createdAt }`; 400 when `sessionId`/`consentVersion` missing) and **GET /api/interview/consent/:sessionId** (public, rate-limited; returns `{ sessionId, count, records: ConsentLog[] }`, newest-first, max 20). The candidate room's informed-consent gate (18+, recording+AI, biometric, privacy policy, cookies) now persists each grant/decline server-side. New table `ConsentLog` (id cuid PK, sessionId string [indexed], action string, consentVersion string, scopes jsonb default `{}`, candidateEmail/candidateName/inviteToken/userAgent/ipAddress/locale nullable strings, createdAt timestamp default now; composite index on (sessionId, createdAt); intentionally NO foreign key to InterviewSession so the audit log survives session deletion).
+- **2026-07-05** — **Exit interviews PIVOT → verbatim, NO-SCORE reports (SUPERSEDES the earlier 2026-07-05 "Exit interviews" entry below).** Exit interviews are now **recorded, not scored**: the exit report carries NO `overallScore`, NO `recommendation`, NO sentiment, and NONE of the previously-documented exit fields (`attritionSignal` / `topReasons` / `verbatimHighlights` / exit `skillScores`). The scored exit report described in the prior 2026-07-05 entry (reinterpreted `overallScore`, exit-signal `skillScores`, `attritionSignal`/`topReasons`/`verbatimHighlights` produced by `scoring.ts:aggregateExitReport`) is **no longer produced on the report path** — that aviral-eval scored path stays in the codebase for a future optional trends dashboard but is OFF the critical path. **(1) New verbatim exit report shape.** New engine service `interview-engine/apps/api/src/services/exit-report.service.ts` exports `buildExitTranscriptReport(sessionId)` + `isExitInterviewSettings(settings)`; for an exit session it structures the raw transcript (no LLM, no grading) into `{ interviewType: "exit_interview", mode: "verbatim", scored: false, interviewId, candidateId, roleTitle, summary: string, exchanges: [{ questionIndex: number|null, theme: string, question: string, answer: string, isFollowup: bool }], themes: string[], questionCount: number, transcriptOnly: true, generatedAt: ISO, questionBreakdown: [] (ALWAYS empty for exit) }` and stores it in `InterviewSession.evaluation`. It is served VERBATIM (no reshaping) in the `report` field of **GET /api/jobs/applicants/{applicant_id}/functional-report** and **GET /api/jobs/{job_id}/test-report** — the scored "Exit-interview variant" blocks on those two endpoints are REPLACED with this no-score shape. **(2) Exit grading gated OFF at every evaluation trigger (engine).** All three evaluation entrypoints now early-return `buildExitTranscriptReport` for exit sessions instead of scoring: `evaluateInterview` (`services/evaluation.service.ts`, behind **POST /api/interview/sessions/:id/evaluate** — previously ran deterministic scoring even with no LLM key), `evaluateInterviewWithAviral` (`services/aviral-evaluation.service.ts`, the structured grader), and **POST /api/interviews/:id/report** (`routes/transcript.routes.ts`), which for exit sessions now SKIPS both the holistic LLM report AND the structured grader and returns `{ evaluation: <verbatim report>, engine: "exit_verbatim" }` (new `engine` value). So NO exit interview is ever scored, regardless of which room (text or avatar) ran it. Detection is unchanged: `InterviewSession.settings.interviewType === "exit_interview"` (or `settings.jobType === "exit"`), set by the backend `ai_sync.sync_applicant_to_ai` when the parent Job has `job_kind == "exit"`. **(3) Exit jobs auto-seed a default question spine (backend).** **POST /api/jobs** (`backend/app/routers/jobs.py:create_job` + new `backend/app/utils/exit_blueprint.py`): creating a job with `job_kind: "exit"` and NO `functional_parameters` now auto-seeds `DEFAULT_EXIT_BLUEPRINT` (15 questions across 11 themes, in the standard `topics`/`questionsDetailed` shape, each question marked `scoring: "none"` with no rubric) into `functional_parameters`; an authored `functional_parameters` still wins. No routes added or removed; this pivot changes only the exit report payload and adds one new `engine` value (`exit_verbatim`).
+- **2026-07-05** — **Exit interviews.** A Job can now be an exit-interview template instead of a hiring pipeline, and the interview engine emits an exit-flavoured report for it. **Backend (`backend/app/schemas.py`, `backend/app/routers/jobs.py`, `backend/app/models/job.py`, `backend/app/models/applicant.py`, `backend/main.py`, `backend/app/utils/ai_sync.py`):** new **`job_kind`** field — `"hiring"` (default; normal hiring pipeline) vs `"exit"` (this Job is an exit-interview template for departing employees). Added to **POST /api/jobs** request (`JobCreateIn.job_kind: Optional[str] = "hiring"`), **PATCH /api/jobs/{job_id}/settings** request (`JobSettingsIn.job_kind: Optional[str] = None`, partial update), and the **`JobOut`** response (GET /api/jobs, POST /api/jobs) + **`JobDetailOut`** response (GET /api/jobs/{job_id}, PATCH .../settings, POST /api/jobs/{job_id}/duplicate) as `job_kind: Optional[str]`. NOTE: `job_kind` (hiring-vs-exit) is a SEPARATE field from the pre-existing `job_type` (employment type — Full-Time/Part-Time, shown on careers); do NOT conflate them. New `JobType` enum (`hiring`|`exit`) backs the `jobs.job_kind` column (server default `hiring`); `init_db()` adds `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_kind VARCHAR DEFAULT 'hiring'`. The `ApplicantSource` enum gained a new value **`exit`** (now valid for `source` on `AddApplicantIn`/`BulkApplicantsIn` requests and `ApplicantOut` responses). Six new NULLABLE leaver-metadata columns were added to the `applicants` model — `department`(str), `manager_name`(str), `tenure_months`(int), `separation_type`(str: "voluntary"|"involuntary"), `last_working_day`(datetime), `primary_reason`(str) — populated only for exit interviews (via `init_db()` ADD COLUMN migrations); they are NOT serialized in `ApplicantOut`/`AddApplicantIn`/`ApplicantUpdateIn`, so no HTTP request/response schema currently exposes them. **Exit report shape (interview-engine `apps/api/src/aviral-eval/types.ts` + `scoring.ts:aggregateExitReport`):** the engine emits the same `CandidateReport` object, discriminated by `interviewType: "exit_interview"` (new `InterviewType` enum member), with three NEW fields that are OPTIONAL on `CandidateReport` and present ONLY when `interviewType === "exit_interview"` — `attritionSignal: "regrettable"|"neutral"|"expected"`, `topReasons: string[]`, and `verbatimHighlights: Array<{ theme: string; quote: string; sentiment: "positive"|"neutral"|"negative" }>`. On an exit report several existing fields are REINTERPRETED: `overallScore` carries overall sentiment (0-100, NOT a hire score); `recommendation` is a storage-compat placeholder (consumers should IGNORE it and read `attritionSignal`); `skillScores[].skill` becomes an exit-signal dimension (`sentiment`|`candor`|`specificity`|`constructiveness`, not the 7 hiring dimensions); `weaknesses` = drivers-to-leave (same values as `topReasons`) and `strengths` = things that kept the employee; `redFlags` = serious concerns only; `proctoring`/`scoreBreakdown` are OMITTED. This report is stored in `InterviewSession.evaluation` and served VERBATIM (no reshaping) by **GET /api/jobs/applicants/{applicant_id}/functional-report** (in the `report` field) and by the newly-documented **GET /api/jobs/{job_id}/test-report** (in the `report` field). **Engine interview-type switch:** the engine selects exit grading when the synced `InterviewSession.settings` contains `interviewType: "exit_interview"` (or `jobType: "exit"`); the backend sync (`ai_sync.py:sync_applicant_to_ai`) sets BOTH keys whenever the parent Job has `job_kind == "exit"`, merged into the recruiter's other per-job interview settings (never clobbering them). No routes were removed; `job_kind` and the exit report fields are additive.
+- **2026-07-01** — Added candidate consent audit log ("security log"): new `ConsentLog` table (Prisma model in `interview-engine/apps/api` + mirrored SQLAlchemy model in `backend/app/models/ai_integration.py`) and two new Fastify routes on the interview engine (`interview-engine/apps/api/src/routes/interview.routes.ts`, prefix `/api/interview`) — **POST /api/interview/consent** (public, rate-limited; records one grant/decline for a session — body `sessionId`+`consentVersion` required, `action` default 'granted', optional `scopes`/`candidateEmail`/`candidateName`/`inviteToken`/`userAgent`/`locale`; `ipAddress` captured server-side from X-Forwarded-For/`req.ip`, never accepted from the body; returns `{ ok, id, createdAt }`; 400 when `sessionId`/`consentVersion` missing) and **GET /api/interview/consent/:sessionId** (public, rate-limited; returns `{ sessionId, count, records: ConsentLog[] }`, newest-first, max 20). The candidate room's informed-consent gate (18+, recording+AI, biometric, privacy policy, cookies) now persists each grant/decline server-side. New table `ConsentLog` (id cuid PK, sessionId string [indexed], action string, consentVersion string, scopes jsonb default `{}`, candidateEmail/candidateName/inviteToken/userAgent/ipAddress/locale nullable strings, createdAt timestamp default now; composite index on (sessionId, createdAt); intentionally NO foreign key to InterviewSession so the audit log survives session deletion).
 - **2026-07-01** — Scheduled-slot barrier ("waiting room" lobby). **Interview Engine** (Fastify `interview.routes.ts`): **POST /api/interview/sessions/:id/start** gained a new `TOO_EARLY` gate — request/response schema UNCHANGED, one new 403 error code. When the session has a `scheduledAt` and `Date.now() < scheduledAt − 10min` (`EARLY_ENTRY_MS`), start is rejected with 403 `{ "error": "This interview has not opened yet. Please return at your scheduled time.", "code": "TOO_EARLY" }`. The guard is UNCONDITIONAL on any scheduled session (not gated behind a setting), and runs after the token/INVITE and the existing INTERVIEW_DISABLED/NO_REATTEMPT/LATE_ATTEMPT checks; sessions with no `scheduledAt` (plain link / demo) are unaffected. **Candidate room** (`interview-engine/apps/web/app/interviewcandidateroom/page.tsx` + new `WaitingRoom.tsx`): reads `scheduledAt` from **GET /api/interview/sessions/:id** and, when it is more than `EARLY_ENTRY_MS` in the future, renders a countdown lobby + auto-advancing UI-guide slideshow instead of the permission gate, auto-unlocking at `scheduledAt − 10min` (kept in sync with the server constant). No new HTTP routes; documented for the new `/start` error code.
 - **2026-07-01** — Made every field of `OrganisationIn` optional on **PUT /api/organisation** and **POST /api/organisation** (`backend/app/schemas.py`): `org_name` changed from required `str` to `Optional[str] = None` (all other fields were already optional). Auth, response schema (`OrganisationOut`), and handler logic are UNCHANGED. Fixes the Career Page settings save (`apiUpdateOrganisation({ career_subdomain, career_intro })` in `dashboard/src/dashboard/api.js`), which sends only the two career fields and previously got **422 "org_name field required"**; the upsert's update branch already applies `model_dump(exclude_unset=True)`, so omitted fields (incl. `org_name`) are left untouched. Onboarding's separate `OnboardingIn` (POST /api/auth/onboarding) still requires `org_name`, so org creation is unaffected.
 - **2026-06-30** — Added **POST /api/jobs/{job_id}/duplicate** (`backend/app/routers/jobs.py`) — auth required; no request body; path param `job_id`:UUID; gated by `_verify_job_access` (404 if the job is not found or not in the caller's active org). Deep-copies the source job's config into a NEW independent job that is `status=draft` and `is_job_listed=false`, with `custom_job_id` reset to null and title suffixed " (Copy)"; also snapshots EVERY applicant (name/email/phone, resume data, all stage flags, screening/functional status+score, decision, report_url, scores) EXCEPT each copy's `scheduling_token` and `calendar_event_id` are reset to null (live single-use handles). The creator is added as a `JobCollaborator`. Returns 200 with a `JobDetailOut` body (same schema as **GET /api/jobs/{job_id}**). Also (NO schema change): **PATCH /api/jobs/{job_id}/settings** (`JobSettingsIn`) is now invoked by the dashboard "Edit Posting" flow to persist `title` / `custom_job_id` / `tags`.
@@ -307,6 +316,7 @@ Response:
     "resume_analysis_enabled": true,
     "recruiter_screening_enabled": true,
     "functional_interview_enabled": true,
+    "job_kind": "hiring|exit|null",
     "pipeline": { "total": 0, "resume": 0, "screening": 0, "functional": 0 },
     "resume_parameters": {}|null,
     "screening_parameters": {}|null,
@@ -324,7 +334,7 @@ JobPipelineCounts: total:int, resume:int|null, screening:int, functional:int. Co
 
 Status codes: 200 OK; 401 not authenticated.
 
-Notes: response_model=JobListOut. total/published/draft/archived computed over all visible jobs (pre-status-filter). tags stored as JSON string or comma list in DB and deserialized to array.
+Notes: response_model=JobListOut. total/published/draft/archived computed over all visible jobs (pre-status-filter). tags stored as JSON string or comma list in DB and deserialized to array. `job_kind` is `"hiring"` (default; normal pipeline) or `"exit"` (exit-interview template for departing employees) — distinct from `job_type` (employment type), which is not returned by this route.
 
 #### POST /api/jobs
 
@@ -350,7 +360,8 @@ Request:
   "resume_parameters": "dict|null (optional)",
   "screening_parameters": "dict|null (optional)",
   "functional_parameters": "dict|null (optional)",
-  "screening_questions": "string[]|null (optional)"
+  "screening_questions": "string[]|null (optional)",
+  "job_kind": "hiring|exit (optional, default 'hiring') — 'hiring' = normal pipeline; 'exit' = exit-interview template for departing employees. Distinct from job_type (employment type)."
 }
 ```
 
@@ -362,6 +373,7 @@ Response:
   "status": "published|draft|archived", "experience_band": "string|null", "description": "string|null",
   "is_job_listed": true, "created_at": "datetime", "created_by_name": "string|null",
   "resume_analysis_enabled": true, "recruiter_screening_enabled": true, "functional_interview_enabled": true,
+  "job_kind": "hiring|exit|null",
   "pipeline": { "total": 0, "resume": 0, "screening": 0, "functional": 0 },
   "resume_parameters": {}|null, "screening_parameters": {}|null, "functional_parameters": {}|null,
   "screening_questions": ["string"]|null, "tags": ["string"]|null
@@ -370,7 +382,7 @@ Response:
 
 Status codes: 200 OK; 400 'User does not belong to any organisation.'; 401 not authenticated; 422 body validation error.
 
-Notes: response_model=JobOut. If screening_questions omitted, defaults to 4 canned questions. dict params are JSON-serialized into the Job text columns.
+Notes: response_model=JobOut. If screening_questions omitted, defaults to 4 canned questions. dict params are JSON-serialized into the Job text columns. **(2026-07-05)** When `job_kind == "exit"` and `functional_parameters` is omitted/empty, the job auto-seeds a default exit-interview question spine — `DEFAULT_EXIT_BLUEPRINT` from `backend/app/utils/exit_blueprint.py` (15 questions across 11 themes in the standard `topics`/`questionsDetailed` shape, each marked `scoring: "none"` with no rubric) — into `functional_parameters`; an authored `functional_parameters` always wins.
 
 #### POST /api/jobs/upload-jd
 
@@ -451,6 +463,7 @@ Response:
   "description": "string|null",
   "location": "string|null",
   "job_type": "string|null",
+  "job_kind": "hiring|exit|null",
   "experience_band": "string|null",
   "is_job_listed": true,
   "resume_analysis_enabled": true,
@@ -467,7 +480,7 @@ Response:
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'.
 
-Notes: response_model=JobDetailOut.
+Notes: response_model=JobDetailOut. `job_kind` = `"hiring"` (default; normal pipeline) or `"exit"` (exit-interview template for departing employees) — a SEPARATE field from `job_type` (employment type, e.g. Full-Time/Part-Time). Both appear on this response.
 
 #### POST /api/jobs/{job_id}/duplicate
 
@@ -513,18 +526,19 @@ Request:
   "status": "published|draft|archived|null",
   "screening_questions": "string[]|null",
   "job_type": "string|null",
+  "job_kind": "hiring|exit|null — hiring-vs-exit template flag; distinct from job_type (employment type)",
   "location": "string|null"
 }
 ```
 
 Response:
 ```json
-// JobDetailOut (same as GET /api/jobs/{job_id})
+// JobDetailOut (same as GET /api/jobs/{job_id}) — now includes job_kind
 ```
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'; 422 body validation error.
 
-Notes: response_model=JobDetailOut. tags and screening_questions are JSON-serialized to DB columns; other keys set directly.
+Notes: response_model=JobDetailOut. tags and screening_questions are JSON-serialized to DB columns; other keys set directly. `job_kind` (`"hiring"`|`"exit"`) is a partial-update field — omit it to leave the current value untouched; setting it to `"exit"` flips the Job into an exit-interview template (the applicant sync then tells the engine to grade for sentiment/themes).
 
 #### DELETE /api/jobs/{job_id}
 
@@ -676,7 +690,7 @@ Request:
   "name": "string (required)",
   "email": "EmailStr (required)",
   "phone": "string|null (optional)",
-  "source": "career_page|bulk_upload|direct_link|scheduled|ats|functional|null (optional)",
+  "source": "career_page|bulk_upload|direct_link|scheduled|ats|functional|exit|null (optional)",
   "entry_method": "string|null (optional) — how the candidate was added (bulk_upload|ats|direct_link|career_page); independent of source",
   "recruiter_screening": "string|null (optional)",
   "recruiter_screening_score": "float|null (optional)",
@@ -704,7 +718,7 @@ Response:
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'; 422 body validation error.
 
-Notes: response_model=ApplicantOut. entry_method is a free-form nullable string recording how the candidate was added (bulk_upload|ats|direct_link|career_page), independent of source (which routes the applicant to a stage). source='scheduled' → screening_status=pending; source='functional' → functional_status=pending. Broadcasts OutgoingMessage type 'candidate_update' to room 'global'.
+Notes: response_model=ApplicantOut. entry_method is a free-form nullable string recording how the candidate was added (bulk_upload|ats|direct_link|career_page), independent of source (which routes the applicant to a stage). source='scheduled' → screening_status=pending; source='functional' → functional_status=pending. `ApplicantSource` also has a `'exit'` value (2026-07-05) used for departing-employee exit-interview candidates. Broadcasts OutgoingMessage type 'candidate_update' to room 'global'. **Exit-interview leaver metadata:** the `applicants` DB model also carries six NULLABLE columns populated only for exit interviews — `department`, `manager_name`, `tenure_months`, `separation_type` ("voluntary"|"involuntary"), `last_working_day`, `primary_reason` — but these are NOT serialized in `ApplicantOut` (nor accepted by `AddApplicantIn`/`ApplicantUpdateIn`), so no request/response schema currently exposes them.
 
 #### POST /api/jobs/{job_id}/applicants/bulk
 
@@ -963,7 +977,56 @@ Response (from `ai_sync.get_applicant_full_report`, no response_model — always
 
 Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Applicant not found' / 'Job not found'.
 
-Notes: No response_model; delegates with str(applicant_id). `report` is `null` until the engine scores the interview (`evaluated=false`). The `report` payload is the canonical `CandidateReport` defined by the dashboard. See `app/utils/ai_sync.py:get_applicant_full_report`.
+Notes: No response_model; delegates with str(applicant_id). `report` is `null` until the engine scores the interview (`evaluated=false`). The `report` payload is the canonical `CandidateReport` defined by the dashboard and is served VERBATIM (no reshaping) from `InterviewSession.evaluation`. See `app/utils/ai_sync.py:get_applicant_full_report`.
+
+**Exit-interview variant (2026-07-05 PIVOT — supersedes the earlier scored variant):** when the applicant belongs to a Job with `job_kind == "exit"`, `report` is a **VERBATIM, NO-SCORE transcript report** (exit interviews are recorded, not scored). It is NOT a `CandidateReport` and carries NO `overallScore`, `recommendation`, `skillScores`, `attritionSignal`, `topReasons`, `verbatimHighlights`, sentiment, or proctoring. Produced with no LLM by `interview-engine/apps/api/src/services/exit-report.service.ts:buildExitTranscriptReport`, stored in `InterviewSession.evaluation`, and served verbatim:
+```json
+{
+  "interviewType": "exit_interview",   // discriminant
+  "mode": "verbatim",
+  "scored": false,
+  "interviewId": "string",
+  "candidateId": "string",
+  "roleTitle": "string",
+  "summary": "string",                   // neutral one-line recap (e.g. "Exit interview — N responses recorded across M themes. Verbatim record, not scored.")
+  "exchanges": [
+    { "questionIndex": 0, "theme": "string", "question": "string", "answer": "string", "isFollowup": false }
+    // questionIndex is number|null; isFollowup=true marks a live follow-up probe under the same theme
+  ],
+  "themes": ["string"],                 // distinct theme labels, first-seen order
+  "questionCount": 0,                    // = exchanges.length
+  "transcriptOnly": true,
+  "generatedAt": "ISO 8601 string",
+  "questionBreakdown": []                // ALWAYS empty for exit (no per-question scoring); consumers read `exchanges`
+}
+```
+Consumers detect an exit report via `interviewType === "exit_interview"` (or `scored === false`) and render `exchanges`/`themes` — there are no scores to show. Shape is defined in `exit-report.service.ts` (`ExitTranscriptReport` / `ExitExchange`). NOTE: the aviral-eval SCORED exit path (`scoring.ts:aggregateExitReport`, with `attritionSignal`/`topReasons`/`verbatimHighlights` in `aviral-eval/types.ts`) remains in the codebase for a future optional trends dashboard but is NOT on this report path.
+
+#### GET /api/jobs/{job_id}/test-report
+
+Read-only: return the CandidateReport for this job's throwaway "Run test interview" session (the `remarks == '__ih_test_session__'` test applicant) so the recruiter can review it in Deep Analysis. The test applicant is excluded from the funnel/responses tabs/analytics, so this dedicated endpoint surfaces only its evaluation.
+
+- **Auth:** JWT httpOnly cookie (required) + _verify_job_access.
+- **Path params:** `job_id`:UUID — the job id
+- **Query params:** none
+
+Request: none
+
+Response (no response_model — always returns a dict; delegates to `ai_sync.get_applicant_full_report`):
+```json
+{
+  "exists": "boolean (false when no test applicant exists for this job)",
+  "evaluated": "boolean (true if the test session has an evaluation)",
+  "status": "string (session.status.value, \"not_scheduled\", or \"none\" when exists=false)",
+  "report": "object (raw session.evaluation — canonical CandidateReport) | null",
+  "reportUrl": "string | null"
+}
+```
+When no test applicant exists yet, returns exactly `{ "exists": false, "evaluated": false, "status": "none", "report": null }`. Otherwise the body is `{ "exists": true, ...get_applicant_full_report(...) }` (i.e. `exists` plus `status`/`evaluated`/`report`/`reportUrl`).
+
+Status codes: 200 OK; 401 not authenticated; 403 'Access denied'; 404 'Job not found'.
+
+Notes: No response_model. `report` is served VERBATIM from `InterviewSession.evaluation`. If the job has `job_kind == "exit"`, `report` is the **VERBATIM, NO-SCORE exit transcript report** (`interviewType: "exit_interview"`, `scored: false`, with `exchanges`/`themes` and no scores) — same variant documented under **GET /api/jobs/applicants/{applicant_id}/functional-report** above (2026-07-05 pivot). See `backend/app/routers/jobs.py:get_test_report`.
 
 #### POST /api/jobs/webhooks/interview-completed
 
@@ -2506,6 +2569,251 @@ Notes: All HTML responses use `_invite_error_html`. **Rate-limited per client IP
 
 ---
 
+### `backend/app/routers/privacy.py`
+
+> Candidate self-serve data-rights API (DPDP Act 2023). Public, unauthenticated intake → an emailed **one-time verification link** → fulfilment: **access/export** serves a downloadable ZIP of everything held (DPDP §11); **rectification** applies the candidate's own corrections (self-edit, incl. email); **erasure** anonymises-in-place across every store behind a **double confirm**. Plus a **grievance** channel (DPDP §13) and recruiter/admin visibility. **Identity = possession of the emailed inbox**, proven by a single-use, time-boxed token whose **hash only** is stored (`app/utils/privacy_tokens.py`: `generate_token`/`hash_token`/`verify_token`); tokens expire after `DSAR_TOKEN_TTL_HOURS` (default 48). **Every public route is rate-limited** (in-memory fixed window via `_rate_limit`, reused from `invites.py`; per-IP and per-email keys). **Every fulfilment is audited** to `compliance_audit_logs` (`app/utils/audit.py:record_audit`). Heavy lifting lives in the runtime-verified services `app/utils/data_rights.py` (rectify/erase) + `app/utils/data_export.py` (build/zip package) — the router is intake, verification, dispatch, and delivery only. Requests persist in the `data_subject_requests` table; the request due date = `now + DSAR_SLA_DAYS` (default 30). Config (`app/config.py`): `DSAR_SLA_DAYS`, `DSAR_TOKEN_TTL_HOURS`, `DPO_CONTACT_EMAIL` (default `privacy@interviehire.com`); links are built off `INVITE_LINK_BASE`. Mounted in `main.py` at prefix `/api/privacy`.
+
+#### POST /api/privacy/requests
+
+Create a data-rights request and email a one-time verification link. Optionally pin the request to one Fiduciary (organisation) via an interview `invite_token`.
+
+- **Auth:** public (none). **Rate-limited:** 5/300 s per IP AND 3/3600 s per email (`dsar:email:<email>`); exceeding → 429.
+- **Path params:** none
+- **Query params:** none
+
+Request (Pydantic `CreateRequestIn`):
+```json
+{
+  "email": "string (required)",
+  "request_type": "access_export | erasure | rectification (required)",
+  "scope": "company | platform (optional, default 'company')",
+  "organisation_id": "string, UUID (optional)",
+  "invite_token": "string (optional)",
+  "rectification": "object | null (optional) — { name?, phone?, email? }"
+}
+```
+
+Response:
+```json
+{
+  "request_id": "string (UUID)",
+  "status": "string — DSARStatus (e.g. 'pending_verification')",
+  "due_at": "datetime ISO8601"
+}
+```
+
+Status codes: 200 OK; 400 — "A valid email is required" (no `@`) / "Invalid request_type or scope" (not a valid `DSARType`/`DSARScope`); 429 Too Many Requests.
+
+Notes: Plain dict response. Email is stripped + lowercased. If `invite_token` resolves to an `InterviewInvite` → `Job` with an `organisation_id`, the request is pinned to that org and `scope` is forced to `company`. Mints a `DataSubjectRequest` (status `pending_verification`, `verification_token_hash`, `token_expires_at`, `due_at`, requester IP/UA, `payload={"rectification": …}` when present), emails the verify link (`/api/privacy/requests/verify?rid=&token=`, best-effort), and audits `dsar.request.created`.
+
+#### GET /api/privacy/requests/verify
+
+Verify the emailed token, then fulfil or advance the request. Returns a **human HTML page** (clicked from an email), not JSON.
+
+- **Auth:** public (none) — identity proven by the emailed token. **Rate-limited:** 30/60 s per IP.
+- **Path params:** none
+- **Query params:** `rid` (UUID, required), `token` (string, required)
+
+Request: none
+
+Response: `text/html` page (`HTMLResponse`). On success, transitions `pending_verification → verified` (audits `dsar.verified`) and then branches by `request_type`:
+- **access_export** — mints an export token (`export_token_hash` + `export_expires_at`) and renders a **"Download my data (.zip)"** link to `/api/privacy/exports/{rid}?token=…`.
+- **rectification** — applies the correction immediately (`data_rights.rectify_subject`), sets status `fulfilled`, clears the verification token, renders a "Details updated" page.
+- **erasure** — renders a **double-confirm form** that POSTs to `/api/privacy/requests/{rid}/confirm?token=…` (irreversible).
+
+Status codes / behavior: 200 — verified/fulfilled/confirm-form page; 200 — "Already processed" when status is already `fulfilled`/`cancelled`/`expired`; 400 (HTML) — "Link invalid or expired" when `rid` is unknown or `verify_token` fails (bad/expired token).
+
+#### POST /api/privacy/requests/{rid}/confirm
+
+Second confirmation for an **erasure** — actually runs the anonymise-in-place across every store. Returns HTML.
+
+- **Auth:** public (none) — gated by the emailed token. **Rate-limited:** 10/300 s per IP.
+- **Path params:** `rid` (UUID, required)
+- **Query params:** `token` (string, required)
+
+Request: none (the verify page posts an empty form)
+
+Response: `text/html` page.
+
+Status codes / behavior: 200 — "Your data has been erased" (runs `data_rights.erase_subject`, clears the verification token, emails a completion confirmation best-effort); 200 — "Already erased" when status is already `fulfilled`; 404 (HTML) — "Not found" when `rid` is unknown or the request is **not an erasure**; 400 (HTML) — "Link invalid or expired" (bad/expired token) or "Not verified" (status not `verified`/`in_progress`); 500 (HTML) — "We hit a snag" when erasure fails (the request is left `in_progress` and is **resumable**; `erase_subject` records the failure).
+
+#### GET /api/privacy/requests/{rid}/status
+
+JSON status check for a request (token-gated).
+
+- **Auth:** public (none) — gated by the emailed verification token. **Rate-limited:** 30/60 s per IP.
+- **Path params:** `rid` (UUID, required)
+- **Query params:** `token` (string, required)
+
+Request: none
+
+Response:
+```json
+{
+  "request_id": "string (UUID)",
+  "status": "string — DSARStatus",
+  "request_type": "access_export | erasure | rectification",
+  "scope": "company | platform",
+  "due_at": "datetime ISO8601 | null",
+  "created_at": "datetime ISO8601 | null",
+  "fulfilled_at": "datetime ISO8601 | null"
+}
+```
+
+Status codes: 200 OK; 404 — "Not found" when `rid` is unknown or `verify_token` fails (bad/expired token).
+
+#### GET /api/privacy/exports/{rid}
+
+Serve the subject's data package as a ZIP (export-token-gated, expiring). Marks the request `fulfilled` on first successful download and audits `dsar.export.fulfilled`.
+
+- **Auth:** public (none) — gated by the **export** token issued on verify. **Rate-limited:** 20/300 s per IP.
+- **Path params:** `rid` (UUID, required)
+- **Query params:** `token` (string, required)
+
+Request: none
+
+Response: `application/zip` — `200` with `Content-Disposition: attachment; filename="my-interviehire-data.zip"` (raw bytes from `data_export.build_export_package` → `zip_export_package`).
+
+Status codes / behavior: 200 — ZIP attachment; 404 — "Not found" (JSON) when `rid` is unknown or the request is **not an access_export**; 403 (HTML) — "Link invalid or expired" when the export token is invalid/expired (`verify_token` on `export_token_hash`/`export_expires_at`).
+
+#### POST /api/privacy/grievances
+
+File a grievance (DPDP §13). Recorded to the audit log + emailed to the DPO.
+
+- **Auth:** public (none). **Rate-limited:** 5/3600 s per IP AND 3/3600 s per email (`grievance:email:<email>`); exceeding → 429.
+- **Path params:** none
+- **Query params:** none
+
+Request (Pydantic `GrievanceIn`):
+```json
+{
+  "email": "string (required)",
+  "message": "string (required)",
+  "request_id": "string, UUID (optional)"
+}
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "contact": "string — DPO_CONTACT_EMAIL"
+}
+```
+
+Status codes: 200 OK; 400 — "Email and message are required" (invalid/missing email, or blank message); 429 Too Many Requests.
+
+Notes: Plain dict response. Audits `dsar.grievance.filed` (the audit is the source of truth; the emails to the DPO and an acknowledgement to the subject are best-effort). `message` is truncated to 2000 chars in the audit/email.
+
+#### POST /api/privacy/internal/run-retention
+
+Run the retention/auto-purge batch (DPDP §8). Internal-only, shared-secret guarded; defaults to DRY-RUN. Trigger from a host cron or an external pinger.
+
+- **Auth:** internal only — header `x-internal-secret` must match the backend `INTERNAL_SERVICE_SECRET`; otherwise **401** `{"detail":"unauthorized"}` (also 401 when `INTERNAL_SERVICE_SECRET` is unset).
+- **Path params:** none
+- **Query params:** `dry_run` (string, default `"true"`) — only the literal `false` arms the batch; anything else stays a dry-run.
+
+Request: none
+
+Response (`enabled: true`):
+```json
+{
+  "enabled": true,
+  "retention_days": "int",
+  "dry_run": "boolean",
+  "eligible": "int",
+  "anonymised": "int",
+  "errors": "int (optional)",
+  "sample": ["string (optional)"]
+}
+```
+
+Response (disabled — `RETENTION_DAYS <= 0`):
+```json
+{
+  "enabled": false,
+  "reason": "string",
+  "eligible": 0,
+  "anonymised": 0
+}
+```
+
+Status codes: 200 OK; 401 unauthorized.
+
+Notes: Runs one retention batch — anonymises (in place) applicants whose retention window (`RETENTION_DAYS`) has lapsed and who aren't mid-pipeline, reusing the erasure anonymise path; bounded by `RETENTION_MAX_PER_RUN` (default 500). No-op (returns the disabled shape) when `RETENTION_DAYS <= 0`. Delegates to `app.jobs.retention.run_retention`, also runnable as a CLI (`python -m app.jobs.retention`). New config (`app/config.py`): `RETENTION_DAYS` (default 0 = disabled), `RETENTION_MAX_PER_RUN` (default 500).
+
+#### GET /api/privacy/admin/requests
+
+List this organisation's data-rights requests (controller visibility), newest first (max 200).
+
+- **Auth:** JWT httpOnly cookie `token` (or Bearer) required via get_current_user; org context via get_active_org_id.
+- **Path params:** none
+- **Query params:** none
+
+Request: none
+
+Response: JSON array of:
+```json
+[
+  {
+    "request_id": "string (UUID)",
+    "subject_email": "string",
+    "request_type": "access_export | erasure | rectification",
+    "status": "string — DSARStatus",
+    "scope": "company | platform",
+    "due_at": "datetime ISO8601 | null",
+    "created_at": "datetime ISO8601 | null",
+    "fulfilled_at": "datetime ISO8601 | null",
+    "overdue": "boolean"
+  }
+]
+```
+
+Status codes: 200 OK; 401 Not authenticated.
+
+Notes: Filtered to `organisation_id == active_org_id`, ordered by `created_at` desc, limit 200. `overdue` = `due_at` is set AND status is not `fulfilled`/`cancelled`/`expired` AND `due_at < now`.
+
+#### GET /api/privacy/admin/requests/{rid}
+
+One request + its audit trail (scoped to the caller's organisation).
+
+- **Auth:** JWT httpOnly cookie `token` (or Bearer) required via get_current_user; org context via get_active_org_id.
+- **Path params:** `rid` (UUID, required)
+- **Query params:** none
+
+Request: none
+
+Response:
+```json
+{
+  "request": {
+    "request_id": "string (UUID)",
+    "subject_email": "string",
+    "request_type": "access_export | erasure | rectification",
+    "status": "string — DSARStatus",
+    "scope": "company | platform",
+    "due_at": "datetime ISO8601 | null",
+    "created_at": "datetime ISO8601 | null",
+    "fulfilled_at": "datetime ISO8601 | null",
+    "payload": "object | null"
+  },
+  "audit_trail": [
+    {
+      "action": "string",
+      "actor_type": "string — AuditActorType | null",
+      "detail": "object | null",
+      "created_at": "datetime ISO8601 | null"
+    }
+  ]
+}
+```
+
+Status codes: 200 OK; 401 Not authenticated; 404 — "Not found" when `rid` is unknown or the request's `organisation_id != active_org_id`.
+
+Notes: Plain dict response. The audit trail is the `compliance_audit_logs` rows for this subject's email (`subject_email`), ordered by `created_at` desc, limit 100.
+
+---
+
 ## Interview Engine — Fastify
 
 ### `interview-engine/apps/api/src/routes/assistant.routes.ts`
@@ -2911,7 +3219,7 @@ Response:
 
 Status codes: 200 OK; **403 `{ error:'This interview link is invalid or has expired.', code:'INVALID_TOKEN' }`** — session has a non-null `inviteToken` and `?token=` doesn't match (via `blockedByInviteToken`); 500 on evaluation error (session not found, missing transcript, evaluator failure); 429 rate limited.
 
-Notes: No Fastify schema. **`blockedByInviteToken(req, reply)` runs first** — a token-bound session only serves the matching `?token=`; token-free sessions pass through unaffected. Response wraps the service return in { evaluation }. Exact fields defined by the dashboard contract and aviral-eval/types.ts.
+Notes: No Fastify schema. **`blockedByInviteToken(req, reply)` runs first** — a token-bound session only serves the matching `?token=`; token-free sessions pass through unaffected. Response wraps the service return in { evaluation }. Exact fields defined by the dashboard contract and aviral-eval/types.ts. **Exit interviews — verbatim, NOT scored (2026-07-05 pivot):** when the session's `settings.interviewType === "exit_interview"` (or `settings.jobType === "exit"`), `evaluateInterview` **early-returns `buildExitTranscriptReport(id)`** (`services/exit-report.service.ts`) instead of running the hire evaluator — which previously scored even with no DeepSeek key. In that case `evaluation` is the VERBATIM, NO-SCORE exit report (`interviewType: "exit_interview"`, `scored: false`, `exchanges`/`themes`, always-empty `questionBreakdown`; no `overallScore`/`recommendation`/`skillScores`/sentiment) — see the exit-variant block under **GET /api/jobs/applicants/{applicant_id}/functional-report**. The backend `sync_applicant_to_ai` writes both settings keys whenever the parent Job has `job_kind == "exit"`.
 
 #### GET /api/interview/sessions/:id/candidate-report
 
@@ -3343,7 +3651,7 @@ Request: none
 Response: 200 OK (application/json). `evaluation` is the normalized CandidateReport; `engine` indicates which path produced it.
 ```
 {
-  engine: 'transcript_llm' | 'deterministic',
+  engine: 'transcript_llm' | 'deterministic' | 'exit_verbatim',  // 'exit_verbatim' = exit session, no-score verbatim report (see Notes)
   evaluation: {
     interviewId:   string,   // = sessionId
     candidateId:   string,
@@ -3392,7 +3700,7 @@ When engine is 'deterministic', `evaluation` is whatever evaluateInterview(sessi
 
 Status codes: 200 OK (engine 'transcript_llm' or 'deterministic'); 404 Not Found {"error":"Session not found"} (unknown sessionId at the route guard); 500 Internal Server Error {"error":<message|'Report generation failed'>} (both LLM report and deterministic fallback threw).
 
-Notes: Global rate limit. Always calls finalizeTranscript(sessionId) first. Tries generateTranscriptReport (DeepSeek); on any error logs a warning and tries evaluateInterview; only if BOTH fail does it 500. The LLM report path persists the report onto session.evaluation and sets session.status='EVALUATED'.
+Notes: Global rate limit. Always calls finalizeTranscript(sessionId) first. **Exit interviews — verbatim, NOT scored (2026-07-05 pivot):** when the session's `settings.interviewType === "exit_interview"` (or `settings.jobType === "exit"`), this route SKIPS both the holistic LLM report AND the structured (aviral) grader and returns `{ evaluation: buildExitTranscriptReport(sessionId), engine: 'exit_verbatim' }` — a VERBATIM, NO-SCORE report (`interviewType: "exit_interview"`, `scored: false`, `exchanges`/`themes`; see the exit-variant block under **GET /api/jobs/applicants/{applicant_id}/functional-report**). Otherwise (hiring path): tries generateTranscriptReport (DeepSeek); on any error logs a warning and tries evaluateInterview; only if BOTH fail does it 500. The report path persists the report onto session.evaluation and sets session.status='EVALUATED'.
 
 #### POST /api/interviews/{sessionId}/screening-outcome
 
@@ -3430,6 +3738,40 @@ Content-Disposition: attachment; filename="<sessionId>.txt"
 Status codes: 200 OK (file streamed); 404 Not Found {"error":"Transcript not available"} (file missing and finalize produced no readable file). No explicit session-existence guard — a missing session yields finalize status 'failed' → 404.
 
 Notes: Global rate limit. If transcriptFilePath(sessionId) does not exist it calls finalizeTranscript(sessionId) and serves the produced file; if that path is null/absent returns 404. Streams via fs.createReadStream.
+
+### `interview-engine/apps/api/src/routes/internal.routes.ts`
+
+Internal service-to-service routes (prefix `/internal`), called ONLY by the FastAPI backend — never the browser — and guarded by a shared-secret header. Because the two services share one Postgres, the backend performs all DB anonymise/erase itself (deleting a Candidate cascades its sessions/transcripts/proctoring at the DB level); the engine's sole job here is to unlink its ON-DISK artifacts. Part of the DPDP Act 2023 right-to-erasure flow.
+
+#### POST /internal/data-rights/erase-files
+
+Files-only erasure: unlink the on-disk transcript `.txt` and recording blobs for a set of engine interview sessions. Best-effort and idempotent (missing files ignored).
+
+- **Auth:** internal only — requires request header `x-internal-secret` matching the engine's `INTERNAL_SERVICE_SECRET` env var. Missing/mismatched secret (or an unset env var) → **401** `{"error":"unauthorized","code":"BAD_INTERNAL_SECRET"}`.
+- **Path params:** none
+- **Query params:** none
+
+Request: `application/json`
+```
+{
+  sessionIds: string[],   // engine InterviewSession ids to purge on-disk files for; non-string entries are ignored
+  requestId?: string      // optional DSAR request id (correlation only)
+}
+```
+Missing/omitted body is treated as `{}` (→ empty `sessionIds`). For each session id it unlinks: (1) the transcript `.txt`, resolved via BOTH transcript-dir helpers (`transcript.service` + `flagcheckTranscription.service`) plus the authoritative path stored on `InterviewTranscript.transcriptFilePath`; and (2) any `type:'recording'` blobs referenced in the session's `transcript` JSON (joined by basename under `uploads/`).
+
+Response: 200 OK (application/json).
+```
+{
+  ok: true,
+  count: number,          // number of files actually unlinked
+  filesUnlinked: string[] // absolute paths of the files that were removed
+}
+```
+
+Status codes: 200 OK (success, incl. when nothing matched — `count: 0`); 401 Unauthorized (bad/missing `x-internal-secret`).
+
+Notes: Not under the `/api` prefix (registered at `/internal`). Best-effort/idempotent — each unlink is wrapped in try/catch and skips non-existent files, so replaying the same request is safe. Every DB lookup (transcript path, session transcript) is individually guarded, so a missing session or transcript is simply skipped.
 
 ### `interview-engine/apps/api/src/server.ts`
 

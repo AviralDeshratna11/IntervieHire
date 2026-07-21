@@ -3,7 +3,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from app.models.applicant import Applicant
-from app.models.job import Job
+from app.models.job import Job, JobType
 from app.models.organisation import Organisation
 from app.models.ai_integration import Company, Candidate, JobRole, Question, InterviewSession, ProctoringLog, RoleType, SessionStatus, Severity, Difficulty
 
@@ -213,6 +213,16 @@ def sync_applicant_to_ai(db: Session, applicant: Applicant) -> Optional[Intervie
                 interview_settings = json.loads(job.interview_settings)
             except Exception:
                 interview_settings = {}
+        if not isinstance(interview_settings, dict):
+            interview_settings = {}
+
+        # Exit-interview jobs must tell the engine to switch from hire-scoring to
+        # sentiment/theme grading. The engine reads session.settings.interviewType
+        # === 'exit_interview' (or settings.jobType === 'exit'). Merge, never clobber
+        # the recruiter's other settings keys.
+        if getattr(job, "job_kind", None) == JobType.exit:
+            interview_settings["interviewType"] = "exit_interview"
+            interview_settings["jobType"] = "exit"
 
         # Tag which stage this (re)provision is for so the candidate room can tell a
         # recruiter-screening session apart from a functional one (same shared row).

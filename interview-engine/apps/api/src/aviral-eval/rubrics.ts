@@ -25,6 +25,24 @@ export const UNIVERSAL_DIMENSIONS: DimensionWeights = {
   communication_quality: 5,
 };
 
+// Exit interviews don't score correctness — they read feedback. These are the
+// per-answer signals the exit grader fills instead of the 7 hiring dimensions:
+// sentiment = emotional valence of the answer; candor = openness/honesty;
+// specificity = concrete detail vs vague; constructiveness = actionable signal.
+export const EXIT_DIMENSION_KEYS = [
+  "sentiment",
+  "candor",
+  "specificity",
+  "constructiveness",
+] as const;
+
+export const EXIT_DIMENSIONS: DimensionWeights = {
+  sentiment: 40,
+  candor: 25,
+  specificity: 20,
+  constructiveness: 15,
+};
+
 // Per-interview-type adjustments (same 7 keys, re-weighted for what the role values).
 export const INTERVIEW_TYPE_WEIGHTS: Record<InterviewType, DimensionWeights> = {
   technical: {
@@ -83,6 +101,10 @@ export const INTERVIEW_TYPE_WEIGHTS: Record<InterviewType, DimensionWeights> = {
   },
   mixed: UNIVERSAL_DIMENSIONS,
   custom: UNIVERSAL_DIMENSIONS,
+  // Exit interviews use a different set of keys (see EXIT_DIMENSIONS). The exit path
+  // grades and aggregates outside the hiring score formula, so these weights are only
+  // used if getDimensionWeights is ever called for an exit answer.
+  exit_interview: EXIT_DIMENSIONS,
 };
 
 // Per-question-type overrides (still the 7 canonical keys).

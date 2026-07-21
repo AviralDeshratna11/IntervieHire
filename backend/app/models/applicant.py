@@ -29,6 +29,7 @@ class ApplicantSource(str, enum.Enum):
     scheduled = "scheduled"
     ats = "ats"
     functional = "functional"
+    exit = "exit"
 
 
 class Applicant(Base):
@@ -78,6 +79,32 @@ class Applicant(Base):
     overall_interview_score = Column(Float, nullable=True)
     proctoring_severity_flag = Column(String, nullable=True)
     calendar_sequence = Column(Integer, default=0, nullable=False)
+
+    # Exit-interview (leaver) metadata — only populated when the parent Job is an
+    # exit-interview template (job_kind == 'exit'); NULL for hiring applicants.
+    department = Column(String, nullable=True)
+    manager_name = Column(String, nullable=True)
+    tenure_months = Column(Integer, nullable=True)
+    separation_type = Column(String, nullable=True)          # "voluntary" | "involuntary"
+    last_working_day = Column(DateTime(timezone=True), nullable=True)
+    primary_reason = Column(String, nullable=True)
+
+    # DSAR / DPDP anonymisation marker — set when an erasure request has reduced this row
+    # to a non-identifying stub (PII/free-text scrubbed, scores/status kept); NULL for
+    # live candidates. erasure_request_id -> data_subject_requests.id (no FK, so the audit
+    # trail and the request record both survive the stub).
+    anonymised_at = Column(DateTime(timezone=True), nullable=True)
+    erasure_request_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Direct-apply consent — set when a candidate applies through the public career
+    # page / direct link (they hand us PII first-hand, so we are the data controller
+    # at that step). NULL for applicants added by a recruiter (bulk/ATS/scheduled).
+    consent_given_at = Column(DateTime(timezone=True), nullable=True)
+    consent_version = Column(String, nullable=True)
+
+    # Answers to the client's custom application questions (JSON text: a list of
+    # {id, question, type, answer}). NULL when the job/org asked no extra questions.
+    application_answers = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

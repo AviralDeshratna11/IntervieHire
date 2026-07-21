@@ -6,7 +6,10 @@ export type InterviewType =
   | "sales"
   | "hr_screening"
   | "mixed"
-  | "custom";
+  | "custom"
+  // Exit interview: a departing employee is interviewed for feedback, not scored
+  // for a hire. Grading extracts sentiment + themes instead of correctness.
+  | "exit_interview";
 
 export type QuestionType =
   | "technical_theory"
@@ -18,7 +21,9 @@ export type QuestionType =
   | "hr_screening"
   | "general"
   | "followup"
-  | "custom";
+  | "custom"
+  // A question probing one exit-interview theme (compensation, management, …).
+  | "exit_theme";
 
 export type QuestionOrigin = "predetermined" | "generated_followup";
 
@@ -37,6 +42,20 @@ export type Recommendation =
   | "needs_human_review";
 
 export type RedFlagSeverity = "low" | "medium" | "high" | "critical";
+
+// ── Exit-interview extension ───────────────────────────────────────────────────
+// Attrition read for a departing employee. "regrettable" = a loss the company would
+// likely have wanted to prevent (low sentiment and/or serious concerns); "expected" =
+// an amicable/positive departure; "neutral" = mixed.
+export type AttritionSignal = "regrettable" | "neutral" | "expected";
+
+export type ExitSentiment = "positive" | "neutral" | "negative";
+
+export interface ExitVerbatim {
+  theme: string;
+  quote: string;
+  sentiment: ExitSentiment;
+}
 
 export interface InterviewContext {
   interviewId: string;
@@ -231,6 +250,14 @@ export interface CandidateReport {
     audioAnalysisEnabled: false;
     videoAnalysisEnabled: false;
   };
+  // Exit-interview fields — populated ONLY when interviewType === "exit_interview".
+  // In an exit report `overallScore` carries overall sentiment (0-100) and
+  // `recommendation` is a storage-compat placeholder; read `attritionSignal` instead.
+  // `skillScores` becomes per-signal sentiment (sentiment/candor/…) and
+  // `weaknesses`/`strengths` become drivers-to-leave / things-that-kept-them.
+  attritionSignal?: AttritionSignal;
+  topReasons?: string[];
+  verbatimHighlights?: ExitVerbatim[];
 }
 
 export interface InterviewTurnLink {
