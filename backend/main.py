@@ -80,6 +80,8 @@ def init_db():
         conn.execute(text("ALTER TABLE organisations ADD COLUMN IF NOT EXISTS application_questions TEXT;"))
         conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS application_questions TEXT;"))
         conn.execute(text("ALTER TABLE applicants ADD COLUMN IF NOT EXISTS application_answers TEXT;"))
+        # Optional per-job deadline for the public apply link (NULL = no expiry).
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS applications_close_at TIMESTAMP WITH TIME ZONE;"))
         conn.execute(text('ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS "recordingDriveFileId" VARCHAR;'))
         conn.execute(text('ALTER TABLE "InterviewSession" ADD COLUMN IF NOT EXISTS "recordingDriveUrl" VARCHAR;'))
         conn.commit()

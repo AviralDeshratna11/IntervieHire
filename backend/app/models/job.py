@@ -46,6 +46,10 @@ class Job(Base):
     # Per-job override for the public apply form's custom questions (JSON text).
     # NULL → fall back to the org-wide default (organisations.application_questions).
     application_questions = Column(Text, nullable=True)
+    # Optional deadline for the public apply link. NULL → the link stays open for as
+    # long as the job is published + listed. When set and in the past, the public
+    # apply routes show a "closed" page (GET) / return 410 (POST).
+    applications_close_at = Column(DateTime(timezone=True), nullable=True)
 
     # Pipeline stage toggles
     resume_analysis_enabled = Column(Boolean, default=True)

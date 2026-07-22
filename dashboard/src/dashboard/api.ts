@@ -145,6 +145,13 @@ export async function apiPatchJobApplicationQuestions(jobId: string, questions) 
   return request(`/jobs/${jobId}/parameters`, { method: 'PATCH', body: { application_questions: questions } });
 }
 
+// Set (or clear) the public apply link's deadline. Pass an ISO-8601 string to set
+// it, or null to reopen indefinitely. Uses the settings PATCH, which honours an
+// explicit null (clears) vs. an omitted key (unchanged). Returns the mapped job.
+export async function apiSetApplicationsClose(jobId: string, isoOrNull: string | null) {
+  return request(`/jobs/${jobId}/settings`, { method: 'PATCH', body: { applications_close_at: isoOrNull } });
+}
+
 // Interview Analysis tab source: compact summaries for every applicant of a job
 // whose AI interview has been EVALUATED (score, recommendation, proctoring), most
 // recent first. The backend reconciles + persists autonomously, so this reflects
@@ -495,6 +502,7 @@ function mapJobOutToJob(j: any = {}): Job {
     },
     interviewSettings: j.interview_settings ? { ...defaultInterviewSettings(), ...j.interview_settings } : undefined,
     applicationQuestions: Array.isArray(j.application_questions) ? j.application_questions : [],
+    applicationsCloseAt: j.applications_close_at || null,
     pipeline: j.pipeline || { total: 0, resume: 0, screening: 0, functional: 0 },
     _backend: true,
   };

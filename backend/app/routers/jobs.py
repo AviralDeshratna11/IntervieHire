@@ -1321,6 +1321,7 @@ def _build_job_detail_out(job: Job) -> dict:
         "screening_questions": json.loads(job.screening_questions) if job.screening_questions else None,
         "interview_settings": json.loads(job.interview_settings) if job.interview_settings else None,
         "application_questions": json.loads(job.application_questions) if job.application_questions else None,
+        "applications_close_at": job.applications_close_at,
         "tags": tags
     }
 
