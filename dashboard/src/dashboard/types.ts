@@ -159,6 +159,7 @@ export interface Job {
   pipelineConfig: PipelineConfig;
   interviewSettings?: Record<string, unknown>;
   applicationQuestions?: any[];
+  applicationsCloseAt?: string | null;
   pipeline: PipelineCounts;
   _backend?: boolean;
 }

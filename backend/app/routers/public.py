@@ -595,12 +595,29 @@ def _valid_email(email: str) -> bool:
         return False
 
 
+def _applications_closed(job: Job) -> bool:
+    """True when the job set a public apply deadline that has already passed.
+
+    NULL deadline → never closed on this axis (the job stays open as long as it is
+    published + listed, enforced separately in `_resolve_org_job`). Tolerates a
+    naive timestamp (SQLite dev) by treating it as UTC.
+    """
+    close_at = getattr(job, "applications_close_at", None)
+    if not close_at:
+        return False
+    if close_at.tzinfo is None:
+        close_at = close_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= close_at
+
+
 async def _handle_apply_submit(
     request: Request, db: Session, job: Job, org: Optional[Organisation],
     source: ApplicantSource, entry_method: str,
 ) -> HTMLResponse:
     """Parse the multipart apply form (fixed fields + dynamic custom questions +
     resume file), validate, and hand off to _process_application."""
+    if _applications_closed(job):
+        raise HTTPException(status_code=410, detail="Applications for this role are closed.")
     form = await request.form()
     name = (form.get("name") or "").strip()
     email = (form.get("email") or "").strip().lower()
@@ -873,7 +890,22 @@ def _render_question_field(q: dict) -> str:
     return f'<label>{label}{star}</label>{field}'
 
 
+def _apply_closed_html(org: Optional[Organisation], job: Job) -> str:
+    org_name = html.escape(org.org_name) if org and org.org_name else "the team"
+    role = html.escape(job.role_name or job.title or "this role")
+    inner = f"""
+        <h1>Applications closed</h1>
+        <div class="sub">Thanks for your interest in {role} at {org_name}.</div>
+        <p style="color:#94a3b8; line-height:1.6;">The application window for this role has closed, so we're no longer accepting new applications. Please check back for future openings.</p>
+    """
+    return _apply_page_shell("Applications closed", inner)
+
+
 def _apply_form_html(org: Optional[Organisation], job: Job, action: str) -> str:
+    # Deadline passed → show the closed page instead of the form (both GET routes).
+    if _applications_closed(job):
+        return _apply_closed_html(org, job)
+
     org_name = html.escape(org.org_name) if org and org.org_name else "IntervieHire"
     role = html.escape(job.role_name or job.title or "this role")
     location = html.escape(job.location) if job.location else ""

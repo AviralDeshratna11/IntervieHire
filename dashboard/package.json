@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "@types/node": "26.1.1",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "19.2.17",
     "@types/react-dom": "^19.2.3",
     "playwright": "^1.60.0",
@@ -24,6 +25,7 @@
     "next": "^16.2.7",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.4.296",
+    "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "three": "^0.184.0",

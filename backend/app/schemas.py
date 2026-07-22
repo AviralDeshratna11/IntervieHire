@@ -169,6 +169,7 @@ class JobDetailOut(BaseModel):
     screening_questions: Optional[List[str]] = None
     interview_settings: Optional[dict] = None
     application_questions: Optional[List[Dict[str, Any]]] = None  # per-job apply-form override
+    applications_close_at: Optional[datetime] = None  # public apply-link deadline (null = open)
     tags: Optional[List[str]] = None
 
     class Config:
@@ -190,7 +191,10 @@ class JobSettingsIn(BaseModel):
     job_type: Optional[str] = None
     job_kind: Optional[str] = None   # 'hiring' | 'exit'
     location: Optional[str] = None
- 
+    # Public apply-link deadline. Send an ISO-8601 datetime to set it, or explicit
+    # null to clear it (reopen indefinitely). Omit the key to leave it unchanged.
+    applications_close_at: Optional[datetime] = None
+
 class JobCreateIn(BaseModel):
     title: str
     role_name: str
